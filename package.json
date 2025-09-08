@@ -1,0 +1,41 @@
+{
+  "name": "coolhand-node",
+  "version": "0.0.1",
+  "description": "Monitor and LLM API calls for analysis",
+  "main": "index.js",
+  "keywords": [
+    "llm",
+    "openai",
+    "anthropic",
+    "monitoring",
+    "analytics",
+    "api",
+    "logging"
+  ],
+  "author": "Michael Carroll",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikecarroll/coolhand-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mikecarroll/coolhand-node/issues"
+  },
+  "homepage": "https://github.com/mikecarroll/coolhand-node#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/test.js",
+    "example": "node examples/basic-example.js"
+  },
+  "devDependencies": {
+    "openai": "^4.0.0"
+  }
+}
