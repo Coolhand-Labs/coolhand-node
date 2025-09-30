@@ -1,8 +1,8 @@
-// test/test.js - Basic test for CoolHand Node Monitor
+// test/test.js - Basic test for Coolhand Node Monitor
 
 const Coolhand = require('../index');
 
-console.log('🧪 Running basic tests for CoolHand Node Monitor...\n');
+console.log('🧪 Running basic tests for Coolhand Node Monitor...\n');
 
 // Test 1: Constructor validation
 console.log('Test 1: Constructor validation');

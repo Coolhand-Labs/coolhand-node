@@ -1,6 +1,6 @@
-# CoolHand Node.js Monitor
+# Coolhand Node.js Monitor
 
-Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the CoolHand analytics platform.
+Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the Coolhand analytics platform.
 
 ## Installation
 
@@ -28,7 +28,7 @@ const monitor = new Coolhand({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `environment` | string | `'local'` | Target environment: `'local'` (localhost:3000) or `'production'` (coolhand.io) |
-| `apiKey` | string | *required* | Your CoolHand API key for authentication |
+| `apiKey` | string | *required* | Your Coolhand API key for authentication |
 | `silent` | boolean | `false` | Set to `true` to suppress console output |
 
 ## Usage Examples
@@ -50,7 +50,7 @@ const response = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
     messages: [{ role: "user", content: "Hello!" }]
 });
-// This call will automatically be logged to CoolHand!
+// This call will automatically be logged to Coolhand!
 ```
 
 ### Production
