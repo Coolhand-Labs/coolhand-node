@@ -51,16 +51,25 @@ const prodMonitor = new Coolhand({
     silent: true
 });
 
+// Test default environment (should be production)
+const defaultMonitor = new Coolhand({
+    apiKey: 'test-key',
+    silent: true
+});
+
 const localStats = localMonitor.getStats();
 const prodStats = prodMonitor.getStats();
+const defaultStats = defaultMonitor.getStats();
 
-if (localStats.apiEndpoint.includes('localhost:3000') && 
-    prodStats.apiEndpoint.includes('coolhand.io')) {
+if (localStats.apiEndpoint.includes('localhost:3000') &&
+    prodStats.apiEndpoint.includes('coolhand.io') &&
+    defaultStats.apiEndpoint.includes('coolhand.io')) {
     console.log('✅ PASS: Environment configuration works correctly');
 } else {
     console.log('❌ FAIL: Environment configuration incorrect');
     console.log('Local endpoint:', localStats.apiEndpoint);
     console.log('Prod endpoint:', prodStats.apiEndpoint);
+    console.log('Default endpoint:', defaultStats.apiEndpoint);
 }
 
 // Test 4: Header sanitization
