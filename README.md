@@ -2,6 +2,8 @@
 
 Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the Coolhand analytics platform.
 
+**✨ Now with full TypeScript support!**
+
 ## Installation
 
 Install via npm:
@@ -26,7 +28,22 @@ const monitor = new Coolhand({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | string | *required* | Your Coolhand API key for authentication |
+| `environment` | `'local' \| 'production'` | `'production'` | Target environment: `'local'` (localhost:3000) or `'production'` (coolhand.io) |
 | `silent` | boolean | `true` | Set to `false` to enable console output |
+
+## TypeScript Support
+
+Full TypeScript support with exported types:
+
+```typescript
+import { Coolhand, CoolhandOptions, CallData, Stats } from 'coolhand-node';
+
+const monitor = new Coolhand({
+  apiKey: 'your-api-key',
+  environment: 'production', // Autocomplete available
+  silent: true
+});
+```
 
 ## Usage Examples
 
