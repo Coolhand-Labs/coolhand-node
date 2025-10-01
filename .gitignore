@@ -8,3 +8,25 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# TypeScript build output
+dist/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Package tarball
+*.tgz

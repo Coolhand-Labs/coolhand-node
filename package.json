@@ -2,7 +2,8 @@
   "name": "coolhand-node",
   "version": "0.1.0",
   "description": "Monitor and LLM API calls for analysis",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "keywords": [
     "llm",
     "openai",
@@ -26,16 +27,23 @@
     "node": ">=14.0.0"
   },
   "files": [
-    "index.js",
-    "lib/",
+    "dist/",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/test.js",
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node test/test.js",
+    "test:ts": "npm run build && node -r ts-node/register test-ts/test.ts",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
     "example": "node examples/basic.js"
   },
   "devDependencies": {
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0"
   }
 }
