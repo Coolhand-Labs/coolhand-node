@@ -1,6 +1,6 @@
 {
   "name": "coolhand-node",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Monitor and LLM API calls for analysis",
   "main": "index.js",
   "keywords": [
