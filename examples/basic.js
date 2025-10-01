@@ -1,4 +1,4 @@
-// examples/basic-example.js - Example usage of CoolHand Node Monitor
+// examples/basic-example.js - Example usage of Coolhand Node Monitor
 
 const Coolhand = require('../index');
 

@@ -1,13 +1,13 @@
-# CoolHand Node.js Monitor
+# Coolhand Node.js Monitor
 
-Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the CoolHand analytics platform.
+Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the Coolhand analytics platform.
 
 ## Installation
 
-Install directly from GitHub:
+Install via npm:
 
 ```bash
-npm install git+https://github.com/mikecarroll/coolhand-node.git
+npm install coolhand-node.git
 ```
 
 ## Quick Start
@@ -17,9 +17,7 @@ const Coolhand = require('coolhand-node');
 
 // Initialize the monitor
 const monitor = new Coolhand({
-    environment: 'production'
-    apiKey: 'your-api-key',
-    silent: true
+    apiKey: 'your-api-key'
 });
 ```
 
@@ -27,66 +25,97 @@ const monitor = new Coolhand({
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `environment` | string | `'local'` | Target environment: `'local'` (localhost:3000) or `'production'` (coolhand.io) |
-| `apiKey` | string | *required* | Your CoolHand API key for authentication |
-| `silent` | boolean | `false` | Set to `true` to suppress console output |
+| `apiKey` | string | *required* | Your Coolhand API key for authentication |
+| `silent` | boolean | `true` | Set to `false` to enable console output |
 
 ## Usage Examples
 
-### Local Development
+### Basic
 
 ```javascript
 const Coolhand = require('coolhand-node');
 
 const monitor = new Coolhand({
-    environment: 'local',
-    apiKey: 'your-api-key-here',
-    silent: false  // Verbose logging for development
-});
-
-// Your existing OpenAI code
-const openai = new OpenAI({ apiKey: 'your-openai-key' });
-const response = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: [{ role: "user", content: "Hello!" }]
-});
-// This call will automatically be logged to CoolHand!
-```
-
-### Production
-
-```javascript
-const Coolhand = require('coolhand-node');
-
-const monitor = new Coolhand({
-    environment: 'production',
-    apiKey: process.env.COOLHAND_API_KEY,
-    silent: true  // Quiet mode for production
+    apiKey: process.env.COOLHAND_API_KEY
 });
 ```
 
-### With LangChain
+### Next.js/T3 Stack Implementation
 
-```javascript
-const Coolhand = require('coolhand-node');
-const { ChatOpenAI } = require("@langchain/openai");
+For TypeScript frameworks like Next.js or T3 Stack, initialize Coolhand in your service layer:
 
-// Initialize monitor first
-const monitor = new Coolhand({
-    environment: 'local',
-    apiKey: 'your-coolhand-api-key',
-    silent: false
-});
+```typescript
+// src/lib/email-service.ts
+import { Coolhand } from 'coolhand-node';
+import { ChatOpenAI } from '@langchain/openai';
+import { PromptTemplate } from '@langchain/core/prompts';
 
-// Use LangChain as normal
-const llm = new ChatOpenAI({
-    modelName: "gpt-3.5-turbo",
-    openAIApiKey: "your-openai-key"
-});
+export class EmailResponseService {
+  private coolhand: Coolhand;
+  private model: ChatOpenAI;
+  private promptTemplate: PromptTemplate;
 
-const response = await llm.invoke("Hello, world!");
-// Coolhand will automagically analyze the results
+  constructor(
+    openAIApiKey: string,
+    coolhandApiKey: string,
+    environment: 'local' | 'production' = 'production'
+  ) {
+    // Initialize Coolhand FIRST - before any LLM libraries
+    this.coolhand = new Coolhand({
+      environment,
+      apiKey: coolhandApiKey,
+      silent: process.env.NODE_ENV === 'production'
+    });
+
+    // Initialize LLM after Coolhand is set up
+    this.model = new ChatOpenAI({
+      apiKey: openAIApiKey,
+      modelName: 'gpt-3.5-turbo',
+      temperature: 0.7,
+    });
+
+    this.promptTemplate = new PromptTemplate({
+      template: `You are a helpful customer service representative...`,
+      inputVariables: ["from", "subject", "body"],
+    });
+  }
+
+  async generateResponse(customerEmail: any): Promise<any> {
+    try {
+      const formattedPrompt = await this.promptTemplate.format(customerEmail);
+
+      // This call will be automatically logged by Coolhand
+      const result = await this.model.invoke(formattedPrompt);
+
+      return {
+        original: customerEmail,
+        response: result.content,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      console.error('Error generating response:', error);
+      throw error;
+    }
+  }
+}
 ```
+
+**Key points for Next.js/T3:**
+- Initialize Coolhand **before** any LLM libraries in your constructor
+- Use environment variables for API keys
+- Set `silent: process.env.NODE_ENV === 'production'` for automatic dev/prod logging
+- All LangChain, OpenAI SDK, or fetch calls will be automatically monitored
+
+### Environment Variables
+
+Add to your `.env.local`:
+
+```bash
+OPENAI_API_KEY=your_openai_key_here
+COOLHAND_API_KEY=your_coolhand_key_here
+```
+
+
 
 ## What Gets Logged
 
