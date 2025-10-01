@@ -9,7 +9,7 @@ Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the Coolhand analytic
 Install via npm:
 
 ```bash
-npm install coolhand-node.git
+npm install coolhand-node
 ```
 
 ## Quick Start
@@ -28,8 +28,6 @@ const monitor = new Coolhand({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | string | *required* | Your Coolhand API key for authentication |
-| `environment` | `'local' \| 'production'` | `'production'` | Target environment: `'local'` (localhost:3000) or `'production'` (coolhand.io) |
-| `silent` | boolean | `true` | Set to `false` to enable console output |
 
 ## TypeScript Support
 

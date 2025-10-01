@@ -2,9 +2,28 @@
 
 ## 0.0.1 (Current)
 
+**Release Date**: First stable version
+**Branch**: `0.1.0`
+**Status**: Development/Beta
+
+### Features
+
+### Installation
+```bash
+npm install git+https://github.com/Coolhand-Labs/coolhand-node.git#0.0.1
+```
+
+### Breaking Changes
+- None
+
+### Known Issues
+- None reported
+
+## 0.0.1 (Current)
+
 **Release Date**: Initial development version  
 **Branch**: `0.0.1`  
-**Status**: Development/Beta
+**Status**: Stable
 
 ### Features
 - Core LLM API call interception (OpenAI, Anthropic)
@@ -17,7 +36,7 @@
 
 ### Installation
 ```bash
-npm install git+https://github.com/mikecarroll/coolhand-node.git#0.0.1
+npm install git+https://github.com/Coolhand-Labs/coolhand-node.git#0.0.1
 ```
 
 ### Breaking Changes
@@ -25,17 +44,3 @@ npm install git+https://github.com/mikecarroll/coolhand-node.git#0.0.1
 
 ### Known Issues
 - None reported
-
----
-
-## Development Roadmap
-
-### 0.0.2 (Planned)
-- Additional LLM provider support
-- Enhanced error handling
-- Performance optimizations
-
-### 0.1.0 (Planned)
-- Stable API
-- Comprehensive test suite
-- Documentation improvements
