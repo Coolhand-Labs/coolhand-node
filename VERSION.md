@@ -31,7 +31,7 @@ npm install git+https://github.com/Coolhand-Labs/coolhand-node.git#0.0.1
 - Fetch API support (Node 18+)
 - Automatic header sanitization
 - Local and production environment support
-- CoolHand API integration
+- Coolhand API integration
 - Silent mode option
 
 ### Installation
