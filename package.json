@@ -37,7 +37,6 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:legacy": "npm run build && node -r ts-node/register test/test.ts",
     "dev": "tsc --watch",
     "clean": "rm -rf dist coverage",
     "example": "node examples/basic.js"

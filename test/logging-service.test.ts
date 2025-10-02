@@ -1,45 +1,17 @@
-// test/logging-service.test.ts - Comprehensive tests for LoggingService
-
 import { LoggingService, LoggingServiceConfig } from '../src/services/LoggingService';
 import { CallData, MatchedPattern } from '../src/types';
-
-console.log('🧪 Running LoggingService tests...\n');
 
 // Mock fetch for testing
 const originalFetch = (global as any).fetch;
 
 // Helper function to create a mock fetch
 function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = true): any {
-  return async (input: any, options: any) => {
-    return {
-      ok,
-      status,
-      json: async () => mockResponse,
-      text: async () => JSON.stringify(mockResponse)
-    };
-  };
-}
-
-// Test counter
-let testCount = 0;
-let passedTests = 0;
-let failedTests = 0;
-
-async function runTest(testName: string, testFunction: () => void | Promise<void>): Promise<void> {
-  testCount++;
-  console.log(`Test ${testCount}: ${testName}`);
-
-  try {
-    const result = testFunction();
-    if (result instanceof Promise) {
-      await result;
-    }
-    passedTests++;
-    console.log('✅ PASS\n');
-  } catch (error) {
-    failedTests++;
-    console.log(`❌ FAIL: ${(error as Error).message}\n`);
-  }
+  return jest.fn().mockResolvedValue({
+    ok,
+    status,
+    json: jest.fn().mockResolvedValue(mockResponse),
+    text: jest.fn().mockResolvedValue(JSON.stringify(mockResponse))
+  });
 }
 
 // Helper function to create mock call data
@@ -77,456 +49,275 @@ function createMockMatchedPattern(): MatchedPattern {
   };
 }
 
-async function runAllTests() {
-  // Test 1: Constructor validation and initialization
-  await runTest('Constructor validation and initialization', () => {
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-
-    if (service.getApiEndpoint() !== 'http://localhost:3000/api/v2/llm_request_logs') {
-      throw new Error('Local environment endpoint not set correctly');
-    }
-
-    if (service.getEnvironment() !== 'local') {
-      throw new Error('Environment not set correctly');
-    }
-  });
-
-  // Test 2: Production environment configuration
-  await runTest('Production environment configuration', () => {
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'production',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-
-    if (service.getApiEndpoint() !== 'https://coolhand.io/api/v2/llm_request_logs') {
-      throw new Error('Production environment endpoint not set correctly');
-    }
-
-    if (service.getEnvironment() !== 'production') {
-      throw new Error('Environment not set correctly');
-    }
-  });
-
-  // Test 3: Successful logging with fetch
-  await runTest('Successful logging with fetch', async () => {
-    // Mock successful response
-    const mockResponse = { id: 123, status: 'success' };
-    (global as any).fetch = createMockFetch(mockResponse);
-
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-
-    // Should not throw an error
-    await service.logRequestToAPI(callData);
-
-    // Restore original fetch
+describe('LoggingService', () => {
+  afterEach(() => {
     (global as any).fetch = originalFetch;
   });
 
-  // Test 4: Successful logging with matched pattern
-  await runTest('Successful logging with matched pattern', async () => {
-    // Mock successful response
-    const mockResponse = { id: 124, status: 'success' };
-    (global as any).fetch = createMockFetch(mockResponse);
+  describe('Constructor validation and initialization', () => {
+    it('should configure local environment correctly', () => {
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
 
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
+      const service = new LoggingService(config);
 
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-    const matchedPattern = createMockMatchedPattern();
-
-    // Should not throw an error
-    await service.logRequestToAPI(callData, matchedPattern);
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 5: Failed API response handling
-  await runTest('Failed API response handling', async () => {
-    // Mock failed response
-    (global as any).fetch = async () => ({
-      ok: false,
-      status: 400,
-      text: async () => 'Bad Request',
-      json: async () => ({ error: 'Bad Request' })
+      expect(service.getApiEndpoint()).toBe('http://localhost:3000/api/v2/llm_request_logs');
+      expect(service.getEnvironment()).toBe('local');
     });
 
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-
-    // Should not throw an error, but should handle gracefully
-    await service.logRequestToAPI(callData);
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 6: Network error handling
-  await runTest('Network error handling', async () => {
-    // Mock network error
-    (global as any).fetch = async () => {
-      throw new Error('Network error');
-    };
-
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-
-    // Should not throw an error, but should handle gracefully
-    await service.logRequestToAPI(callData);
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 7: Payload structure validation
-  await runTest('Payload structure validation', async () => {
-    let capturedRequestBody: any;
-
-    // Mock fetch to capture the request body
-    (global as any).fetch = async (input: any, options: any) => {
-      capturedRequestBody = JSON.parse(options.body);
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 123, status: 'success' }),
-        text: async () => JSON.stringify({ id: 123, status: 'success' })
+    it('should configure production environment correctly', () => {
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'production',
+        silent: true
       };
-    };
 
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
+      const service = new LoggingService(config);
 
-    const service = new LoggingService(config);
-    const callData = createMockCallData({
-      id: 456,
-      method: 'POST',
-      url: 'https://api.example.com/test'
+      expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_logs');
+      expect(service.getEnvironment()).toBe('production');
+    });
+  });
+
+  describe('API Logging', () => {
+    it('should successfully log with fetch', async () => {
+      const mockResponse = { id: 123, status: 'success' };
+      (global as any).fetch = createMockFetch(mockResponse);
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await expect(service.logRequestToAPI(callData)).resolves.not.toThrow();
     });
 
-    await service.logRequestToAPI(callData);
+    it('should successfully log with matched pattern', async () => {
+      const mockResponse = { id: 124, status: 'success' };
+      (global as any).fetch = createMockFetch(mockResponse);
 
-    if (!capturedRequestBody.llm_request_log) {
-      throw new Error('Payload missing llm_request_log wrapper');
-    }
-
-    if (!capturedRequestBody.llm_request_log.raw_request) {
-      throw new Error('Payload missing raw_request data');
-    }
-
-    const rawRequest = capturedRequestBody.llm_request_log.raw_request;
-
-    if (rawRequest.id !== 456) {
-      throw new Error('Incorrect call data ID in payload');
-    }
-
-    if (rawRequest.method !== 'POST') {
-      throw new Error('Incorrect method in payload');
-    }
-
-    if (rawRequest.url !== 'https://api.example.com/test') {
-      throw new Error('Incorrect URL in payload');
-    }
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 8: Headers validation
-  await runTest('Headers validation', async () => {
-    let capturedHeaders: any;
-
-    // Mock fetch to capture the headers
-    (global as any).fetch = async (input: any, options: any) => {
-      capturedHeaders = options.headers;
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 123, status: 'success' }),
-        text: async () => JSON.stringify({ id: 123, status: 'success' })
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
       };
-    };
 
-    const config: LoggingServiceConfig = {
-      apiKey: 'secret-api-key-123',
-      environment: 'local',
-      silent: true
-    };
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+      const matchedPattern = createMockMatchedPattern();
 
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
+      await expect(service.logRequestToAPI(callData, matchedPattern)).resolves.not.toThrow();
+    });
 
-    await service.logRequestToAPI(callData);
+    it('should handle failed API response gracefully', async () => {
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: jest.fn().mockResolvedValue('Bad Request'),
+        json: jest.fn().mockResolvedValue({ error: 'Bad Request' })
+      });
 
-    if (capturedHeaders['Content-Type'] !== 'application/json') {
-      throw new Error('Incorrect Content-Type header');
-    }
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
 
-    if (capturedHeaders['X-API-Key'] !== 'secret-api-key-123') {
-      throw new Error('Incorrect X-API-Key header');
-    }
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
 
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
+      await expect(service.logRequestToAPI(callData)).resolves.not.toThrow();
+    });
 
-  // Test 9: Silent mode behavior
-  await runTest('Silent mode behavior', async () => {
-    // Capture console output
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    let logMessages: string[] = [];
-    let errorMessages: string[] = [];
+    it('should handle network errors gracefully', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
-    console.log = (...args: any[]) => {
-      logMessages.push(args.join(' '));
-    };
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
 
-    console.error = (...args: any[]) => {
-      errorMessages.push(args.join(' '));
-    };
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
 
-    // Mock successful response
-    (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
+      await expect(service.logRequestToAPI(callData)).resolves.not.toThrow();
+    });
 
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
+    it('should structure payload correctly', async () => {
+      let capturedRequestBody: any;
 
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-    const matchedPattern = createMockMatchedPattern();
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, status: 'success' }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, status: 'success' }))
+        };
+      });
 
-    await service.logRequestToAPI(callData, matchedPattern);
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
 
-    // Restore console
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
+      const service = new LoggingService(config);
+      const callData = createMockCallData({
+        id: 456,
+        method: 'POST',
+        url: 'https://api.example.com/test'
+      });
 
-    // In silent mode, no verbose logging should appear
-    const hasVerboseLogging = logMessages.some(msg => msg.includes('🎉 LOGGING'));
-    const hasSuccessLog = logMessages.some(msg => msg.includes('✅ Successfully logged'));
-
-    if (hasVerboseLogging) {
-      throw new Error('Silent mode should not show verbose logging');
-    }
-
-    if (hasSuccessLog) {
-      throw new Error('Silent mode should not show any logging messages');
-    }
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 10: Non-silent mode behavior
-  await runTest('Non-silent mode behavior', async () => {
-    // Capture console output
-    const originalConsoleLog = console.log;
-    let logMessages: string[] = [];
-
-    console.log = (...args: any[]) => {
-      logMessages.push(args.join(' '));
-    };
-
-    // Mock successful response
-    (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
-
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: false
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-    const matchedPattern = createMockMatchedPattern();
-
-    await service.logRequestToAPI(callData, matchedPattern);
-
-    // Restore console
-    console.log = originalConsoleLog;
-
-    // In non-silent mode, should show verbose logging
-    const hasVerboseLogging = logMessages.some(msg => msg.includes('🎉 LOGGING OpenAI API Call'));
-    const hasTimeInfo = logMessages.some(msg => msg.includes('🕐 Time:'));
-    const hasMethodInfo = logMessages.some(msg => msg.includes('🎯 POST'));
-    const hasStatusInfo = logMessages.some(msg => msg.includes('📊 Status: 200'));
-    const hasProtocolInfo = logMessages.some(msg => msg.includes('🔧 Protocol: https'));
-    const hasMatchInfo = logMessages.some(msg => msg.includes('🔍 Matched by: domain'));
-    const hasModelInfo = logMessages.some(msg => msg.includes('🤖 Model: gpt-4'));
-    const hasMessagesInfo = logMessages.some(msg => msg.includes('💬 Messages: 1'));
-    const hasTempInfo = logMessages.some(msg => msg.includes('🌡️  Temperature: 0.7'));
-    const hasEndpointInfo = logMessages.some(msg => msg.includes('📤 Sending to:'));
-
-    if (!hasVerboseLogging) {
-      throw new Error('Non-silent mode should show verbose logging');
-    }
-
-    if (!hasTimeInfo) {
-      throw new Error('Non-silent mode should show time information');
-    }
-
-    if (!hasMethodInfo) {
-      throw new Error('Non-silent mode should show method information');
-    }
-
-    if (!hasStatusInfo) {
-      throw new Error('Non-silent mode should show status information');
-    }
-
-    if (!hasProtocolInfo) {
-      throw new Error('Non-silent mode should show protocol information');
-    }
-
-    if (!hasMatchInfo) {
-      throw new Error('Non-silent mode should show match information');
-    }
-
-    if (!hasModelInfo) {
-      throw new Error('Non-silent mode should show model information');
-    }
-
-    if (!hasMessagesInfo) {
-      throw new Error('Non-silent mode should show messages information');
-    }
-
-    if (!hasTempInfo) {
-      throw new Error('Non-silent mode should show temperature information');
-    }
-
-    if (!hasEndpointInfo) {
-      throw new Error('Non-silent mode should show endpoint information');
-    }
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  // Test 11: HTTPS fallback when fetch is not available
-  await runTest('HTTPS fallback when fetch is not available', async () => {
-    // Remove fetch temporarily
-    const originalFetch = (global as any).fetch;
-    delete (global as any).fetch;
-
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: true
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-
-    // This should use the HTTPS fallback and not throw an error
-    // Note: In a real test environment, we'd mock the https module too
-    // For now, we just ensure it doesn't crash due to missing fetch
-    try {
       await service.logRequestToAPI(callData);
-      // If it gets here without throwing, that's good enough for this test
-    } catch (error) {
-      // Expected to fail in test environment since we're not mocking https
-      // But it should be a network error, not a "fetch is undefined" error
-      if ((error as Error).message.includes('fetch')) {
-        throw new Error('Should not reference fetch when it is not available');
+
+      expect(capturedRequestBody.llm_request_log).toBeDefined();
+      expect(capturedRequestBody.llm_request_log.raw_request).toBeDefined();
+
+      const rawRequest = capturedRequestBody.llm_request_log.raw_request;
+      expect(rawRequest.id).toBe(456);
+      expect(rawRequest.method).toBe('POST');
+      expect(rawRequest.url).toBe('https://api.example.com/test');
+    });
+
+    it('should set correct headers', async () => {
+      let capturedHeaders: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedHeaders = options.headers;
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, status: 'success' }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, status: 'success' }))
+        };
+      });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'secret-api-key-123',
+        environment: 'local',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await service.logRequestToAPI(callData);
+
+      expect(capturedHeaders['Content-Type']).toBe('application/json');
+      expect(capturedHeaders['X-API-Key']).toBe('secret-api-key-123');
+    });
+  });
+
+  describe('Logging behavior', () => {
+    it('should not output logs in silent mode', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+      const matchedPattern = createMockMatchedPattern();
+
+      await service.logRequestToAPI(callData, matchedPattern);
+
+      const logCalls = consoleSpy.mock.calls.flat().join(' ');
+      expect(logCalls).not.toContain('🎉 LOGGING');
+      expect(logCalls).not.toContain('✅ Successfully logged');
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should output verbose logs in non-silent mode', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: false
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+      const matchedPattern = createMockMatchedPattern();
+
+      await service.logRequestToAPI(callData, matchedPattern);
+
+      const logCalls = consoleSpy.mock.calls.flat().join(' ');
+      expect(logCalls).toContain('🎉 LOGGING OpenAI API Call');
+      expect(logCalls).toContain('🕐 Time:');
+      expect(logCalls).toContain('🎯 POST');
+      expect(logCalls).toContain('📊 Status: 200');
+      expect(logCalls).toContain('🔧 Protocol: https');
+      expect(logCalls).toContain('🔍 Matched by: domain');
+      expect(logCalls).toContain('🤖 Model: gpt-4');
+      expect(logCalls).toContain('💬 Messages: 1');
+      expect(logCalls).toContain('🌡️  Temperature: 0.7');
+      expect(logCalls).toContain('📤 Sending to:');
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should use HTTPS fallback when fetch is not available', async () => {
+      const originalFetch = (global as any).fetch;
+      delete (global as any).fetch;
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      try {
+        await service.logRequestToAPI(callData);
+      } catch (error) {
+        expect((error as Error).message).not.toContain('fetch');
       }
-    }
 
-    // Restore fetch
-    (global as any).fetch = originalFetch;
+      (global as any).fetch = originalFetch;
+    });
+
+    it('should handle logging without matched pattern', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        environment: 'local',
+        silent: false
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await service.logRequestToAPI(callData);
+
+      const logCalls = consoleSpy.mock.calls.flat().join(' ');
+      expect(logCalls).toContain('🎉 LOGGING API API Call');
+      expect(logCalls).not.toContain('🔍 Matched by:');
+
+      consoleSpy.mockRestore();
+    });
   });
+});
 
-  // Test 12: Logging without matched pattern
-  await runTest('Logging without matched pattern', async () => {
-    // Capture console output
-    const originalConsoleLog = console.log;
-    let logMessages: string[] = [];
-
-    console.log = (...args: any[]) => {
-      logMessages.push(args.join(' '));
-    };
-
-    // Mock successful response
-    (global as any).fetch = createMockFetch({ id: 123, status: 'success' });
-
-    const config: LoggingServiceConfig = {
-      apiKey: 'test-api-key',
-      environment: 'local',
-      silent: false
-    };
-
-    const service = new LoggingService(config);
-    const callData = createMockCallData();
-
-    // Call without matched pattern
-    await service.logRequestToAPI(callData);
-
-    // Restore console
-    console.log = originalConsoleLog;
-
-    // Should show "API" instead of specific provider name
-    const hasGenericAPILogging = logMessages.some(msg => msg.includes('🎉 LOGGING API API Call'));
-    const hasNoMatchInfo = !logMessages.some(msg => msg.includes('🔍 Matched by:'));
-
-    if (!hasGenericAPILogging) {
-      throw new Error('Should show generic API logging when no pattern matched');
-    }
-
-    if (!hasNoMatchInfo) {
-      throw new Error('Should not show match information when no pattern provided');
-    }
-
-    // Restore original fetch
-    (global as any).fetch = originalFetch;
-  });
-
-  console.log('\n🎉 LoggingService test summary:');
-  console.log(`Total tests: ${testCount}`);
-  console.log(`Passed: ${passedTests}`);
-  console.log(`Failed: ${failedTests}`);
-
-  if (failedTests === 0) {
-    console.log('✅ All LoggingService tests passed!');
-  } else {
-    console.log('❌ Some LoggingService tests failed.');
-  }
-}
-
-// Run all tests
-runAllTests().catch(console.error);
