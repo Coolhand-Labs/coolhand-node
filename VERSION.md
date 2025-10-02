@@ -1,6 +1,6 @@
 # Version History
 
-## 0.0.1 (Current)
+## 0.1.0 (Current)
 
 **Release Date**: First stable version
 **Branch**: `0.1.0`
@@ -10,7 +10,7 @@
 
 ### Installation
 ```bash
-npm install git+https://github.com/Coolhand-Labs/coolhand-node.git#0.0.1
+npm install git+https://github.com/Coolhand-Labs/coolhand-node.git#0.1.0
 ```
 
 ### Breaking Changes

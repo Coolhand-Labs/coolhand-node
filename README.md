@@ -303,6 +303,70 @@ The monitor handles errors gracefully:
 - Invalid API keys will be reported but won't crash your app
 - Network issues are handled with appropriate error messages
 
+## Best Practices
+
+### Preventing Duplicate Logs in T3/Next.js Applications
+
+In T3 Stack and Next.js applications, you may encounter duplicate logging due to multiple Coolhand instances being created. This can happen because of:
+
+- Hot reloading in development mode
+- Server-side rendering + client hydration
+- Multiple service instantiations in API routes
+- React Strict Mode double-invocation
+- Module re-evaluation in Next.js
+
+To prevent duplicate logging, use a **singleton pattern** to ensure only one Coolhand instance exists:
+
+```typescript
+// src/lib/coolhand-singleton.ts
+import { Coolhand } from 'coolhand-node';
+
+let coolhandInstance: Coolhand | null = null;
+
+export function getCoolhandInstance(apiKey: string, environment: 'local' | 'production' = 'production'): Coolhand {
+  if (!coolhandInstance) {
+    coolhandInstance = new Coolhand({
+      apiKey,
+      environment,
+      silent: process.env.NODE_ENV === 'production'
+    });
+  }
+  return coolhandInstance;
+}
+```
+
+Then use the singleton in your services:
+
+```typescript
+// src/lib/email-service.ts
+import { getCoolhandInstance } from './coolhand-singleton';
+import { ChatOpenAI } from '@langchain/openai';
+
+export class EmailResponseService {
+  private coolhand: Coolhand;
+  private model: ChatOpenAI;
+
+  constructor(openAIApiKey: string, coolhandApiKey: string, environment: 'local' | 'production' = 'production') {
+    // Use singleton to prevent multiple instances
+    this.coolhand = getCoolhandInstance(coolhandApiKey, environment);
+
+    this.model = new ChatOpenAI({
+      apiKey: openAIApiKey,
+      modelName: 'gpt-3.5-turbo',
+      temperature: 0.7,
+    });
+  }
+  // ... rest of implementation
+}
+```
+
+**Alternative approaches:**
+- Initialize Coolhand once at the module level (outside classes)
+- Use dependency injection with a single Coolhand instance
+- Create Coolhand in a Next.js middleware or API route wrapper
+
+**Note**: Coolhand includes built-in deduplication that prevents duplicate logs from identical requests made within a 1-second window, but using a singleton pattern is still the recommended approach for optimal performance.
+
 ## Security
 
 - API keys in request headers are automatically redacted
