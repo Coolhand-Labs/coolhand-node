@@ -11,7 +11,6 @@ describe('Coolhand Node Monitor', () => {
     it('should initialize successfully with valid options', () => {
       const monitor = new Coolhand({
         apiKey: 'test-key',
-        environment: 'local',
         silent: true
       });
 
@@ -21,37 +20,15 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
-  describe('Environment configuration', () => {
-    it('should configure local environment correctly', () => {
-      const monitor = new Coolhand({
-        apiKey: 'test-key',
-        environment: 'local',
-        silent: true
-      });
-
-      const stats = monitor.getStats();
-      expect(stats.apiEndpoint).toContain('localhost:3000');
-    });
-
-    it('should configure production environment correctly', () => {
-      const monitor = new Coolhand({
-        apiKey: 'test-key',
-        environment: 'production',
-        silent: true
-      });
-
-      const stats = monitor.getStats();
-      expect(stats.apiEndpoint).toContain('coolhand.io');
-    });
-
-    it('should default to production environment', () => {
+  describe('API configuration', () => {
+    it('should use production endpoint', () => {
       const monitor = new Coolhand({
         apiKey: 'test-key',
         silent: true
       });
 
       const stats = monitor.getStats();
-      expect(stats.apiEndpoint).toContain('coolhand.io');
+      expect(stats.apiEndpoint).toBe('https://coolhand.io/api/v2/llm_request_logs');
     });
   });
 
@@ -61,7 +38,6 @@ describe('Coolhand Node Monitor', () => {
     beforeEach(() => {
       monitor = new Coolhand({
         apiKey: 'test-key',
-        environment: 'local',
         silent: true
       });
     });
@@ -96,7 +72,6 @@ describe('Coolhand Node Monitor', () => {
     beforeEach(() => {
       monitor = new Coolhand({
         apiKey: 'test-key',
-        environment: 'local',
         silent: true
       });
     });
@@ -122,7 +97,6 @@ describe('Coolhand Node Monitor', () => {
       expect(() => {
         new Coolhand({
           apiKey: 'test-key',
-          environment: 'local',
           silent: true
         });
       }).not.toThrow();
@@ -132,7 +106,6 @@ describe('Coolhand Node Monitor', () => {
       expect(() => {
         new Coolhand({
           apiKey: 'test-key',
-          environment: 'local',
           silent: true,
           patternsFile: './non-existent-file.json'
         });
@@ -144,7 +117,6 @@ describe('Coolhand Node Monitor', () => {
     it('should integrate FeedbackService functionality', () => {
       const monitor = new Coolhand({
         apiKey: 'test-key',
-        environment: 'local',
         silent: true
       });
 

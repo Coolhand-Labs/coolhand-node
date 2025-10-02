@@ -14,7 +14,6 @@ export class Coolhand {
   constructor(options: CoolhandOptions) {
     // Configuration options
     this.silent = options.silent !== false;
-    const environment = options.environment || 'production';
     const apiKey = options.apiKey;
 
     if (!apiKey) {
@@ -27,7 +26,6 @@ export class Coolhand {
 
     const serviceConfig = {
       apiKey,
-      environment,
       silent: this.silent
     };
 
@@ -42,7 +40,6 @@ export class Coolhand {
 
     if (!this.silent) {
       console.log('🔍 Setting up Coolhand...');
-      console.log(`🌍 Environment: ${environment}`);
       console.log(`🎯 API Endpoint: ${this.loggingService.getApiEndpoint()}`);
       console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCount()} API patterns`);
     }
@@ -98,7 +95,6 @@ export class Coolhand {
     return {
       totalRequests: monitoringStats.totalRequests,
       interceptedCalls: monitoringStats.interceptedCalls,
-      environment: this.loggingService.getEnvironment(),
       apiEndpoint: this.loggingService.getApiEndpoint()
     };
   }

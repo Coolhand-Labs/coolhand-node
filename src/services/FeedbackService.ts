@@ -2,25 +2,18 @@ import { LLMRequestLogFeedback, LLMRequestLogFeedbackPayload, LLMRequestLogFeedb
 
 export interface FeedbackServiceConfig {
   apiKey: string;
-  environment: 'local' | 'production';
   silent: boolean;
 }
 
 export class FeedbackService {
   private apiKey: string;
-  private environment: 'local' | 'production';
   private silent: boolean;
   private apiEndpoint: string;
 
   constructor(config: FeedbackServiceConfig) {
     this.apiKey = config.apiKey;
-    this.environment = config.environment;
     this.silent = config.silent;
-
-    // Set API endpoint based on environment
-    this.apiEndpoint = this.environment === 'production'
-      ? 'https://coolhand.io/api/v2/llm_request_log_feedbacks'
-      : 'http://localhost:3000/api/v2/llm_request_log_feedbacks';
+    this.apiEndpoint = 'https://coolhand.io/api/v2/llm_request_log_feedbacks';
   }
 
   public async createFeedback(feedback: LLMRequestLogFeedback): Promise<LLMRequestLogFeedbackResponse | null> {
@@ -86,7 +79,4 @@ export class FeedbackService {
     return this.apiEndpoint;
   }
 
-  public getEnvironment(): string {
-    return this.environment;
-  }
 }

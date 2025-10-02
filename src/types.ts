@@ -1,6 +1,5 @@
 export interface CoolhandOptions {
   apiKey: string;
-  environment?: 'local' | 'production';
   silent?: boolean;
   patternsFile?: string;
 }
@@ -21,7 +20,6 @@ export interface CallData {
 export interface Stats {
   totalRequests: number;
   interceptedCalls: number;
-  environment: string;
   apiEndpoint: string;
 }
 

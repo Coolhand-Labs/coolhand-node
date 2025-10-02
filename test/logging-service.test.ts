@@ -55,30 +55,15 @@ describe('LoggingService', () => {
   });
 
   describe('Constructor validation and initialization', () => {
-    it('should configure local environment correctly', () => {
+    it('should configure with production endpoint', () => {
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
-        silent: true
-      };
-
-      const service = new LoggingService(config);
-
-      expect(service.getApiEndpoint()).toBe('http://localhost:3000/api/v2/llm_request_logs');
-      expect(service.getEnvironment()).toBe('local');
-    });
-
-    it('should configure production environment correctly', () => {
-      const config: LoggingServiceConfig = {
-        apiKey: 'test-api-key',
-        environment: 'production',
         silent: true
       };
 
       const service = new LoggingService(config);
 
       expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_logs');
-      expect(service.getEnvironment()).toBe('production');
     });
   });
 
@@ -89,7 +74,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -105,7 +89,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -126,7 +109,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -141,7 +123,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -166,7 +147,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -203,7 +183,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'secret-api-key-123',
-        environment: 'local',
         silent: true
       };
 
@@ -225,7 +204,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -249,7 +227,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: false
       };
 
@@ -280,7 +257,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -303,7 +279,6 @@ describe('LoggingService', () => {
 
       const config: LoggingServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: false
       };
 

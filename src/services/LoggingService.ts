@@ -4,25 +4,18 @@ import { CallData, LogPayload, MatchedPattern } from '../types';
 
 export interface LoggingServiceConfig {
   apiKey: string;
-  environment: 'local' | 'production';
   silent: boolean;
 }
 
 export class LoggingService {
   private apiKey: string;
-  private environment: 'local' | 'production';
   private silent: boolean;
   private apiEndpoint: string;
 
   constructor(config: LoggingServiceConfig) {
     this.apiKey = config.apiKey;
-    this.environment = config.environment;
     this.silent = config.silent;
-
-    // Set API endpoint based on environment
-    this.apiEndpoint = this.environment === 'production'
-      ? 'https://coolhand.io/api/v2/llm_request_logs'
-      : 'http://localhost:3000/api/v2/llm_request_logs';
+    this.apiEndpoint = 'https://coolhand.io/api/v2/llm_request_logs';
   }
 
   public async logRequestToAPI(callData: CallData, matchedPattern?: MatchedPattern): Promise<void> {
@@ -140,7 +133,4 @@ export class LoggingService {
     return this.apiEndpoint;
   }
 
-  public getEnvironment(): string {
-    return this.environment;
-  }
 }

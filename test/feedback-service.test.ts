@@ -20,30 +20,15 @@ describe('FeedbackService', () => {
   });
 
   describe('Constructor validation and initialization', () => {
-    it('should configure local environment correctly', () => {
+    it('should configure with production endpoint', () => {
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
-        silent: true
-      };
-
-      const service = new FeedbackService(config);
-
-      expect(service.getApiEndpoint()).toBe('http://localhost:3000/api/v2/llm_request_log_feedbacks');
-      expect(service.getEnvironment()).toBe('local');
-    });
-
-    it('should configure production environment correctly', () => {
-      const config: FeedbackServiceConfig = {
-        apiKey: 'test-api-key',
-        environment: 'production',
         silent: true
       };
 
       const service = new FeedbackService(config);
 
       expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_log_feedbacks');
-      expect(service.getEnvironment()).toBe('production');
     });
   });
 
@@ -63,7 +48,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -93,7 +77,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -114,7 +97,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -137,7 +119,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -170,7 +151,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -212,7 +192,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'secret-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -238,7 +217,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: true
       };
 
@@ -266,7 +244,6 @@ describe('FeedbackService', () => {
 
       const config: FeedbackServiceConfig = {
         apiKey: 'test-api-key',
-        environment: 'local',
         silent: false
       };
 
