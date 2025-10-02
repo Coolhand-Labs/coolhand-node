@@ -4,6 +4,8 @@ Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google
 
 **✨ Now with full TypeScript support and multi-provider pattern matching!**
 
+**✨ Now with full TypeScript support!**
+
 ## Installation
 
 Install via npm:
