@@ -135,7 +135,33 @@ OPENAI_API_KEY=your_openai_key_here
 COOLHAND_API_KEY=your_coolhand_key_here
 ```
 
+## Feedback API
 
+Coolhand now supports collecting feedback on LLM responses to improve model performance and quality:
+
+```typescript
+import { Coolhand } from 'coolhand-node';
+
+const monitor = new Coolhand({
+  apiKey: 'your-api-key',
+  environment: 'production'
+});
+
+// Create feedback for an LLM response
+const feedback = await monitor.createFeedback({
+  llm_request_log_id: 123, // ID from a logged LLM request
+  like: true, // true for positive, false for negative
+  explanation: 'Great response! Very helpful and accurate.',
+  revised_output: 'This could be an improved version if needed',
+  llm_provider_unique_id: 'openai-gpt-4',
+  original_output: 'The original AI response',
+  client_unique_id: 'user-session-456'
+});
+
+if (feedback) {
+  console.log('Feedback created:', feedback.id);
+}
+```
 
 ## What Gets Logged
 
@@ -199,10 +225,71 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - `https`/`http` module usage
 - Any other HTTP client
 
+## Advanced Usage
+
+### Modular Architecture
+
+Coolhand uses a modular service-based architecture for easy extensibility:
+
+```typescript
+import {
+  Coolhand,
+  PatternMatchingService,
+  LoggingService,
+  FeedbackService,
+  RequestMonitoringService
+} from 'coolhand-node';
+
+// Main class coordinates all services
+const monitor = new Coolhand({
+  apiKey: 'your-api-key',
+  environment: 'production'
+});
+
+// Services are also available for advanced use cases
+// (though typically you'll just use the main Coolhand class)
+```
+
+### Direct Service Access
+
+For advanced integrations, you can access individual services:
+
+```typescript
+import { PatternMatchingService, LoggingService } from 'coolhand-node';
+
+// Use pattern matching independently
+const patternService = new PatternMatchingService('./custom-patterns.json');
+const match = patternService.matchesAPIPattern(requestOptions);
+
+// Use logging service independently
+const loggingService = new LoggingService({
+  apiKey: 'your-key',
+  environment: 'production',
+  silent: false
+});
+```
+
 ## API Endpoints
 
+### LLM Request Logging
 - **Local**: `http://localhost:3000/api/v2/llm_request_logs`
 - **Production**: `https://coolhand.io/api/v2/llm_request_logs`
+
+### LLM Request Feedback
+- **Local**: `http://localhost:3000/api/v2/llm_request_log_feedbacks`
+- **Production**: `https://coolhand.io/api/v2/llm_request_log_feedbacks`
+
+## Examples
+
+The package includes example files to help you get started:
+
+```bash
+# Basic monitoring example
+node examples/basic.js
+
+# Feedback API example
+node examples/feedback-example.js
+```
 
 ## Getting Your API Key
 
