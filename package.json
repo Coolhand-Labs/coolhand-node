@@ -32,16 +32,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/api-patterns.json dist/",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && node test/test.js",
-    "test:ts": "npm run build && node -r ts-node/register test-ts/test.ts",
+    "test": "npm run build && node -r ts-node/register test/test.ts",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "example": "node examples/basic.js"
   },
   "devDependencies": {
-    "openai": "^4.0.0",
     "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
     "ts-node": "^10.9.0"

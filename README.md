@@ -1,6 +1,8 @@
 # Coolhand Node.js Monitor
 
-Monitor and log LLM API calls (OpenAI, Anthropic, etc.) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, Cohere, Hugging Face, and more) to the Coolhand analytics platform.
+
+**✨ Now with full TypeScript support and multi-provider pattern matching!**
 
 **✨ Now with full TypeScript support!**
 
@@ -28,6 +30,9 @@ const monitor = new Coolhand({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | string | *required* | Your Coolhand API key for authentication |
+| `environment` | `'local'` \| `'production'` | `'production'` | Environment for logging (affects API endpoint) |
+| `silent` | boolean | `true` | Whether to suppress console output |
+| `patternsFile` | string | `undefined` | Path to custom API patterns file |
 
 ## TypeScript Support
 
@@ -143,11 +148,52 @@ The monitor captures:
 
 Headers containing API keys are automatically sanitized for security.
 
+## Supported Providers
+
+The monitor automatically detects and logs API calls from multiple LLM providers:
+
+- **OpenAI** (openai.com, api.openai.com)
+- **Anthropic** (api.anthropic.com)
+- **Google AI** (generativelanguage.googleapis.com, ai.googleapis.com)
+- **Cohere** (api.cohere.ai)
+- **Hugging Face** (api-inference.huggingface.co)
+
+### Custom Providers
+
+You can add support for additional providers by creating a custom patterns file:
+
+```javascript
+const monitor = new Coolhand({
+    apiKey: 'your-api-key',
+    patternsFile: './my-patterns.json'
+});
+```
+
+Example custom patterns file (`my-patterns.json`):
+
+```json
+{
+  "patterns": [
+    {
+      "name": "My Custom AI",
+      "domains": ["api.mycustomai.com"],
+      "paths": ["/v1/generate", "/v1/chat"],
+      "headers": {
+        "authorization": "[REDACTED]",
+        "api-key": "[REDACTED]"
+      }
+    }
+  ]
+}
+```
+
 ## Supported Libraries
 
 The monitor works with any Node.js library that makes HTTP(S) requests to LLM APIs, including:
 
 - OpenAI official SDK
+- Anthropic SDK
+- Google AI SDK
 - LangChain
 - Direct `fetch()` calls
 - `https`/`http` module usage

@@ -22,10 +22,19 @@ const prodMonitor = new Coolhand({
 });
 */
 
-// Example 3: Simulated OpenAI call (for testing without actual API)
-console.log('\n🔬 Example 3: Test completed - monitor is ready to intercept real API calls');
-console.log('💡 To test with actual OpenAI calls, install the OpenAI package and make API requests');
+// Example 3: Pattern-based detection for multiple LLM providers
+console.log('\n🔬 Example 3: Test completed - monitor is ready to intercept API calls from multiple LLM providers');
+console.log('💡 Supports: OpenAI, Anthropic, Google AI, Cohere, Hugging Face, and more');
+console.log('🔧 Use custom patterns file to add support for additional providers');
 console.log('📖 See README.md for complete usage examples');
+
+// Example 4: Custom patterns file
+console.log('\n⚙️  Example 4: Using custom patterns file');
+console.log('To use a custom patterns file:');
+console.log('const monitor = new Coolhand({');
+console.log('  apiKey: "your-api-key",');
+console.log('  patternsFile: "./my-custom-patterns.json"');
+console.log('});');
 
 // Show final stats
 console.log('\n📊 Final Stats:', localMonitor.getStats());

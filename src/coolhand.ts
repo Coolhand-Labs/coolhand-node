@@ -1,6 +1,8 @@
 import * as https from 'https';
 import * as http from 'http';
-import { CoolhandOptions, CallData, Stats, RequestOptions, LogPayload } from './types';
+import * as fs from 'fs';
+import * as path from 'path';
+import { CoolhandOptions, CallData, Stats, RequestOptions, LogPayload, APIPatterns, APIPattern, MatchedPattern } from './types';
 
 export class Coolhand {
   private callCounter: number = 0;
@@ -9,6 +11,8 @@ export class Coolhand {
   private environment: 'local' | 'production';
   private apiKey: string;
   private apiEndpoint: string;
+  private apiPatterns: APIPattern[] = [];
+  private static isPatched: boolean = false;
 
   constructor(options: CoolhandOptions) {
     // Configuration options
@@ -26,10 +30,14 @@ export class Coolhand {
       throw new Error('API key is required');
     }
 
+    // Load API patterns
+    this.loadAPIPatterns(options.patternsFile);
+
     if (!this.silent) {
       console.log('🔍 Setting up Coolhand...');
       console.log(`🌍 Environment: ${this.environment}`);
       console.log(`🎯 API Endpoint: ${this.apiEndpoint}`);
+      console.log(`📋 Loaded ${this.apiPatterns.length} API patterns`);
     }
 
     this.setupMonitoring();
@@ -45,15 +53,45 @@ export class Coolhand {
     }
   }
 
+  private loadAPIPatterns(customPatternsFile?: string): void {
+    try {
+      let patternsFile: string;
+
+      if (customPatternsFile) {
+        // Use custom patterns file if provided
+        patternsFile = path.resolve(customPatternsFile);
+      } else {
+        // Use default patterns file
+        patternsFile = path.join(__dirname, 'api-patterns.json');
+      }
+
+      if (fs.existsSync(patternsFile)) {
+        const fileContent = fs.readFileSync(patternsFile, 'utf-8');
+        const patternsData: APIPatterns = JSON.parse(fileContent);
+        this.apiPatterns = patternsData.patterns;
+      } else {
+        console.warn(`⚠️  API patterns file not found: ${patternsFile}. Using empty patterns list.`);
+        this.apiPatterns = [];
+      }
+    } catch (error) {
+      console.error(`❌ Error loading API patterns:`, (error as Error).message);
+      this.apiPatterns = [];
+    }
+  }
+
   private setupMonitoring(): void {
-    // Patch HTTPS
-    this.patchHTTPS();
+    if (!Coolhand.isPatched) {
+      // Patch HTTPS
+      this.patchHTTPS();
 
-    // Patch HTTP (some libraries might use HTTP with upgrade)
-    this.patchHTTP();
+      // Patch HTTP (some libraries might use HTTP with upgrade)
+      this.patchHTTP();
 
-    // Patch fetch if available (Node 18+)
-    this.patchFetch();
+      // Patch fetch if available (Node 18+)
+      this.patchFetch();
+
+      Coolhand.isPatched = true;
+    }
 
     // Debug: Log when any request happens
     this.log('📡 Monitoring all outbound requests...');
@@ -64,31 +102,55 @@ export class Coolhand {
     const originalGet = https.get;
     const monitor = this;
 
-    (https as any).request = function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
-      monitor.debugRequest('HTTPS REQUEST', options);
+    try {
+      const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
+      if (!requestDescriptor || requestDescriptor.configurable !== false) {
+        Object.defineProperty(https, 'request', {
+          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+            monitor.debugRequest('HTTPS REQUEST', options);
 
-      // Check if this is an OpenAI call
-      const isOpenAI = monitor.isOpenAICall(options);
+            // Check if this matches any API pattern
+            const matchedPattern = monitor.matchesAPIPattern(options);
 
-      if (isOpenAI) {
-        monitor.log('🎯 INTERCEPTING OpenAI HTTPS call');
-        return monitor.interceptRequest(originalRequest, options, callback, 'https');
+            if (matchedPattern) {
+              monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
+              return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
+            }
+
+            return originalRequest.call(this, options as any, callback as any);
+          },
+          writable: true,
+          configurable: true
+        });
       }
+    } catch (error) {
+      // Silently ignore if we can't patch
+      monitor.log('Warning: Could not patch https.request');
+    }
 
-      return originalRequest.call(this, options as any, callback as any);
-    };
+    try {
+      const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
+      if (!getDescriptor || getDescriptor.configurable !== false) {
+        Object.defineProperty(https, 'get', {
+          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+            monitor.debugRequest('HTTPS GET', options);
+            const matchedPattern = monitor.matchesAPIPattern(options);
 
-    (https as any).get = function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
-      monitor.debugRequest('HTTPS GET', options);
-      const isOpenAI = monitor.isOpenAICall(options);
+            if (matchedPattern) {
+              monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
+              return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
+            }
 
-      if (isOpenAI) {
-        monitor.log('🎯 INTERCEPTING OpenAI HTTPS GET');
-        return monitor.interceptRequest(originalRequest, options, callback, 'https');
+            return originalGet.call(this, options as any, callback as any);
+          },
+          writable: true,
+          configurable: true
+        });
       }
-
-      return originalGet.call(this, options as any, callback as any);
-    };
+    } catch (error) {
+      // Silently ignore if we can't patch
+      monitor.log('Warning: Could not patch https.get');
+    }
   }
 
   private patchHTTP(): void {
@@ -96,29 +158,53 @@ export class Coolhand {
     const originalGet = http.get;
     const monitor = this;
 
-    (http as any).request = function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
-      monitor.debugRequest('HTTP REQUEST', options);
-      const isOpenAI = monitor.isOpenAICall(options);
+    try {
+      const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
+      if (!requestDescriptor || requestDescriptor.configurable !== false) {
+        Object.defineProperty(http, 'request', {
+          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+            monitor.debugRequest('HTTP REQUEST', options);
+            const matchedPattern = monitor.matchesAPIPattern(options);
 
-      if (isOpenAI) {
-        monitor.log('🎯 INTERCEPTING OpenAI HTTP call');
-        return monitor.interceptRequest(originalRequest, options, callback, 'http');
+            if (matchedPattern) {
+              monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
+              return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
+            }
+
+            return originalRequest.call(this, options as any, callback as any);
+          },
+          writable: true,
+          configurable: true
+        });
       }
+    } catch (error) {
+      // Silently ignore if we can't patch
+      monitor.log('Warning: Could not patch http.request');
+    }
 
-      return originalRequest.call(this, options as any, callback as any);
-    };
+    try {
+      const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
+      if (!getDescriptor || getDescriptor.configurable !== false) {
+        Object.defineProperty(http, 'get', {
+          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+            monitor.debugRequest('HTTP GET', options);
+            const matchedPattern = monitor.matchesAPIPattern(options);
 
-    (http as any).get = function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
-      monitor.debugRequest('HTTP GET', options);
-      const isOpenAI = monitor.isOpenAICall(options);
+            if (matchedPattern) {
+              monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
+              return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
+            }
 
-      if (isOpenAI) {
-        monitor.log('🎯 INTERCEPTING OpenAI HTTP GET');
-        return monitor.interceptRequest(originalRequest, options, callback, 'http');
+            return originalGet.call(this, options as any, callback as any);
+          },
+          writable: true,
+          configurable: true
+        });
       }
-
-      return originalGet.call(this, options as any, callback as any);
-    };
+    } catch (error) {
+      // Silently ignore if we can't patch
+      monitor.log('Warning: Could not patch http.get');
+    }
   }
 
   private patchFetch(): void {
@@ -131,9 +217,11 @@ export class Coolhand {
 
         monitor.debugRequest('FETCH', { url: urlStr, ...options });
 
-        if (urlStr.includes('openai.com')) {
-          monitor.log('🎯 INTERCEPTING OpenAI FETCH call');
-          return monitor.interceptFetch(originalFetch, url, options);
+        const matchedPattern = monitor.matchesAPIPatternFromURL(urlStr);
+
+        if (matchedPattern) {
+          monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} FETCH call`);
+          return monitor.interceptFetch(originalFetch, url, options, matchedPattern);
         }
 
         return originalFetch.call(this, url, options);
@@ -141,22 +229,82 @@ export class Coolhand {
     }
   }
 
-  private isOpenAICall(options: RequestOptions | string | URL): boolean {
+  private matchesAPIPattern(options: RequestOptions | string | URL): MatchedPattern | null {
     if (typeof options === 'string') {
-      return options.includes('openai.com');
+      return this.matchesAPIPatternFromURL(options);
     }
 
     if (options instanceof URL) {
-      return options.hostname.includes('openai.com');
+      return this.matchesAPIPatternFromURL(options.toString());
     }
 
+    // Construct URL from options
     const hostname = options.hostname || options.host || '';
-    const href = options.href || '';
     const path = options.path || '';
 
-    return hostname.includes('openai.com') ||
-           href.includes('openai.com') ||
-           path.includes('openai.com');
+    // Check domain matches
+    for (const pattern of this.apiPatterns) {
+      for (const domain of pattern.domains) {
+        if (hostname.includes(domain)) {
+          return {
+            pattern,
+            matchType: 'domain',
+            matchValue: domain
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private matchesAPIPatternFromURL(url: string): MatchedPattern | null {
+    try {
+      const urlObj = new URL(url);
+
+      // Check domain matches
+      for (const pattern of this.apiPatterns) {
+        for (const domain of pattern.domains) {
+          if (urlObj.hostname.includes(domain)) {
+            return {
+              pattern,
+              matchType: 'domain',
+              matchValue: domain
+            };
+          }
+        }
+      }
+
+      // Check path matches
+      for (const pattern of this.apiPatterns) {
+        if (pattern.paths) {
+          for (const pathPattern of pattern.paths) {
+            if (urlObj.pathname.includes(pathPattern)) {
+              return {
+                pattern,
+                matchType: 'path',
+                matchValue: pathPattern
+              };
+            }
+          }
+        }
+      }
+    } catch (error) {
+      // If URL parsing fails, fall back to simple string matching
+      for (const pattern of this.apiPatterns) {
+        for (const domain of pattern.domains) {
+          if (url.includes(domain)) {
+            return {
+              pattern,
+              matchType: 'domain',
+              matchValue: domain
+            };
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   private debugRequest(type: string, options: RequestOptions | string | URL | any): void {
@@ -173,7 +321,8 @@ export class Coolhand {
     originalRequest: typeof https.request | typeof http.request,
     options: RequestOptions | string | URL,
     callback?: (res: http.IncomingMessage) => void,
-    protocol: 'https' | 'http' = 'https'
+    protocol: 'https' | 'http' = 'https',
+    matchedPattern?: MatchedPattern
   ): http.ClientRequest {
     this.interceptedCalls++;
 
@@ -184,7 +333,7 @@ export class Coolhand {
       timestamp: new Date().toISOString(),
       method: typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET',
       url: url,
-      headers: this.sanitizeHeaders(typeof options === 'object' && 'headers' in options ? options.headers || {} : {}),
+      headers: this.sanitizeHeaders(typeof options === 'object' && 'headers' in options ? options.headers || {} : {}, matchedPattern?.pattern),
       request_body: null,
       response_body: null,
       response_headers: null,
@@ -207,10 +356,10 @@ export class Coolhand {
 
       res.on('end', () => {
         callData.response_body = this.parseJSON(responseBody);
-        callData.response_headers = this.sanitizeHeaders(res.headers);
+        callData.response_headers = this.sanitizeHeaders(res.headers, matchedPattern?.pattern);
         callData.status_code = res.statusCode || null;
 
-        this.logCallToAPI(callData);
+        this.logCallToAPI(callData, matchedPattern);
       });
 
       if (callback) callback(res);
@@ -243,7 +392,7 @@ export class Coolhand {
     return req;
   }
 
-  private async interceptFetch(originalFetch: typeof fetch, url: string | URL | Request, options: RequestInit): Promise<Response> {
+  private async interceptFetch(originalFetch: typeof fetch, url: string | URL | Request, options: RequestInit, matchedPattern?: MatchedPattern): Promise<Response> {
     this.interceptedCalls++;
 
     const callData: CallData = {
@@ -251,7 +400,7 @@ export class Coolhand {
       timestamp: new Date().toISOString(),
       method: options.method || 'GET',
       url: url.toString(),
-      headers: this.sanitizeHeaders(options.headers || {}),
+      headers: this.sanitizeHeaders(options.headers || {}, matchedPattern?.pattern),
       request_body: options.body ? this.parseJSON(options.body as string) : null,
       response_body: null,
       response_headers: null,
@@ -272,7 +421,7 @@ export class Coolhand {
       const responseText = await responseClone.text();
       callData.response_body = this.parseJSON(responseText);
 
-      this.logCallToAPI(callData);
+      this.logCallToAPI(callData, matchedPattern);
 
       return response;
     } catch (error) {
@@ -299,17 +448,29 @@ export class Coolhand {
     return `${protocol}://${hostname}${port}${path}`;
   }
 
-  public sanitizeHeaders(headers: any): Record<string, any> {
+  public sanitizeHeaders(headers: any, pattern?: APIPattern): Record<string, any> {
     const sanitized = { ...headers };
 
+    // Default sanitization rules
     if (sanitized.authorization) {
       sanitized.authorization = sanitized.authorization.replace(/Bearer .+/, 'Bearer [REDACTED]');
     }
-    if (sanitized['openai-api-key']) {
-      sanitized['openai-api-key'] = '[REDACTED]';
-    }
     if (sanitized['api-key']) {
       sanitized['api-key'] = '[REDACTED]';
+    }
+
+    // Pattern-specific sanitization
+    if (pattern?.headers) {
+      for (const [headerKey, redactionValue] of Object.entries(pattern.headers)) {
+        if (sanitized[headerKey]) {
+          sanitized[headerKey] = redactionValue;
+        }
+        // Also check lowercase version
+        const lowerKey = headerKey.toLowerCase();
+        if (sanitized[lowerKey]) {
+          sanitized[lowerKey] = redactionValue;
+        }
+      }
     }
 
     return sanitized;
@@ -324,7 +485,7 @@ export class Coolhand {
     }
   }
 
-  private async logCallToAPI(callData: CallData): Promise<void> {
+  private async logCallToAPI(callData: CallData, matchedPattern?: MatchedPattern): Promise<void> {
     const payload: LogPayload = {
       llm_request_log: {
         raw_request: callData
@@ -342,11 +503,15 @@ export class Coolhand {
 
     try {
       if (!this.silent) {
-        console.log(`\n🎉 LOGGING OpenAI API Call #${callData.id}`);
+        const apiName = matchedPattern?.pattern.name || 'API';
+        console.log(`\n🎉 LOGGING ${apiName} API Call #${callData.id}`);
         console.log(`🕐 Time: ${callData.timestamp}`);
         console.log(`🎯 ${callData.method} ${callData.url}`);
         console.log(`📊 Status: ${callData.status_code}`);
         console.log(`🔧 Protocol: ${callData.protocol}`);
+        if (matchedPattern) {
+          console.log(`🔍 Matched by: ${matchedPattern.matchType} (${matchedPattern.matchValue})`);
+        }
 
         if (callData.request_body?.model) {
           console.log(`🤖 Model: ${callData.request_body.model}`);
