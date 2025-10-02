@@ -62,7 +62,7 @@ export class RequestMonitoringService {
           configurable: true
         });
       }
-    } catch (error) {
+    } catch {
       // Silently ignore if we can't patch
       monitor.log('Warning: Could not patch https.request');
     }
@@ -86,7 +86,7 @@ export class RequestMonitoringService {
           configurable: true
         });
       }
-    } catch (error) {
+    } catch {
       // Silently ignore if we can't patch
       monitor.log('Warning: Could not patch https.get');
     }
@@ -116,7 +116,7 @@ export class RequestMonitoringService {
           configurable: true
         });
       }
-    } catch (error) {
+    } catch {
       // Silently ignore if we can't patch
       monitor.log('Warning: Could not patch http.request');
     }
@@ -140,7 +140,7 @@ export class RequestMonitoringService {
           configurable: true
         });
       }
-    } catch (error) {
+    } catch {
       // Silently ignore if we can't patch
       monitor.log('Warning: Could not patch http.get');
     }
@@ -217,7 +217,7 @@ export class RequestMonitoringService {
         this.onRequestComplete(callData, matchedPattern);
       });
 
-      if (callback) callback(res);
+      if (callback) {callback(res);}
     });
 
     // Intercept request body
@@ -260,7 +260,12 @@ export class RequestMonitoringService {
       timestamp: new Date().toISOString(),
       method: options.method || 'GET',
       url: url.toString(),
-      headers: this.patternMatchingService.sanitizeHeaders(options.headers || {}, matchedPattern?.pattern),
+      headers: this.patternMatchingService.sanitizeHeaders(
+        options.headers instanceof Headers
+          ? Object.fromEntries(options.headers.entries())
+          : (options.headers || {}),
+        matchedPattern?.pattern
+      ),
       request_body: options.body ? this.parseJSON(options.body as string) : null,
       response_body: null,
       response_headers: null,
@@ -299,7 +304,7 @@ export class RequestMonitoringService {
       return options.toString();
     }
 
-    if (options.href) return options.href;
+    if (options.href) {return options.href;}
 
     const hostname = options.hostname || options.host || 'unknown';
     const path = options.path || '/';
@@ -309,7 +314,7 @@ export class RequestMonitoringService {
   }
 
   private parseJSON(str: string | null): any {
-    if (!str) return null;
+    if (!str) {return null;}
     try {
       return JSON.parse(str);
     } catch {

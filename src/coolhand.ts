@@ -78,7 +78,7 @@ export class Coolhand {
    * @returns Parsed object or the original string if parsing fails
    */
   public parseJSON(str: string | null): any {
-    if (!str) return null;
+    if (!str) {return null;}
     try {
       return JSON.parse(str);
     } catch {

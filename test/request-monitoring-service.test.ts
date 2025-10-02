@@ -1,8 +1,7 @@
 import * as https from 'https';
-import * as http from 'http';
 import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
-import { CallData, MatchedPattern, APIPattern } from '../src/types';
+import { MatchedPattern, APIPattern } from '../src/types';
 import { EventEmitter } from 'events';
 
 // Mock the modules
@@ -95,17 +94,7 @@ describe('RequestMonitoringService', () => {
   });
 
   describe('HTTPS Patching', () => {
-    let originalHttpsRequest: typeof https.request;
-    let originalHttpsGet: typeof https.get;
-    let mockRequest: jest.Mock;
-    let mockGet: jest.Mock;
-
     beforeEach(() => {
-      originalHttpsRequest = https.request;
-      originalHttpsGet = https.get;
-
-      mockRequest = jest.fn();
-      mockGet = jest.fn();
 
       // Mock Object.getOwnPropertyDescriptor to return configurable properties
       jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({

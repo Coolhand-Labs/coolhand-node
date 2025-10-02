@@ -46,7 +46,6 @@ export class PatternMatchingService {
 
     // Construct URL from options
     const hostname = options.hostname || options.host || '';
-    const path = options.path || '';
 
     // Check domain matches
     for (const pattern of this.apiPatterns) {
@@ -95,7 +94,7 @@ export class PatternMatchingService {
           }
         }
       }
-    } catch (error) {
+    } catch {
       // If URL parsing fails, fall back to simple string matching
       for (const pattern of this.apiPatterns) {
         for (const domain of pattern.domains) {
@@ -118,7 +117,7 @@ export class PatternMatchingService {
 
     // Default sanitization rules
     if (sanitized.authorization) {
-      sanitized.authorization = sanitized.authorization.replace(/Bearer .+/, 'Bearer [REDACTED]');
+      sanitized.authorization = (sanitized.authorization as string).replace(/Bearer .+/, 'Bearer [REDACTED]');
     }
     if (sanitized['api-key']) {
       sanitized['api-key'] = '[REDACTED]';

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
-import { APIPattern, MatchedPattern } from '../src/types';
+import { APIPattern } from '../src/types';
 
 // Mock fs module
 jest.mock('fs');

@@ -25,7 +25,7 @@ export default [
     rules: {
       // TypeScript-specific rules
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-non-null-assertion': 'warn',
@@ -39,6 +39,7 @@ export default [
 
       // Import/module rules
       'no-duplicate-imports': 'error',
+      'no-import-assign': 'off', // Allow monkey patching for request interception
 
       // Disable conflicting rules
       'no-unused-vars': 'off', // Use @typescript-eslint version instead
