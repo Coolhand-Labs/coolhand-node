@@ -146,9 +146,33 @@ try {
     console.log('❌ FAIL: Should not throw error for missing patterns file:', (error as Error).message);
 }
 
-console.log('\n🎉 All tests completed!');
-console.log('\n📖 To test with real API calls:');
-console.log('1. Set up a real API key');
-console.log('2. Install any LLM SDK package (OpenAI, Anthropic, etc.)');
-console.log('3. Run the example: npm run example');
-console.log('4. The monitor will now detect calls to multiple LLM providers automatically!');
+// Test 8: FeedbackService integration
+console.log('\nTest 8: FeedbackService integration');
+try {
+    const monitor = new Coolhand({
+        apiKey: 'test-key',
+        environment: 'local',
+        silent: true
+    });
+
+    // Check if the monitor has access to feedback service functionality
+    if (typeof monitor.createFeedback === 'function') {
+        console.log('✅ PASS: FeedbackService is integrated with Coolhand');
+    } else {
+        console.log('❌ FAIL: FeedbackService not properly integrated');
+    }
+} catch (error) {
+    console.log('❌ FAIL: FeedbackService integration failed:', (error as Error).message);
+}
+
+console.log('\n🎉 All basic tests completed!');
+console.log('\n📖 To run comprehensive tests:');
+console.log('1. Run feedback service tests: npm run test:feedback');
+console.log('2. Run logging service tests: npm run test:logging');
+console.log('3. Run all service tests: npm run test:services');
+console.log('4. Run all tests: npm run test:all');
+console.log('5. To test with real API calls:');
+console.log('   - Set up a real API key');
+console.log('   - Install any LLM SDK package (OpenAI, Anthropic, etc.)');
+console.log('   - Run the example: npm run example');
+console.log('6. The monitor will now detect calls to multiple LLM providers automatically!');
