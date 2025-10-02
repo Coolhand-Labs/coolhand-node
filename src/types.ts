@@ -2,6 +2,7 @@ export interface CoolhandOptions {
   apiKey: string;
   environment?: 'local' | 'production';
   silent?: boolean;
+  patternsFile?: string;
 }
 
 export interface CallData {
@@ -39,4 +40,21 @@ export interface LogPayload {
   llm_request_log: {
     raw_request: CallData;
   };
+}
+
+export interface APIPattern {
+  name: string;
+  domains: string[];
+  paths?: string[];
+  headers?: Record<string, string>;
+}
+
+export interface APIPatterns {
+  patterns: APIPattern[];
+}
+
+export interface MatchedPattern {
+  pattern: APIPattern;
+  matchType: 'domain' | 'path';
+  matchValue: string;
 }

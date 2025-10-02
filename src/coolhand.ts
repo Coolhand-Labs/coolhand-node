@@ -1,6 +1,8 @@
 import * as https from 'https';
 import * as http from 'http';
-import { CoolhandOptions, CallData, Stats, RequestOptions, LogPayload } from './types';
+import * as fs from 'fs';
+import * as path from 'path';
+import { CoolhandOptions, CallData, Stats, RequestOptions, LogPayload, APIPatterns, APIPattern, MatchedPattern } from './types';
 
 export class Coolhand {
   private callCounter: number = 0;
