@@ -1,0 +1,271 @@
+import { FeedbackService, FeedbackServiceConfig } from '../src/services/FeedbackService';
+import { LLMRequestLogFeedback, LLMRequestLogFeedbackResponse } from '../src/types';
+
+// Mock fetch for testing
+const originalFetch = (global as any).fetch;
+
+// Helper function to create a mock fetch
+function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = true): any {
+  return jest.fn().mockResolvedValue({
+    ok,
+    status,
+    json: jest.fn().mockResolvedValue(mockResponse),
+    text: jest.fn().mockResolvedValue(JSON.stringify(mockResponse))
+  });
+}
+
+describe('FeedbackService', () => {
+  afterEach(() => {
+    (global as any).fetch = originalFetch;
+  });
+
+  describe('Constructor validation and initialization', () => {
+    it('should configure with production endpoint', () => {
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_log_feedbacks');
+    });
+  });
+
+  describe('Feedback creation', () => {
+    it('should successfully create feedback', async () => {
+      const mockResponse: LLMRequestLogFeedbackResponse = {
+        id: 123,
+        client_id: 1,
+        llm_request_log_id: 456,
+        like: true,
+        explanation: 'Great response!',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      (global as any).fetch = createMockFetch(mockResponse);
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true,
+        explanation: 'Great response!'
+      };
+
+      const result = await service.createFeedback(feedback);
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe(123);
+      expect(result!.like).toBe(true);
+      expect(result!.explanation).toBe('Great response!');
+    });
+
+    it('should handle failed API response gracefully', async () => {
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: jest.fn().mockResolvedValue('Bad Request'),
+        json: jest.fn().mockResolvedValue({ error: 'Bad Request' })
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      const result = await service.createFeedback(feedback);
+
+      expect(result).toBeNull();
+    });
+
+    it('should handle network errors gracefully', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: false,
+        explanation: 'Poor response'
+      };
+
+      const result = await service.createFeedback(feedback);
+
+      expect(result).toBeNull();
+    });
+
+    it('should handle missing fetch gracefully', async () => {
+      const originalFetch = (global as any).fetch;
+      delete (global as any).fetch;
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      const result = await service.createFeedback(feedback);
+
+      expect(result).toBeNull();
+
+      (global as any).fetch = originalFetch;
+    });
+
+    it('should structure payload correctly', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true,
+        explanation: 'Test explanation',
+        revised_output: 'Revised output',
+        llm_provider_unique_id: 'provider-123',
+        original_output: 'Original output',
+        client_unique_id: 'client-456'
+      };
+
+      await service.createFeedback(feedback);
+
+      expect(capturedRequestBody.llm_request_log_feedback).toBeDefined();
+
+      const capturedFeedback = capturedRequestBody.llm_request_log_feedback;
+      expect(capturedFeedback.llm_request_log_id).toBe(456);
+      expect(capturedFeedback.like).toBe(true);
+      expect(capturedFeedback.explanation).toBe('Test explanation');
+      expect(capturedFeedback.revised_output).toBe('Revised output');
+    });
+
+    it('should set correct headers', async () => {
+      let capturedHeaders: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedHeaders = options.headers;
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'secret-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback);
+
+      expect(capturedHeaders['Content-Type']).toBe('application/json');
+      expect(capturedHeaders['X-API-Key']).toBe('secret-api-key');
+    });
+  });
+
+  describe('Logging behavior', () => {
+    it('should not output logs in silent mode', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      (global as any).fetch = createMockFetch({ id: 123, like: true });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true,
+        explanation: 'Test explanation'
+      };
+
+      await service.createFeedback(feedback);
+
+      const logCalls = consoleSpy.mock.calls.flat().join(' ');
+      expect(logCalls).not.toContain('📝 CREATING FEEDBACK');
+      expect(logCalls).not.toContain('✅ Successfully created feedback');
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should output verbose logs in non-silent mode', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      (global as any).fetch = createMockFetch({ id: 123, like: true });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: false
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true,
+        explanation: 'Test explanation'
+      };
+
+      await service.createFeedback(feedback);
+
+      const logCalls = consoleSpy.mock.calls.flat().join(' ');
+      expect(logCalls).toContain('📝 CREATING FEEDBACK');
+      expect(logCalls).toContain('👍/👎 Like: true');
+      expect(logCalls).toContain('💭 Explanation:');
+      expect(logCalls).toContain('📤 Sending to:');
+      expect(logCalls).toContain('✅ Successfully created feedback');
+
+      consoleSpy.mockRestore();
+    });
+  });
+});
+

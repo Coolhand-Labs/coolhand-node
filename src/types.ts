@@ -1,6 +1,5 @@
 export interface CoolhandOptions {
   apiKey: string;
-  environment?: 'local' | 'production';
   silent?: boolean;
   patternsFile?: string;
 }
@@ -21,7 +20,6 @@ export interface CallData {
 export interface Stats {
   totalRequests: number;
   interceptedCalls: number;
-  environment: string;
   apiEndpoint: string;
 }
 
@@ -57,4 +55,33 @@ export interface MatchedPattern {
   pattern: APIPattern;
   matchType: 'domain' | 'path';
   matchValue: string;
+}
+
+// Types for LLM Request Log Feedback endpoint
+export interface LLMRequestLogFeedback {
+  llm_request_log_id: number;
+  like: boolean;
+  explanation?: string;
+  revised_output?: string;
+  llm_provider_unique_id?: string;
+  original_output?: string;
+  client_unique_id?: string;
+}
+
+export interface LLMRequestLogFeedbackPayload {
+  llm_request_log_feedback: LLMRequestLogFeedback;
+}
+
+export interface LLMRequestLogFeedbackResponse {
+  id: number;
+  client_id: number;
+  llm_request_log_id: number;
+  like: boolean;
+  explanation?: string;
+  revised_output?: string;
+  llm_provider_unique_id?: string;
+  original_output?: string;
+  client_unique_id?: string;
+  created_at: string;
+  updated_at: string;
 }
