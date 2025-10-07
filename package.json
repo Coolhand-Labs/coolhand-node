@@ -2,7 +2,6 @@
   "name": "coolhand-node",
   "version": "0.1.0",
   "description": "Monitor and LLM API calls for analysis",
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -15,7 +14,8 @@
       "types": "./dist/auto-monitor.d.ts",
       "import": "./dist/auto-monitor.js",
       "require": "./dist/auto-monitor.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "keywords": [
     "llm",
