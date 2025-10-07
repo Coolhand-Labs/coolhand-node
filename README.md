@@ -78,11 +78,23 @@ initializeGlobalMonitoring({
 
 **Supported Frameworks:** Designed for all Node.js frameworks (Express.js, NestJS, Fastify, Koa, Hapi, AWS Lambda, Vercel Functions), extensively tested with Next.js/T3 Stack
 
+📚 **[Complete Framework Integration Guide](./docs/framework-integration.md)** - Detailed setup instructions for all frameworks
+
 ## Framework Compatibility
+
+📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
 
 🎯 **Primary Testing**: This library has been extensively tested and validated with **Next.js/T3 Stack** applications.
 
 🌐 **Universal Design**: Built using Node.js HTTP module patching, this library is designed to work with **any Node.js framework** that makes HTTP requests.
+
+### Quick Links by Framework:
+- **[Next.js / T3 Stack](./docs/frameworks/nextjs.md)** - ✅ Production-ready
+- **[Express.js](./docs/frameworks/express.md)** - 🧪 Needs testing
+- **[NestJS](./docs/frameworks/nestjs.md)** - 🧪 Needs testing
+- **[Fastify](./docs/frameworks/fastify.md)** - 🧪 Needs testing
+- **[Koa.js](./docs/frameworks/koa.md)** - 🧪 Needs testing
+- **[Serverless (AWS Lambda, Vercel, Netlify)](./docs/frameworks/serverless.md)** - 🧪 Needs testing
 
 🤝 **Community Validation**: We're actively seeking feedback from users of other frameworks:
 
@@ -360,61 +372,20 @@ const anthropic = require('@anthropic-ai/sdk');
 
 ### Framework Integration Examples
 
-#### Express.js
-```javascript
-// app.js
-require('coolhand-node/auto-monitor');
+See our comprehensive framework guides for detailed setup instructions:
 
-const express = require('express');
-const { ChatOpenAI } = require('@langchain/openai');
+- **[Next.js / T3 Stack Guide](./docs/frameworks/nextjs.md)** - Production-ready patterns
+- **[Express.js Guide](./docs/frameworks/express.md)** - Startup initialization
+- **[NestJS Guide](./docs/frameworks/nestjs.md)** - Bootstrap integration
+- **[Fastify Guide](./docs/frameworks/fastify.md)** - Plugin patterns
+- **[Koa.js Guide](./docs/frameworks/koa.md)** - Middleware setup
+- **[Serverless Guide](./docs/frameworks/serverless.md)** - AWS Lambda, Vercel, Netlify
 
-const app = express();
-const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-app.post('/chat', async (req, res) => {
-  // Automatically monitored!
-  const response = await model.invoke(req.body.message);
-  res.json({ response: response.content });
-});
-```
-
-#### Next.js/T3 Stack
-```javascript
-// middleware.ts
-import { initializeGlobalMonitoring } from 'coolhand-node';
-
-export function middleware() {
-  initializeGlobalMonitoring({
-    apiKey: process.env.COOLHAND_API_KEY!
-  });
-}
-
-// Any API route - automatically monitored
-export async function POST(request: Request) {
-  const model = new ChatOpenAI({...});
-  const result = await model.invoke(prompt); // Logged automatically!
-  return Response.json({ result });
-}
-```
-
-#### AWS Lambda
-```javascript
-// handler.js
-const { initializeGlobalMonitoring } = require('coolhand-node');
-
-// Initialize once per container
-initializeGlobalMonitoring({
-  apiKey: process.env.COOLHAND_API_KEY
-});
-
-const { ChatOpenAI } = require('@langchain/openai');
-
-exports.handler = async (event) => {
-  const model = new ChatOpenAI({...});
-  const response = await model.invoke(event.prompt); // Automatically logged!
-  return { statusCode: 200, body: JSON.stringify({ response }) };
-};
-```
+Each guide includes:
+- Complete working examples
+- Environment setup instructions
+- Best practices and gotchas
+- Community testing status
 
 ### Advanced Features
 

@@ -33,16 +33,18 @@ Global monitoring operates at the **Node.js runtime level** by intercepting HTTP
 - `fetch()` (Node.js 18+)
 - Any library using these methods (LangChain, OpenAI SDK, Axios, etc.)
 
-✅ **Frameworks Supported:**
-- **Express.js** - ✅ Full compatibility
-- **Next.js/T3** - ✅ Full compatibility
-- **NestJS** - ✅ Full compatibility
-- **Fastify** - ✅ Full compatibility
-- **Koa.js** - ✅ Full compatibility
-- **Hapi.js** - ✅ Full compatibility
-- **AWS Lambda** - ✅ Full compatibility
-- **Vercel Functions** - ✅ Full compatibility
-- **Any Node.js app** - ✅ Universal compatibility
+✅ **Framework Compatibility:**
+- **Next.js/T3** - ✅ **Production Tested** (via next.config.js)
+- **Express.js** - 🧪 Theoretical (startup initialization)
+- **NestJS** - 🧪 Theoretical (bootstrap method)
+- **Fastify** - 🧪 Theoretical (register hook)
+- **Koa.js** - 🧪 Theoretical (startup method)
+- **Hapi.js** - 🧪 Theoretical (plugin system)
+- **AWS Lambda** - 🧪 Theoretical (handler wrapper)
+- **Vercel Functions** - ⚠️ Limited (Edge runtime restrictions)
+- **Any Node.js app** - ✅ Universal (Node.js runtime only)
+
+> **📝 Note**: Only Next.js integration has been thoroughly tested. See [Framework Integration Guide](./framework-integration.md) for detailed examples and testing status.
 
 ## 🚀 Quick Start
 
@@ -63,17 +65,29 @@ COOLHAND_ENVIRONMENT=production  # or 'local'
 COOLHAND_SILENT=true            # or 'false'
 ```
 
-### Option 2: Manual Initialization
+### Option 2: Manual Initialization (Recommended)
 
 ```javascript
-const { initializeGlobalMonitoring } = require('coolhand-node');
+const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
 
-// Initialize once at application startup
-initializeGlobalMonitoring({
-  apiKey: 'your-api-key'
-});
+// Async initialization at application startup
+async function initializeMonitoring() {
+  try {
+    if (process.env.COOLHAND_API_KEY) {
+      console.log('🌐 Initializing Coolhand global monitoring...');
+      await initializeGlobalMonitoring({
+        apiKey: process.env.COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+      console.log('✅ Global monitoring enabled for all AI API calls!');
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize global monitoring:', error);
+  }
+}
 
-// Now all AI API calls are automatically monitored
+// Initialize before starting your application
+initializeMonitoring();
 ```
 
 ## 🔧 Configuration Options
@@ -94,6 +108,47 @@ initializeGlobalMonitoring({
 | `COOLHAND_ENVIRONMENT` | `'local'` \| `'production'` | `'production'` | Target environment |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Suppress console output |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Custom patterns file path |
+
+## 🚨 Runtime Environment Considerations
+
+### Node.js Runtime vs Edge Runtime
+
+Global monitoring has **different capabilities** depending on the runtime environment:
+
+| Runtime | HTTP/HTTPS Patching | Fetch Patching | File System Access | Recommended Use |
+|---------|-------------------|----------------|-------------------|-----------------|
+| **Node.js** | ✅ Full Support | ✅ Full Support | ✅ Available | **Recommended** |
+| **Edge** | ❌ Limited | ✅ Available | ❌ Restricted | Limited monitoring |
+
+### 🎯 Next.js Specific Considerations
+
+- **Next.js middleware** runs in **Edge runtime** (limited HTTP patching)
+- **API routes** run in **Node.js runtime** (full HTTP patching)
+- **Solution**: Initialize in `next.config.js` (Node.js runtime) for full monitoring
+
+```javascript
+// ✅ Recommended: next.config.js (Node.js runtime)
+(async () => {
+  const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
+  await initializeGlobalMonitoring({
+    apiKey: process.env.COOLHAND_API_KEY,
+    silent: process.env.NODE_ENV === 'production'
+  });
+})();
+
+// ❌ Limited: middleware.ts (Edge runtime - fetch only)
+export async function middleware(request) {
+  // Can only monitor fetch() calls, not HTTP/HTTPS modules
+}
+```
+
+### Edge Runtime Fallback
+
+When running in Edge runtime, the package automatically:
+- ✅ **Detects Edge environment**
+- ✅ **Loads fallback patterns** (OpenAI, Anthropic, Google AI)
+- ✅ **Monitors fetch() calls only**
+- ⚠️ **Cannot patch HTTP/HTTPS modules**
 
 ## 🎯 Core Features
 
@@ -480,5 +535,37 @@ initializeGlobalMonitoring({
    ```
 
 5. **That's it!** All your AI API calls are now automatically logged
+
+## 🧪 Testing & Contributing
+
+### Current Testing Status
+
+- ✅ **Next.js/T3**: Thoroughly tested and production-ready
+- 🧪 **Other frameworks**: Theoretical implementations need community validation
+
+### Help Us Improve!
+
+If you're using global monitoring with any framework:
+
+1. **Test the integration** with your framework
+2. **Verify AI API calls are being logged**
+3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results:
+   - ✅ Working: Share your setup for others
+   - ❌ Issues: Help us fix and improve
+   - 💡 Suggestions: Propose better approaches
+
+4. **Contribute examples** to our [Framework Integration Guide](./framework-integration.md)
+
+### What to Test
+
+- [ ] Global monitoring initialization
+- [ ] AI API calls being captured and logged
+- [ ] Error handling and edge cases
+- [ ] Performance impact (should be negligible)
+- [ ] Runtime environment compatibility
+
+Your testing and feedback helps make global monitoring reliable for everyone! 🚀
+
+---
 
 Universal Global Monitoring makes AI observability effortless across any Node.js application! 🎉
