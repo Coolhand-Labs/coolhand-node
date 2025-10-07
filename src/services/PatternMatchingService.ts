@@ -37,10 +37,32 @@ export class PatternMatchingService {
   private isInitialized: boolean = false;
 
   constructor(customPatternsFile?: string) {
-    // Initialize patterns asynchronously to handle Edge runtime
-    this.initializePatterns(customPatternsFile);
+    // Always initialize synchronously in constructor
+    this.initializePatternsSync(customPatternsFile);
   }
 
+  private initializePatternsSync(customPatternsFile?: string): void {
+    if (this.isInitialized) return;
+
+    if (isEdgeRuntime()) {
+      // In Edge runtime, use default patterns or skip loading
+      this.loadDefaultPatternsForEdge();
+    } else {
+      // In Node.js runtime, try to load from filesystem synchronously
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        this.loadAPIPatternsSync(customPatternsFile, fs, path);
+      } catch (error) {
+        console.warn('Could not load fs/path modules, falling back to default patterns');
+        this.loadDefaultPatternsForEdge();
+      }
+    }
+
+    this.isInitialized = true;
+  }
+
+  // Keep async version for explicit async initialization if needed
   private async initializePatterns(customPatternsFile?: string): Promise<void> {
     if (this.isInitialized) return;
 
@@ -183,15 +205,45 @@ export class PatternMatchingService {
     }
   }
 
-  // Ensure patterns are loaded before any operations
-  private async ensureInitialized(): Promise<void> {
+  private loadAPIPatternsSync(customPatternsFile: string | undefined, fs: any, path: any): void {
+    try {
+      let patternsFile: string;
+
+      if (customPatternsFile) {
+        // Use custom patterns file if provided
+        patternsFile = path.resolve(customPatternsFile);
+      } else {
+        // Use default patterns file
+        patternsFile = path.join(__dirname, '..', 'api-patterns.json');
+      }
+
+      if (fs.existsSync(patternsFile)) {
+        const fileContent = fs.readFileSync(patternsFile, 'utf-8');
+        const patternsData: APIPatterns = JSON.parse(fileContent);
+        this.apiPatterns = patternsData.patterns;
+        console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
+      } else {
+        if (customPatternsFile) {
+          console.warn(`⚠️  API patterns file not found: ${patternsFile}`);
+        } else {
+          console.warn(`⚠️  API patterns file not found: ${patternsFile}`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error loading API patterns:`, (error as Error).message);
+      this.loadDefaultPatternsForEdge();
+    }
+  }
+
+  // Ensure patterns are loaded before any operations (now always sync)
+  private ensureInitialized(): void {
     if (!this.isInitialized) {
-      await this.initializePatterns();
+      this.initializePatternsSync();
     }
   }
 
   public async matchesAPIPattern(options: RequestOptions | string | URL): Promise<MatchedPattern | null> {
-    await this.ensureInitialized();
+    this.ensureInitialized();
 
     if (typeof options === 'string') {
       return this.matchesAPIPatternFromURL(options);
@@ -327,12 +379,12 @@ export class PatternMatchingService {
   }
 
   public async getLoadedPatterns(): Promise<APIPattern[]> {
-    await this.ensureInitialized();
+    this.ensureInitialized();
     return [...this.apiPatterns];
   }
 
   public async getPatternsCount(): Promise<number> {
-    await this.ensureInitialized();
+    this.ensureInitialized();
     return this.apiPatterns.length;
   }
 
