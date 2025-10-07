@@ -1,8 +1,40 @@
-import * as https from 'https';
-import * as http from 'http';
 import { CallData, RequestOptions, MatchedPattern } from './types';
 import { PatternMatchingService } from './services/PatternMatchingService';
 import { LoggingService } from './services/LoggingService';
+
+// Type imports for conditional usage
+type HttpModule = typeof import('http');
+type HttpsModule = typeof import('https');
+type HttpClientRequest = any; // Will be properly typed when http is loaded
+type HttpIncomingMessage = any; // Will be properly typed when http is loaded
+
+// Runtime detection utility
+const isEdgeRuntime = () => {
+  return (typeof (globalThis as any).EdgeRuntime !== 'undefined') ||
+         process.env.NEXT_RUNTIME === 'edge' ||
+         (typeof (globalThis as any).window !== 'undefined');
+};
+
+// Node.js modules - conditionally imported
+let https: any = null;
+let http: any = null;
+
+// Lazy load Node.js modules only when not in Edge runtime
+const loadNodeModules = async () => {
+  if (isEdgeRuntime()) {
+    console.warn('⚠️  Edge runtime detected - HTTP/HTTPS patching will be limited to fetch() only');
+    return false;
+  }
+
+  try {
+    https = await import('https');
+    http = await import('http');
+    return true;
+  } catch {
+    console.warn('⚠️  Node.js HTTP modules not available - falling back to fetch() only');
+    return false;
+  }
+};
 
 // Global state for the monitoring system
 let globalPatternService: PatternMatchingService | null = null;
@@ -29,7 +61,7 @@ interface GlobalMonitorConfig {
  * Initialize global monitoring - patches HTTP modules to monitor ALL outbound requests
  * This should be called once at the start of your application
  */
-export function initializeGlobalMonitoring(config: GlobalMonitorConfig): void {
+export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): Promise<void> {
   if (isGloballyPatched) {
     log('🔄 Global monitoring already initialized, skipping...');
     return;
@@ -44,18 +76,23 @@ export function initializeGlobalMonitoring(config: GlobalMonitorConfig): void {
     silent
   });
 
-  // Patch all HTTP modules
-  patchHTTPS();
-  patchHTTP();
-  patchFetch();
+  // Load Node.js modules if available
+  const hasNodeModules = await loadNodeModules();
+
+  // Patch modules based on runtime capabilities
+  if (hasNodeModules) {
+    patchHTTPS();
+    patchHTTP();
+  }
+  patchFetch(); // Always available
 
   isGloballyPatched = true;
 
   if (!silent) {
     console.log('🌐 Global Coolhand monitoring initialized');
     console.log(`🎯 API Endpoint: ${globalLoggingService.getApiEndpoint()}`);
-    console.log(`📋 Loaded ${globalPatternService.getPatternsCount()} AI API patterns`);
-    console.log('🔍 Now monitoring ALL outbound HTTP requests for AI API calls...');
+    console.log(`📋 Loaded ${await globalPatternService.getPatternsCount()} AI API patterns`);
+    console.log(`🔍 Monitoring mode: ${hasNodeModules ? 'Full (HTTP/HTTPS/Fetch)' : 'Fetch only (Edge runtime)'}`);
   }
 }
 
@@ -131,14 +168,14 @@ function patchHTTPS(): void {
     const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(https, 'request', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS REQUEST', options);
 
           if (!globalPatternService) {
             return originalRequest.call(this, options as any, callback as any);
           }
 
-          const matchedPattern = globalPatternService.matchesAPIPattern(options);
+          const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
@@ -167,14 +204,14 @@ function patchHTTPS(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(https, 'get', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS GET', options);
 
           if (!globalPatternService) {
             return originalGet.call(this, options as any, callback as any);
           }
 
-          const matchedPattern = globalPatternService.matchesAPIPattern(options);
+          const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
             const requestId = generateRequestId(options, 'https-GET');
@@ -207,14 +244,14 @@ function patchHTTP(): void {
     const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(http, 'request', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP REQUEST', options);
 
           if (!globalPatternService) {
             return originalRequest.call(this, options as any, callback as any);
           }
 
-          const matchedPattern = globalPatternService.matchesAPIPattern(options);
+          const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
@@ -243,14 +280,14 @@ function patchHTTP(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(http, 'get', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP GET', options);
 
           if (!globalPatternService) {
             return originalGet.call(this, options as any, callback as any);
           }
 
-          const matchedPattern = globalPatternService.matchesAPIPattern(options);
+          const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
             const requestId = generateRequestId(options, 'http-GET');
@@ -308,12 +345,12 @@ function patchFetch(): void {
 }
 
 function interceptRequest(
-  originalRequest: typeof https.request | typeof http.request,
+  originalRequest: any,
   options: RequestOptions | string | URL,
-  callback?: (res: http.IncomingMessage) => void,
+  callback?: (res: HttpIncomingMessage) => void,
   protocol: 'https' | 'http' = 'https',
   matchedPattern?: MatchedPattern
-): http.ClientRequest {
+): HttpClientRequest {
   interceptedCalls++;
 
   const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
@@ -341,7 +378,7 @@ function interceptRequest(
 
   let requestBody = '';
 
-  const req = originalRequest(options as any, (res: http.IncomingMessage) => {
+  const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
     let responseBody = '';
@@ -387,7 +424,7 @@ function interceptRequest(
     return originalEnd(chunk, encoding, callback);
   });
 
-  req.on('error', (err) => {
+  req.on('error', (err: Error) => {
     log(`❌ Request error for call #${callData.id}:`, err.message);
     unregisterActiveRequest(requestId, uniqueId);
   });

@@ -1,15 +1,97 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { APIPatterns, APIPattern, MatchedPattern, RequestOptions } from '../types';
+
+// Runtime detection utility
+const isEdgeRuntime = () => {
+  return (typeof (globalThis as any).EdgeRuntime !== 'undefined') ||
+         process.env.NEXT_RUNTIME === 'edge' ||
+         (typeof (globalThis as any).window !== 'undefined');
+};
+
+// Edge-compatible path utilities
+const pathUtils = {
+  join: (...parts: string[]) => parts.join('/').replace(/\/+/g, '/'),
+  dirname: (path: string) => path.substring(0, path.lastIndexOf('/')),
+  resolve: (path: string) => path.startsWith('/') ? path : `/${path}`,
+  isAbsolute: (path: string) => path.startsWith('/')
+};
+
+// Node.js modules - conditionally imported
+let fs: any = null;
+let path: any = null;
+
+// Lazy load Node.js modules only when not in Edge runtime
+const loadNodeModules = async () => {
+  if (isEdgeRuntime()) return false;
+
+  try {
+    fs = await import('fs');
+    path = await import('path');
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export class PatternMatchingService {
   private apiPatterns: APIPattern[] = [];
+  private isInitialized: boolean = false;
 
   constructor(customPatternsFile?: string) {
-    this.loadAPIPatterns(customPatternsFile);
+    // Initialize patterns asynchronously to handle Edge runtime
+    this.initializePatterns(customPatternsFile);
   }
 
-  private loadAPIPatterns(customPatternsFile?: string): void {
+  private async initializePatterns(customPatternsFile?: string): Promise<void> {
+    if (this.isInitialized) return;
+
+    if (isEdgeRuntime()) {
+      // In Edge runtime, use default patterns or skip loading
+      this.loadDefaultPatternsForEdge();
+    } else {
+      // In Node.js runtime, load from filesystem
+      await this.loadAPIPatterns(customPatternsFile);
+    }
+
+    this.isInitialized = true;
+  }
+
+  private loadDefaultPatternsForEdge(): void {
+    // Default patterns for common AI services that work without filesystem access
+    this.apiPatterns = [
+      {
+        name: 'OpenAI',
+        domains: ['api.openai.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
+        }
+      },
+      {
+        name: 'Anthropic',
+        domains: ['api.anthropic.com'],
+        headers: {
+          'x-api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Google AI',
+        domains: ['generativelanguage.googleapis.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
+        }
+      }
+    ];
+    console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`);
+  }
+
+  private async loadAPIPatterns(customPatternsFile?: string): Promise<void> {
+    // Load Node.js modules first
+    const hasNodeModules = await loadNodeModules();
+    if (!hasNodeModules) {
+      console.warn('⚠️  Node.js modules not available, falling back to default patterns');
+      this.loadDefaultPatternsForEdge();
+      return;
+    }
+
     try {
       let patternsFile: string;
 
@@ -96,12 +178,50 @@ export class PatternMatchingService {
       }
     } catch (error) {
       console.error(`❌ Error loading API patterns:`, (error as Error).message);
-      console.error(`❌ Unable to load patterns file. Please ensure the coolhand-node package is properly installed.`);
-      this.apiPatterns = [];
+      console.warn(`⚠️  Falling back to default patterns for Edge runtime compatibility`);
+      this.loadDefaultPatternsForEdge();
     }
   }
 
-  public matchesAPIPattern(options: RequestOptions | string | URL): MatchedPattern | null {
+  // Ensure patterns are loaded before any operations
+  private async ensureInitialized(): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initializePatterns();
+    }
+  }
+
+  public async matchesAPIPattern(options: RequestOptions | string | URL): Promise<MatchedPattern | null> {
+    await this.ensureInitialized();
+
+    if (typeof options === 'string') {
+      return this.matchesAPIPatternFromURL(options);
+    }
+
+    if (options instanceof URL) {
+      return this.matchesAPIPatternFromURL(options.toString());
+    }
+
+    // Construct URL from options
+    const hostname = options.hostname || options.host || '';
+
+    // Check domain matches
+    for (const pattern of this.apiPatterns) {
+      for (const domain of pattern.domains) {
+        if (hostname.includes(domain)) {
+          return {
+            pattern,
+            matchType: 'domain',
+            matchValue: domain
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Synchronous version for backwards compatibility (uses cached patterns)
+  public matchesAPIPatternSync(options: RequestOptions | string | URL): MatchedPattern | null {
     if (typeof options === 'string') {
       return this.matchesAPIPatternFromURL(options);
     }
@@ -206,11 +326,22 @@ export class PatternMatchingService {
     return sanitized;
   }
 
-  public getLoadedPatterns(): APIPattern[] {
+  public async getLoadedPatterns(): Promise<APIPattern[]> {
+    await this.ensureInitialized();
     return [...this.apiPatterns];
   }
 
-  public getPatternsCount(): number {
+  public async getPatternsCount(): Promise<number> {
+    await this.ensureInitialized();
+    return this.apiPatterns.length;
+  }
+
+  // Synchronous versions for backwards compatibility
+  public getLoadedPatternsSync(): APIPattern[] {
+    return [...this.apiPatterns];
+  }
+
+  public getPatternsCountSync(): number {
     return this.apiPatterns.length;
   }
 }
