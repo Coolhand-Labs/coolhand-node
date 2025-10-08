@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { CallData, LogPayload, MatchedPattern } from '../types';
+import { CoolhandCallData, CoolhandLogPayload, CoolhandMatchedPattern } from '../types';
 
 export interface LoggingServiceConfig {
   apiKey: string;
@@ -18,8 +18,8 @@ export class LoggingService {
     this.apiEndpoint = 'https://coolhand.io/api/v2/llm_request_logs';
   }
 
-  public async logRequestToAPI(callData: CallData, matchedPattern?: MatchedPattern): Promise<void> {
-    const payload: LogPayload = {
+  public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): Promise<void> {
+    const payload: CoolhandLogPayload = {
       llm_request_log: {
         raw_request: callData
       }
@@ -86,7 +86,7 @@ export class LoggingService {
     }
   }
 
-  private async logWithHTTPS(payload: LogPayload): Promise<void> {
+  private async logWithHTTPS(payload: CoolhandLogPayload): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = new URL(this.apiEndpoint);
       const postData = JSON.stringify(payload);

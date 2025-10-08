@@ -1,5 +1,5 @@
 import { LoggingService, LoggingServiceConfig } from '../src/services/LoggingService';
-import { CallData, MatchedPattern } from '../src/types';
+import { CoolhandCallData, CoolhandMatchedPattern } from '../src/types';
 
 // Mock fetch for testing
 const originalFetch = (global as any).fetch;
@@ -15,7 +15,7 @@ function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = 
 }
 
 // Helper function to create mock call data
-function createMockCallData(overrides: Partial<CallData> = {}): CallData {
+function createMockCallData(overrides: Partial<CoolhandCallData> = {}): CoolhandCallData {
   return {
     id: 1,
     timestamp: '2023-01-01T00:00:00Z',
@@ -36,7 +36,7 @@ function createMockCallData(overrides: Partial<CallData> = {}): CallData {
 }
 
 // Helper function to create mock matched pattern
-function createMockMatchedPattern(): MatchedPattern {
+function createMockMatchedPattern(): CoolhandMatchedPattern {
   return {
     pattern: {
       name: 'OpenAI',

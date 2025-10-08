@@ -1,8 +1,8 @@
-import { CoolhandOptions, CallData, Stats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, MatchedPattern } from './types';
-import { PatternMatchingService } from './services/PatternMatchingService';
-import { RequestMonitoringService } from './services/RequestMonitoringService';
-import { LoggingService } from './services/LoggingService';
-import { FeedbackService } from './services/FeedbackService';
+import { CoolhandOptions, CoolhandCallData, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types.js';
+import { PatternMatchingService } from './services/PatternMatchingService.js';
+import { RequestMonitoringService } from './services/RequestMonitoringService.js';
+import { LoggingService } from './services/LoggingService.js';
+import { FeedbackService } from './services/FeedbackService.js';
 
 export class Coolhand {
   private patternMatchingService: PatternMatchingService;
@@ -34,7 +34,7 @@ export class Coolhand {
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
 
     // Set up the callback for when requests are completed
-    this.requestMonitoringService.onRequestComplete = (callData: CallData, matchedPattern?: MatchedPattern) => {
+    this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {
       this.loggingService.logRequestToAPI(callData, matchedPattern);
     };
 
@@ -90,7 +90,7 @@ export class Coolhand {
    * Get monitoring statistics
    * @returns Statistics about requests and interceptions
    */
-  public getStats(): Stats {
+  public getStats(): CoolhandStats {
     const monitoringStats = this.requestMonitoringService.getStats();
     return {
       totalRequests: monitoringStats.totalRequests,

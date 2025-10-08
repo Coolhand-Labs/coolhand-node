@@ -139,7 +139,7 @@ Your feedback helps us ensure reliable compatibility across the entire Node.js e
 Full TypeScript support with exported types:
 
 ```typescript
-import { Coolhand, CoolhandOptions, CallData, Stats } from 'coolhand-node';
+import { Coolhand, CoolhandOptions, CoolhandCallData, CoolhandStats } from 'coolhand-node';
 
 const monitor = new Coolhand({
   apiKey: 'your-api-key',

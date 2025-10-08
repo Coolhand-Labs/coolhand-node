@@ -1,7 +1,7 @@
 import * as https from 'https';
 import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
-import { MatchedPattern, APIPattern } from '../src/types';
+import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { EventEmitter } from 'events';
 
 // Mock the modules
@@ -15,7 +15,7 @@ describe('RequestMonitoringService', () => {
   let onRequestCompleteMock: jest.Mock;
 
   // Mock pattern for testing
-  const mockPattern: APIPattern = {
+  const mockPattern: CoolhandAPIPattern = {
     name: 'TestAPI',
     domains: ['api.test.com'],
     paths: ['/v1/test'],
@@ -24,7 +24,7 @@ describe('RequestMonitoringService', () => {
     }
   };
 
-  const mockMatchedPattern: MatchedPattern = {
+  const mockMatchedPattern: CoolhandMatchedPattern = {
     pattern: mockPattern,
     matchType: 'domain',
     matchValue: 'api.test.com'
