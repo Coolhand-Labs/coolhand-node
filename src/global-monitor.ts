@@ -5,9 +5,9 @@
  * and logs AI API calls across any Node.js application.
  */
 
-import { CallData, RequestOptions, MatchedPattern } from './types';
-import { PatternMatchingService } from './services/PatternMatchingService';
-import { LoggingService } from './services/LoggingService';
+import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from './types.js';
+import { PatternMatchingService } from './services/PatternMatchingService.js';
+import { LoggingService } from './services/LoggingService.js';
 
 // Type imports for conditional usage
 type HttpModule = typeof import('http');
@@ -29,11 +29,7 @@ let http: any = null;
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
   if (isEdgeRuntime()) {
-<<<<<<< HEAD
-    console.warn('⚠️ Edge runtime detected - HTTP/HTTPS patching will be limited to fetch() only');
-=======
     console.warn('⚠️  Edge runtime detected - HTTP/HTTPS patching will be limited to fetch() only');
->>>>>>> 0.1.0
     return false;
   }
 
@@ -126,7 +122,7 @@ export function isGlobalMonitoringActive(): boolean {
   return isGloballyPatched;
 }
 
-function generateRequestId(options: RequestOptions | string | URL, method: string): string {
+function generateRequestId(options: CoolhandRequestOptions | string | URL, method: string): string {
   const url = buildURL(options, method.includes('https') ? 'https' : 'http');
   return `${method.toUpperCase()}:${url}`;
 }
@@ -176,30 +172,10 @@ function patchHTTPS(): void {
   const originalGet = https.get;
 
   try {
-<<<<<<< HEAD
-    https.request = function(this: any, options: CoolhandRequestOptions | string | URL, callback?: any) {
-      return interceptRequest(originalRequest, options, callback, 'https');
-    };
-
-    https.get = function(this: any, options: CoolhandRequestOptions | string | URL, callback?: any) {
-      return interceptRequest(originalGet, options, callback, 'https');
-    };
-  } catch (error) {
-    console.warn('⚠️ Could not patch HTTPS module:', (error as Error).message);
-  }
-}
-
-/**
- * Patch HTTP module
- */
-function patchHttpModule(): void {
-  if (!http) return;
-
-=======
     const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(https, 'request', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS REQUEST', options);
 
           if (!globalPatternService) {
@@ -235,7 +211,7 @@ function patchHttpModule(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(https, 'get', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS GET', options);
 
           if (!globalPatternService) {
@@ -275,7 +251,7 @@ function patchHTTP(): void {
     const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(http, 'request', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP REQUEST', options);
 
           if (!globalPatternService) {
@@ -311,7 +287,7 @@ function patchHTTP(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(http, 'get', {
-        value: function(options: RequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP GET', options);
 
           if (!globalPatternService) {
@@ -377,10 +353,10 @@ function patchFetch(): void {
 
 function interceptRequest(
   originalRequest: any,
-  options: RequestOptions | string | URL,
+  options: CoolhandRequestOptions | string | URL,
   callback?: (res: HttpIncomingMessage) => void,
   protocol: 'https' | 'http' = 'https',
-  matchedPattern?: MatchedPattern
+  matchedPattern?: CoolhandMatchedPattern
 ): HttpClientRequest {
   interceptedCalls++;
 
@@ -389,7 +365,7 @@ function interceptRequest(
   const requestId = generateRequestId(options, `${protocol}-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
-  const callData: CallData = {
+  const callData: CoolhandCallData = {
     id: interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
@@ -467,7 +443,7 @@ async function interceptFetch(
   originalFetch: typeof fetch,
   url: string | URL | Request,
   options: RequestInit,
-  matchedPattern?: MatchedPattern
+  matchedPattern?: CoolhandMatchedPattern
 ): Promise<Response> {
   interceptedCalls++;
 
@@ -476,7 +452,7 @@ async function interceptFetch(
   const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
-  const callData: CallData = {
+  const callData: CoolhandCallData = {
     id: interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
@@ -523,7 +499,7 @@ async function interceptFetch(
   }
 }
 
-function buildURL(options: RequestOptions | string | URL | any, protocol: string): string {
+function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol: string): string {
   if (typeof options === 'string') {
     return options;
   }
@@ -551,7 +527,7 @@ function parseJSON(str: string | null): any {
   }
 }
 
-function debugRequest(type: string, options: RequestOptions | string | URL | any): void {
+function debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
   const hostname = typeof options === 'string' ? options :
                   options instanceof URL ? options.hostname :
                   options.hostname || options.host || options.url || 'unknown';

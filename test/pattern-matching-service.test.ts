@@ -690,7 +690,7 @@ describe('PatternMatchingService', () => {
     });
 
     it('should handle pattern-specific complex sanitization rules', () => {
-      const complexPattern: APIPattern = {
+      const complexPattern: CoolhandAPIPattern = {
         name: 'ComplexAPI',
         domains: ['complex.api.com'],
         headers: {

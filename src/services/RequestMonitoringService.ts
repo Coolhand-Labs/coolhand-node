@@ -1,7 +1,7 @@
 import * as https from 'https';
 import * as http from 'http';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
-import { PatternMatchingService } from './PatternMatchingService';
+import { PatternMatchingService } from './PatternMatchingService.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;

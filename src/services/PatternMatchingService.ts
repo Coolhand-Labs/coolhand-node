@@ -1,4 +1,4 @@
-import { APIPatterns, APIPattern, MatchedPattern, RequestOptions } from '../types';
+import { CoolhandAPIPatterns, CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
 // Runtime detection utility
 const isEdgeRuntime = () => {
@@ -33,7 +33,7 @@ const loadNodeModules = async () => {
 };
 
 export class PatternMatchingService {
-  private apiPatterns: APIPattern[] = [];
+  private apiPatterns: CoolhandAPIPattern[] = [];
   private isInitialized: boolean = false;
 
   constructor(customPatternsFile?: string) {
@@ -50,9 +50,17 @@ export class PatternMatchingService {
     } else {
       // In Node.js runtime, try to load from filesystem synchronously
       try {
-        const fs = require('fs');
-        const path = require('path');
-        this.loadAPIPatternsSync(customPatternsFile, fs, path);
+        // Check if require is available (CommonJS) or if we need to use dynamic import (ES modules)
+        if (typeof require !== 'undefined') {
+          const fs = require('fs');
+          const path = require('path');
+          this.loadAPIPatternsSync(customPatternsFile, fs, path);
+        } else {
+          // In ES modules, we can't use require synchronously, so fall back to default patterns
+          // The async initialization will handle proper loading later
+          console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.');
+          this.loadDefaultPatternsForEdge();
+        }
       } catch (error) {
         console.warn('Could not load fs/path modules, falling back to default patterns');
         this.loadDefaultPatternsForEdge();
@@ -170,7 +178,7 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: APIPatterns = JSON.parse(fileContent);
+        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
         console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
       } else {
@@ -188,7 +196,7 @@ export class PatternMatchingService {
 
           if (fs.existsSync(defaultPatternsFile)) {
             const fileContent = fs.readFileSync(defaultPatternsFile, 'utf-8');
-            const patternsData: APIPatterns = JSON.parse(fileContent);
+            const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
             this.apiPatterns = patternsData.patterns;
             console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns as fallback`);
           } else {
@@ -248,7 +256,7 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: APIPatterns = JSON.parse(fileContent);
+        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
         console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
       } else {
@@ -272,7 +280,7 @@ export class PatternMatchingService {
     }
   }
 
-  public async matchesAPIPattern(options: RequestOptions | string | URL): Promise<MatchedPattern | null> {
+  public async matchesAPIPattern(options: CoolhandRequestOptions | string | URL): Promise<CoolhandMatchedPattern | null> {
     this.ensureInitialized();
 
     if (typeof options === 'string') {
@@ -303,7 +311,7 @@ export class PatternMatchingService {
   }
 
   // Synchronous version for backwards compatibility (uses cached patterns)
-  public matchesAPIPatternSync(options: RequestOptions | string | URL): MatchedPattern | null {
+  public matchesAPIPatternSync(options: CoolhandRequestOptions | string | URL): CoolhandMatchedPattern | null {
     if (typeof options === 'string') {
       return this.matchesAPIPatternFromURL(options);
     }
@@ -331,7 +339,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public matchesAPIPatternFromURL(url: string): MatchedPattern | null {
+  public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
     try {
       const urlObj = new URL(url);
 
@@ -380,7 +388,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public sanitizeHeaders(headers: any, pattern?: APIPattern): Record<string, any> {
+  public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
     const sanitized = { ...headers };
 
     // Default sanitization rules
@@ -408,7 +416,7 @@ export class PatternMatchingService {
     return sanitized;
   }
 
-  public async getLoadedPatterns(): Promise<APIPattern[]> {
+  public async getLoadedPatterns(): Promise<CoolhandAPIPattern[]> {
     this.ensureInitialized();
     return [...this.apiPatterns];
   }
@@ -419,7 +427,7 @@ export class PatternMatchingService {
   }
 
   // Synchronous versions for backwards compatibility
-  public getLoadedPatternsSync(): APIPattern[] {
+  public getLoadedPatternsSync(): CoolhandAPIPattern[] {
     return [...this.apiPatterns];
   }
 

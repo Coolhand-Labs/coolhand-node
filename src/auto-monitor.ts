@@ -19,7 +19,7 @@
  * That's it! All AI API calls will now be automatically logged.
  */
 
-import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive } from './global-monitor';
+import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive } from './global-monitor.js';
 
 // Auto-initialize if environment variables are present
 const apiKey = process.env.COOLHAND_API_KEY;

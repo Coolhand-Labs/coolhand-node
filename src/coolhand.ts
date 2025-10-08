@@ -1,8 +1,8 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types';
-import { PatternMatchingService } from './services/PatternMatchingService';
-import { RequestMonitoringService } from './services/RequestMonitoringService';
-import { LoggingService } from './services/LoggingService';
-import { FeedbackService } from './services/FeedbackService';
+import { CoolhandOptions, CoolhandCallData, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types.js';
+import { PatternMatchingService } from './services/PatternMatchingService.js';
+import { RequestMonitoringService } from './services/RequestMonitoringService.js';
+import { LoggingService } from './services/LoggingService.js';
+import { FeedbackService } from './services/FeedbackService.js';
 
 export class Coolhand {
   private patternMatchingService: PatternMatchingService;
