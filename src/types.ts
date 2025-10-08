@@ -58,20 +58,6 @@ export interface CoolhandMatchedPattern {
   matchValue: string;
 }
 
-// Legacy exports for backward compatibility (deprecated)
-/** @deprecated Use CoolhandCallData instead */
-export type CallData = CoolhandCallData;
-/** @deprecated Use CoolhandStats instead */
-export type Stats = CoolhandStats;
-/** @deprecated Use CoolhandRequestOptions instead */
-export type RequestOptions = CoolhandRequestOptions;
-/** @deprecated Use CoolhandAPIPattern instead */
-export type APIPattern = CoolhandAPIPattern;
-/** @deprecated Use CoolhandAPIPatterns instead */
-export type APIPatterns = CoolhandAPIPatterns;
-/** @deprecated Use CoolhandMatchedPattern instead */
-export type MatchedPattern = CoolhandMatchedPattern;
-
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {
   llm_request_log_id: number;
