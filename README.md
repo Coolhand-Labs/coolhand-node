@@ -16,6 +16,8 @@ npm install coolhand-node
 
 ## Quick Start
 
+### Option 1: Instance-Based Monitoring (Explicit Control)
+
 ```javascript
 const Coolhand = require('coolhand-node');
 
@@ -25,7 +27,87 @@ const monitor = new Coolhand({
 });
 ```
 
+### Option 2: Universal Global Monitoring (🔥 NEW - Zero Configuration AI Monitoring)
+
+> **Note:** Global monitoring works in Node.js server environments. For React frontend apps, see [Frontend Integration](#-react-frontend-integration) below.
+
+**Monitor ALL AI API calls across your entire application with just one line of code!**
+
+```javascript
+// Add this ONE line at the top of your main application file
+require('coolhand-node/auto-monitor');
+
+// That's it! ALL AI API calls are now automatically monitored:
+// ✅ OpenAI SDK calls
+// ✅ LangChain operations
+// ✅ Anthropic API calls
+// ✅ Custom AI libraries
+// ✅ Direct fetch/axios requests to AI APIs
+// ✅ ANY library making AI API calls
+
+// NO code changes needed in your existing services!
+```
+
+**Environment Variables:**
+```bash
+# .env
+COOLHAND_API_KEY=your_api_key_here
+COOLHAND_ENVIRONMENT=production
+COOLHAND_SILENT=true
+```
+
+**Or manual initialization:**
+
+```javascript
+import { initializeGlobalMonitoring } from 'coolhand-node';
+
+// Initialize once at application startup
+initializeGlobalMonitoring({
+  apiKey: 'your-api-key'
+});
+
+// Now ALL outbound AI API calls are automatically monitored
+```
+
+**✨ Global Monitoring Benefits:**
+- 🚫 **Zero refactoring** - No code changes to existing services
+- 🌐 **Universal compatibility** - Works with ANY Node.js framework
+- 📊 **Complete coverage** - Monitors ALL AI libraries automatically
+- 🔒 **Security built-in** - Automatic credential sanitization
+- ⚡ **Performance optimized** - Negligible overhead
+
+**Supported Frameworks:** Designed for all Node.js frameworks (Express.js, NestJS, Fastify, Koa, Hapi, AWS Lambda, Vercel Functions), extensively tested with Next.js/T3 Stack
+
+📚 **[Complete Framework Integration Guide](./docs/framework-integration.md)** - Detailed setup instructions for all frameworks
+
+## Framework Compatibility
+
+📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
+
+🎯 **Primary Testing**: This library has been extensively tested and validated with **Next.js/T3 Stack** applications.
+
+🌐 **Universal Design**: Built using Node.js HTTP module patching, this library is designed to work with **any Node.js framework** that makes HTTP requests.
+
+### Quick Links by Framework:
+- **[Next.js / T3 Stack](./docs/frameworks/nextjs.md)** - ✅ Production-ready
+- **[Express.js](./docs/frameworks/express.md)** - 🧪 Needs testing
+- **[NestJS](./docs/frameworks/nestjs.md)** - 🧪 Needs testing
+- **[Fastify](./docs/frameworks/fastify.md)** - 🧪 Needs testing
+- **[Koa.js](./docs/frameworks/koa.md)** - 🧪 Needs testing
+- **[Serverless (AWS Lambda, Vercel, Netlify)](./docs/frameworks/serverless.md)** - 🧪 Needs testing
+
+🤝 **Community Validation**: We're actively seeking feedback from users of other frameworks:
+
+- **Using Express.js, NestJS, Fastify, or other frameworks?** Please share your experience!
+- **Encountered issues?** [Report them here](https://github.com/coolhand-io/coolhand-node/issues) and help us improve
+- **Success stories?** [Share your implementation](https://github.com/coolhand-io/coolhand-node/discussions) to help other developers
+- **Framework-specific tips?** [Contribute to our documentation](https://github.com/coolhand-io/coolhand-node/pulls)
+
+Your feedback helps us ensure reliable compatibility across the entire Node.js ecosystem.
+
 ## Configuration Options
+
+### Instance-Based Monitoring Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -33,6 +115,24 @@ const monitor = new Coolhand({
 | `environment` | `'local'` \| `'production'` | `'production'` | Environment for logging (affects API endpoint) |
 | `silent` | boolean | `true` | Whether to suppress console output |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+
+### Global Monitoring Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiKey` | string | *required* | Your Coolhand API key for authentication |
+| `environment` | `'local'` \| `'production'` | `'production'` | Environment for logging (affects API endpoint) |
+| `silent` | boolean | `true` | Whether to suppress console output |
+| `patternsFile` | string | `undefined` | Path to custom API patterns file |
+
+### Auto-Monitor Environment Variables
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
+| `COOLHAND_ENVIRONMENT` | `'local'` \| `'production'` | `'production'` | Environment for logging |
+| `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Whether to suppress console output |
+| `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
 
 ## TypeScript Support
 
@@ -43,7 +143,6 @@ import { Coolhand, CoolhandOptions, CallData, Stats } from 'coolhand-node';
 
 const monitor = new Coolhand({
   apiKey: 'your-api-key',
-  environment: 'production', // Autocomplete available
   silent: true
 });
 ```
@@ -62,69 +161,547 @@ const monitor = new Coolhand({
 
 ### Next.js/T3 Stack Implementation
 
-For TypeScript frameworks like Next.js or T3 Stack, initialize Coolhand in your service layer:
+For Next.js and T3 Stack applications, the recommended approach is to initialize global monitoring in `next.config.js`:
 
-```typescript
-// src/lib/email-service.ts
-import { Coolhand } from 'coolhand-node';
-import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+```javascript
+// next.config.js
+import "./src/env.js"; // Load environment variables
 
-export class EmailResponseService {
-  private coolhand: Coolhand;
-  private model: ChatOpenAI;
-  private promptTemplate: PromptTemplate;
+// Initialize global monitoring as middleware - this will monitor ALL HTTP requests
+if (process.env.COOLHAND_API_KEY) {
+  // Import auto-monitor to enable automatic global monitoring
+  import('coolhand-node/auto-monitor');
+}
 
-  constructor(
-    openAIApiKey: string,
-    coolhandApiKey: string,
-    environment: 'local' | 'production' = 'production'
-  ) {
-    // Initialize Coolhand FIRST - before any LLM libraries
-    this.coolhand = new Coolhand({
-      environment,
-      apiKey: coolhandApiKey,
-      silent: process.env.NODE_ENV === 'production'
-    });
+/** @type {import("next").NextConfig} */
+const config = {
+  // Your Next.js config
+};
 
-    // Initialize LLM after Coolhand is set up
-    this.model = new ChatOpenAI({
-      apiKey: openAIApiKey,
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.7,
-    });
+export default config;
+```
 
-    this.promptTemplate = new PromptTemplate({
-      template: `You are a helpful customer service representative...`,
-      inputVariables: ["from", "subject", "body"],
-    });
-  }
+**Important**: Add `"type": "module"` to your `package.json` to eliminate ES module warnings:
 
-  async generateResponse(customerEmail: any): Promise<any> {
-    try {
-      const formattedPrompt = await this.promptTemplate.format(customerEmail);
-
-      // This call will be automatically logged by Coolhand
-      const result = await this.model.invoke(formattedPrompt);
-
-      return {
-        original: customerEmail,
-        response: result.content,
-        timestamp: new Date(),
-      };
-    } catch (error) {
-      console.error('Error generating response:', error);
-      throw error;
-    }
+```json
+{
+  "name": "your-app",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    // your scripts
   }
 }
 ```
 
-**Key points for Next.js/T3:**
-- Initialize Coolhand **before** any LLM libraries in your constructor
-- Use environment variables for API keys
-- Set `silent: process.env.NODE_ENV === 'production'` for automatic dev/prod logging
-- All LangChain, OpenAI SDK, or fetch calls will be automatically monitored
+Now your services require **no changes** - all AI calls are automatically monitored:
+
+```typescript
+// src/server/api/routers/ai.ts
+import { z } from "zod";
+import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { ChatOpenAI } from '@langchain/openai';
+
+export const aiRouter = createTRPCRouter({
+  chat: publicProcedure
+    .input(z.object({ message: z.string() }))
+    .mutation(async ({ input }) => {
+      // This AI call is automatically monitored by global monitoring!
+      const model = new ChatOpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        modelName: 'gpt-3.5-turbo'
+      });
+
+      const response = await model.invoke(input.message);
+      return { response: response.content };
+    }),
+});
+```
+
+**Key benefits for Next.js/T3:**
+- ✅ **Zero refactoring** - No code changes to existing services
+- ✅ **Universal coverage** - Monitors ALL AI libraries automatically
+- ✅ **tRPC compatibility** - Works seamlessly with T3 stack patterns
+- ✅ **Edge runtime aware** - Handles Next.js middleware limitations
+- ✅ **Environment variables** - Automatic detection with `COOLHAND_API_KEY`
+
+### Global Monitoring (Zero Configuration)
+
+For applications where you want to monitor ALL AI API calls without explicit Coolhand instantiation:
+
+```typescript
+// At the very top of your main.ts, index.ts, or app.ts
+import 'coolhand-node/auto-monitor';
+
+// The rest of your application code...
+import { ChatOpenAI } from '@langchain/openai';
+import express from 'express';
+
+// All AI API calls are now automatically monitored!
+const app = express();
+const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.post('/chat', async (req, res) => {
+  // This call will be automatically logged to Coolhand
+  const response = await model.invoke(req.body.message);
+  res.json({ response: response.content });
+});
+```
+
+**Environment Variables for Auto-Monitor:**
+
+```bash
+# .env
+COOLHAND_API_KEY=your_coolhand_key_here
+COOLHAND_ENVIRONMENT=production
+COOLHAND_SILENT=true
+```
+
+**Or manual global initialization:**
+
+```typescript
+import { initializeGlobalMonitoring } from 'coolhand-node';
+
+// Initialize once at app startup
+initializeGlobalMonitoring({
+  apiKey: process.env.COOLHAND_API_KEY!,
+  environment: 'production',
+  silent: process.env.NODE_ENV === 'production'
+});
+
+// Now import and use any AI libraries - they'll be monitored automatically
+import { ChatOpenAI } from '@langchain/openai';
+```
+
+**Benefits of Global Monitoring:**
+- ✅ Zero configuration required in your business logic
+- ✅ Works with any HTTP client (fetch, axios, http/https modules)
+- ✅ Automatically monitors third-party libraries that make AI API calls
+- ✅ No need to manage Coolhand instances or singleton patterns
+- ✅ Perfect for microservices and serverless functions
+
+## 🌐 Universal Global Monitoring
+
+### What is Global Monitoring?
+
+Global monitoring automatically detects and logs **ALL AI API calls** across your entire Node.js application without requiring any code changes to your existing services. It works by patching Node.js HTTP modules at the runtime level.
+
+### How It Works
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Your Code     │───▶│ Global Monitor   │───▶│  Node.js HTTP   │
+│ (Any AI Library)│    │ (Auto-detects &  │    │  (https, http,  │
+│                 │    │  Logs AI APIs)   │    │   fetch)        │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+### Universal Compatibility
+
+| Framework/Platform | Status | Integration | Testing Status |
+|-------------------|--------|-------------|----------------|
+| **Express.js** | ✅ Designed | One line: `require('coolhand-node/auto-monitor')` | 🧪 Community Testing |
+| **Next.js/T3 Stack** | ✅ Tested | Add to `middleware.ts` or main entry | ✅ Fully Tested |
+| **NestJS** | ✅ Designed | Initialize in `main.ts` bootstrap | 🧪 Community Testing |
+| **Fastify** | ✅ Designed | Plugin or startup hook | 🧪 Community Testing |
+| **Koa.js** | ✅ Designed | Middleware or app startup | 🧪 Community Testing |
+| **AWS Lambda** | ✅ Designed | Initialize outside handler | 🧪 Community Testing |
+| **Vercel Functions** | ✅ Designed | Initialize at function top | 🧪 Community Testing |
+| **Serverless** | ✅ Designed | Cold start initialization | 🧪 Community Testing |
+| **Any Node.js App** | ✅ Designed | Universal compatibility | 🧪 Community Testing |
+
+**Framework Support Status:**
+- ✅ **Fully Tested**: Confirmed working with extensive testing
+- ✅ **Designed**: Designed to work universally with all Node.js frameworks
+- 🧪 **Community Testing**: Working in theory, seeking community validation
+
+> **Note**: This library is designed to work with all Node.js frameworks through universal HTTP module patching, but has been most extensively tested with **Next.js/T3 Stack**.
+>
+> **Help us improve!** If you use this library with other frameworks:
+> - 🐛 **Found an issue?** [Submit a bug report](https://github.com/coolhand-io/coolhand-node/issues)
+> - ✅ **Works great?** [Share your implementation](https://github.com/coolhand-io/coolhand-node/discussions)
+> - 📚 **Have integration tips?** [Contribute to our docs](https://github.com/coolhand-io/coolhand-node/pulls)
+
+### Real-World Example
+
+**Before (Manual Setup Required):**
+```javascript
+// service-a.js
+const Coolhand = require('coolhand-node');
+const coolhand = new Coolhand({ apiKey: '...' }); // Manual setup
+const { ChatOpenAI } = require('@langchain/openai');
+
+// service-b.js
+const Coolhand = require('coolhand-node');
+const coolhand = new Coolhand({ apiKey: '...' }); // Manual setup
+const openai = require('openai');
+
+// service-c.js
+const Coolhand = require('coolhand-node');
+const coolhand = new Coolhand({ apiKey: '...' }); // Manual setup
+const anthropic = require('@anthropic-ai/sdk');
+```
+
+**After (Global Monitoring):**
+```javascript
+// main.js - ONE LINE SETUP
+require('coolhand-node/auto-monitor');
+
+// service-a.js - NO CHANGES NEEDED
+const { ChatOpenAI } = require('@langchain/openai');
+// All LangChain calls automatically logged!
+
+// service-b.js - NO CHANGES NEEDED
+const openai = require('openai');
+// All OpenAI calls automatically logged!
+
+// service-c.js - NO CHANGES NEEDED
+const anthropic = require('@anthropic-ai/sdk');
+// All Anthropic calls automatically logged!
+```
+
+### Supported AI Libraries
+
+✅ **Automatically Monitored (Zero Setup):**
+- **OpenAI SDK** - Official OpenAI library
+- **LangChain** - All LLM chains and agents
+- **Anthropic SDK** - Claude API calls
+- **Google AI SDK** - Gemini/Bard API calls
+- **Cohere SDK** - Cohere API calls
+- **Hugging Face** - Inference API calls
+- **Custom AI APIs** - Configurable patterns
+- **Direct HTTP** - fetch, axios, https calls to AI endpoints
+
+### Framework Integration Examples
+
+See our comprehensive framework guides for detailed setup instructions:
+
+- **[Next.js / T3 Stack Guide](./docs/frameworks/nextjs.md)** - Production-ready patterns
+- **[Express.js Guide](./docs/frameworks/express.md)** - Startup initialization
+- **[NestJS Guide](./docs/frameworks/nestjs.md)** - Bootstrap integration
+- **[Fastify Guide](./docs/frameworks/fastify.md)** - Plugin patterns
+- **[Koa.js Guide](./docs/frameworks/koa.md)** - Middleware setup
+- **[Serverless Guide](./docs/frameworks/serverless.md)** - AWS Lambda, Vercel, Netlify
+
+Each guide includes:
+- Complete working examples
+- Environment setup instructions
+- Best practices and gotchas
+- Community testing status
+
+### Advanced Features
+
+
+#### Custom AI Service Monitoring
+```json
+// custom-patterns.json
+{
+  "patterns": [
+    {
+      "name": "Custom AI Service",
+      "domains": ["api.customai.com"],
+      "paths": ["/v1/generate"],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    }
+  ]
+}
+```
+
+```javascript
+initializeGlobalMonitoring({
+  apiKey: 'your-api-key',
+  patternsFile: './custom-patterns.json'
+});
+```
+
+#### Monitoring Statistics
+```javascript
+const { getGlobalStats } = require('coolhand-node');
+
+setInterval(() => {
+  const stats = getGlobalStats();
+  console.log(`AI Calls: ${stats.interceptedCalls}, Total Requests: ${stats.totalRequests}`);
+}, 60000);
+```
+
+For complete documentation, see: [Global Monitoring Guide](./docs/global-monitoring.md)
+
+## ⚛️ React Frontend Integration
+
+For React applications making AI API calls directly from the browser, use the instance-based approach with proper React patterns:
+
+### React Hook Pattern
+
+```typescript
+// hooks/useCoolhand.ts
+import { useEffect, useRef } from 'react';
+import { Coolhand } from 'coolhand-node';
+
+let coolhandInstance: Coolhand | null = null;
+
+export function useCoolhand() {
+  const instanceRef = useRef<Coolhand | null>(null);
+
+  useEffect(() => {
+    if (!coolhandInstance && process.env.REACT_APP_COOLHAND_API_KEY) {
+      coolhandInstance = new Coolhand({
+        apiKey: process.env.REACT_APP_COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+      instanceRef.current = coolhandInstance;
+    }
+  }, []);
+
+  return instanceRef.current;
+}
+```
+
+### React Component Usage
+
+```typescript
+// components/AIChat.tsx
+import React, { useState } from 'react';
+import { useCoolhand } from '../hooks/useCoolhand';
+
+// Import your AI library
+import OpenAI from 'openai';
+
+export function AIChat() {
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
+  const coolhand = useCoolhand(); // Initialize monitoring
+
+  const handleChat = async (message: string) => {
+    setLoading(true);
+
+    try {
+      // Create OpenAI client
+      const openai = new OpenAI({
+        apiKey: process.env.REACT_APP_OPENAI_API_KEY,
+        dangerouslyAllowBrowser: true // Only for demo - use backend in production
+      });
+
+      // This AI call will be automatically logged by Coolhand
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: message }],
+      });
+
+      setResponse(completion.choices[0]?.message?.content || '');
+    } catch (error) {
+      console.error('AI request failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <button
+        onClick={() => handleChat('Hello, AI!')}
+        disabled={loading}
+      >
+        {loading ? 'Thinking...' : 'Chat with AI'}
+      </button>
+      {response && <p>AI Response: {response}</p>}
+    </div>
+  );
+}
+```
+
+### App-Level Initialization
+
+```typescript
+// App.tsx
+import React, { useEffect } from 'react';
+import { Coolhand } from 'coolhand-node';
+import { AIChat } from './components/AIChat';
+
+// Initialize Coolhand once at app level
+let coolhandInitialized = false;
+
+function App() {
+  useEffect(() => {
+    if (!coolhandInitialized && process.env.REACT_APP_COOLHAND_API_KEY) {
+      new Coolhand({
+        apiKey: process.env.REACT_APP_COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+      coolhandInitialized = true;
+      console.log('🔍 Coolhand monitoring initialized for React app');
+    }
+  }, []);
+
+  return (
+    <div className="App">
+      <AIChat />
+    </div>
+  );
+}
+
+export default App;
+```
+
+### Environment Variables (React)
+
+```bash
+# .env.local
+REACT_APP_OPENAI_API_KEY=your_openai_key_here
+REACT_APP_COOLHAND_API_KEY=your_coolhand_key_here
+```
+
+### Context Provider Pattern
+
+```typescript
+// contexts/CoolhandContext.tsx
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Coolhand } from 'coolhand-node';
+
+interface CoolhandContextType {
+  coolhand: Coolhand | null;
+  isInitialized: boolean;
+}
+
+const CoolhandContext = createContext<CoolhandContextType>({
+  coolhand: null,
+  isInitialized: false
+});
+
+export function CoolhandProvider({ children }: { children: React.ReactNode }) {
+  const [coolhand, setCoolhand] = useState<Coolhand | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    if (process.env.REACT_APP_COOLHAND_API_KEY) {
+      const instance = new Coolhand({
+        apiKey: process.env.REACT_APP_COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+
+      setCoolhand(instance);
+      setIsInitialized(true);
+    }
+  }, []);
+
+  return (
+    <CoolhandContext.Provider value={{ coolhand, isInitialized }}>
+      {children}
+    </CoolhandContext.Provider>
+  );
+}
+
+export const useCoolhandContext = () => useContext(CoolhandContext);
+```
+
+```typescript
+// Usage in components
+import { useCoolhandContext } from '../contexts/CoolhandContext';
+
+function MyComponent() {
+  const { coolhand, isInitialized } = useCoolhandContext();
+
+  // Use coolhand for AI calls when initialized
+  // All AI API calls will be automatically logged
+}
+```
+
+### Next.js App Router
+
+```typescript
+// app/layout.tsx
+'use client';
+import { useEffect } from 'react';
+import { Coolhand } from 'coolhand-node';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_COOLHAND_API_KEY) {
+      new Coolhand({
+        apiKey: process.env.NEXT_PUBLIC_COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+    }
+  }, []);
+
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+### Important Security Notes
+
+⚠️ **For Production React Apps:**
+
+1. **Never expose API keys in frontend code** - Use a backend proxy instead:
+
+```typescript
+// ✅ Secure approach - Backend proxy
+const response = await fetch('/api/ai-chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ message: userInput })
+});
+
+// ❌ Insecure - Direct API calls from browser
+const openai = new OpenAI({
+  apiKey: 'sk-...' // Never do this in production!
+});
+```
+
+2. **Use environment prefixes correctly:**
+   - React: `REACT_APP_*`
+   - Next.js: `NEXT_PUBLIC_*`
+   - Vite: `VITE_*`
+
+3. **Backend integration recommended:**
+
+```typescript
+// pages/api/ai-chat.ts (Next.js API route)
+import { Coolhand } from 'coolhand-node';
+import OpenAI from 'openai';
+
+const coolhand = new Coolhand({
+  apiKey: process.env.COOLHAND_API_KEY // Server-side only
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY // Server-side only
+});
+
+export default async function handler(req, res) {
+  // AI call logged automatically by Coolhand
+  const completion = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [{ role: "user", content: req.body.message }],
+  });
+
+  res.json({ response: completion.choices[0]?.message?.content });
+}
+```
+
+### Browser Compatibility
+
+✅ **Supported Browsers:**
+- Chrome 66+ (fetch support)
+- Firefox 57+ (fetch support)
+- Safari 10+ (fetch support)
+- Edge 79+ (fetch support)
+
+⚠️ **Limitations:**
+- Requires `fetch` API support
+- CORS policies may affect direct AI API calls
+- Some AI providers block browser requests
+
+**Recommended:** Use Coolhand monitoring on your backend API routes instead of direct frontend AI calls for better security and reliability.
 
 ### Environment Variables
 
