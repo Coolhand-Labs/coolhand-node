@@ -161,67 +161,69 @@ const monitor = new Coolhand({
 
 ### Next.js/T3 Stack Implementation
 
-For TypeScript frameworks like Next.js or T3 Stack, initialize Coolhand in your service layer:
+For Next.js and T3 Stack applications, the recommended approach is to initialize global monitoring in `next.config.js`:
 
-```typescript
-// src/lib/email-service.ts
-import { Coolhand } from 'coolhand-node';
-import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+```javascript
+// next.config.js
+import "./src/env.js"; // Load environment variables
 
-export class EmailResponseService {
-  private coolhand: Coolhand;
-  private model: ChatOpenAI;
-  private promptTemplate: PromptTemplate;
+// Initialize global monitoring as middleware - this will monitor ALL HTTP requests
+if (process.env.COOLHAND_API_KEY) {
+  // Import auto-monitor to enable automatic global monitoring
+  import('coolhand-node/auto-monitor');
+}
 
-  constructor(
-    openAIApiKey: string,
-    coolhandApiKey: string
-  ) {
-    // Initialize Coolhand FIRST - before any LLM libraries
-    this.coolhand = new Coolhand({
-      apiKey: coolhandApiKey,
-      silent: process.env.NODE_ENV === 'production'
-    });
+/** @type {import("next").NextConfig} */
+const config = {
+  // Your Next.js config
+};
 
-    // Initialize LLM after Coolhand is set up
-    this.model = new ChatOpenAI({
-      apiKey: openAIApiKey,
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.7,
-    });
+export default config;
+```
 
-    this.promptTemplate = new PromptTemplate({
-      template: `You are a helpful customer service representative...`,
-      inputVariables: ["from", "subject", "body"],
-    });
-  }
+**Important**: Add `"type": "module"` to your `package.json` to eliminate ES module warnings:
 
-  async generateResponse(customerEmail: any): Promise<any> {
-    try {
-      const formattedPrompt = await this.promptTemplate.format(customerEmail);
-
-      // This call will be automatically logged by Coolhand
-      const result = await this.model.invoke(formattedPrompt);
-
-      return {
-        original: customerEmail,
-        response: result.content,
-        timestamp: new Date(),
-      };
-    } catch (error) {
-      console.error('Error generating response:', error);
-      throw error;
-    }
+```json
+{
+  "name": "your-app",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    // your scripts
   }
 }
 ```
 
-**Key points for Next.js/T3:**
-- Initialize Coolhand **before** any LLM libraries in your constructor
-- Use environment variables for API keys
-- Set `silent: process.env.NODE_ENV === 'production'` for automatic dev/prod logging
-- All LangChain, OpenAI SDK, or fetch calls will be automatically monitored
+Now your services require **no changes** - all AI calls are automatically monitored:
+
+```typescript
+// src/server/api/routers/ai.ts
+import { z } from "zod";
+import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { ChatOpenAI } from '@langchain/openai';
+
+export const aiRouter = createTRPCRouter({
+  chat: publicProcedure
+    .input(z.object({ message: z.string() }))
+    .mutation(async ({ input }) => {
+      // This AI call is automatically monitored by global monitoring!
+      const model = new ChatOpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        modelName: 'gpt-3.5-turbo'
+      });
+
+      const response = await model.invoke(input.message);
+      return { response: response.content };
+    }),
+});
+```
+
+**Key benefits for Next.js/T3:**
+- ✅ **Zero refactoring** - No code changes to existing services
+- ✅ **Universal coverage** - Monitors ALL AI libraries automatically
+- ✅ **tRPC compatibility** - Works seamlessly with T3 stack patterns
+- ✅ **Edge runtime aware** - Handles Next.js middleware limitations
+- ✅ **Environment variables** - Automatic detection with `COOLHAND_API_KEY`
 
 ### Global Monitoring (Zero Configuration)
 

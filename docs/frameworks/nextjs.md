@@ -10,22 +10,11 @@ The best approach for Next.js is to initialize global monitoring in `next.config
 // next.config.js
 import "./src/env.js"; // Load environment variables
 
-// Initialize global monitoring for Next.js web server (Node.js runtime)
-(async () => {
-  try {
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      console.log('✅ Global monitoring enabled for all AI API calls!');
-    }
-  } catch (error) {
-    console.error('❌ Failed to initialize global monitoring:', error);
-  }
-})();
+// Initialize global monitoring as middleware - this will monitor ALL HTTP requests
+if (process.env.COOLHAND_API_KEY) {
+  // Import auto-monitor to enable automatic global monitoring
+  import('coolhand-node/auto-monitor');
+}
 
 /** @type {import("next").NextConfig} */
 const config = {
@@ -35,58 +24,45 @@ const config = {
 export default config;
 ```
 
-## 📁 Shared Module for Scripts (Optional)
+**Important**: Add `"type": "module"` to your `package.json` to eliminate ES module warnings:
 
-For standalone scripts or when you need more control, create a shared initialization module:
-
-```typescript
-// src/lib/global-monitoring.ts
-let isInitialized = false;
-
-export async function initializeGlobalMonitoring() {
-  if (isInitialized) {
-    console.log('🔄 Global monitoring already initialized, skipping...');
-    return;
-  }
-
-  try {
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      isInitialized = true;
-      console.log('✅ Global monitoring enabled for all AI API calls!');
-    }
-  } catch (error) {
-    console.error('❌ Failed to initialize global monitoring:', error);
+```json
+{
+  "name": "your-app",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    // your scripts
   }
 }
 ```
 
-Then use it in scripts:
+## 📁 Standalone Scripts
+
+For standalone scripts that run outside of Next.js, simply import the auto-monitor at the top:
 
 ```typescript
 // scripts/ai-script.ts
 import dotenv from 'dotenv';
-import { initializeGlobalMonitoring } from '../src/lib/global-monitoring';
+import 'coolhand-node/auto-monitor'; // Automatically initializes global monitoring
 
 dotenv.config();
 
 async function main() {
-  // Initialize global monitoring for scripts
-  await initializeGlobalMonitoring();
-
   // Your AI code here - automatically monitored
   const { ChatOpenAI } = await import('@langchain/openai');
   const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await model.invoke("Hello!");
+  console.log(response);
 }
 
 main();
 ```
+
+The auto-monitor will automatically:
+- Check for `COOLHAND_API_KEY` environment variable
+- Initialize global monitoring if the key is present
+- Patch all HTTP/HTTPS/fetch calls to monitor AI API requests
 
 ## 🎪 Example: T3 Stack with tRPC
 
