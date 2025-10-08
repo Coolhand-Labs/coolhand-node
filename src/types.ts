@@ -4,7 +4,7 @@ export interface CoolhandOptions {
   patternsFile?: string;
 }
 
-export interface CallData {
+export interface CoolhandCallData {
   id: number;
   timestamp: string;
   method: string;
@@ -17,13 +17,13 @@ export interface CallData {
   protocol: string;
 }
 
-export interface Stats {
+export interface CoolhandStats {
   totalRequests: number;
   interceptedCalls: number;
   apiEndpoint: string;
 }
 
-export interface RequestOptions {
+export interface CoolhandRequestOptions {
   hostname?: string;
   host?: string;
   port?: number;
@@ -34,28 +34,42 @@ export interface RequestOptions {
   url?: string;
 }
 
-export interface LogPayload {
+export interface CoolhandLogPayload {
   llm_request_log: {
-    raw_request: CallData;
+    raw_request: CoolhandCallData;
   };
 }
 
-export interface APIPattern {
+export interface CoolhandAPIPattern {
   name: string;
   domains: string[];
   paths?: string[];
   headers?: Record<string, string>;
 }
 
-export interface APIPatterns {
-  patterns: APIPattern[];
+export interface CoolhandAPIPatterns {
+  patterns: CoolhandAPIPattern[];
 }
 
-export interface MatchedPattern {
-  pattern: APIPattern;
+export interface CoolhandMatchedPattern {
+  pattern: CoolhandAPIPattern;
   matchType: 'domain' | 'path';
   matchValue: string;
 }
+
+// Legacy exports for backward compatibility (deprecated)
+/** @deprecated Use CoolhandCallData instead */
+export type CallData = CoolhandCallData;
+/** @deprecated Use CoolhandStats instead */
+export type Stats = CoolhandStats;
+/** @deprecated Use CoolhandRequestOptions instead */
+export type RequestOptions = CoolhandRequestOptions;
+/** @deprecated Use CoolhandAPIPattern instead */
+export type APIPattern = CoolhandAPIPattern;
+/** @deprecated Use CoolhandAPIPatterns instead */
+export type APIPatterns = CoolhandAPIPatterns;
+/** @deprecated Use CoolhandMatchedPattern instead */
+export type MatchedPattern = CoolhandMatchedPattern;
 
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {

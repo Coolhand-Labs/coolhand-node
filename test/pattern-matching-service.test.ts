@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
-import { APIPattern } from '../src/types';
+import { CoolhandAPIPattern } from '../src/types';
 
 // Mock fs module
 jest.mock('fs');
@@ -300,7 +300,7 @@ describe('PatternMatchingService', () => {
         'content-type': 'application/json'
       };
 
-      const pattern: APIPattern = {
+      const pattern: CoolhandAPIPattern = {
         name: 'OpenAI',
         domains: ['openai.com'],
         headers: {
@@ -324,7 +324,7 @@ describe('PatternMatchingService', () => {
         'x-api-key': 'secret'
       };
 
-      const pattern: APIPattern = {
+      const pattern: CoolhandAPIPattern = {
         name: 'Test',
         domains: ['test.com'],
         headers: {

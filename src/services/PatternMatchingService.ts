@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { APIPatterns, APIPattern, MatchedPattern, RequestOptions } from '../types';
+import { CoolhandAPIPatterns, CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
 export class PatternMatchingService {
-  private apiPatterns: APIPattern[] = [];
+  private apiPatterns: CoolhandAPIPattern[] = [];
 
   constructor(customPatternsFile?: string) {
     this.loadAPIPatterns(customPatternsFile);
@@ -23,7 +23,7 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: APIPatterns = JSON.parse(fileContent);
+        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
       } else {
         console.warn(`⚠️  API patterns file not found: ${patternsFile}. Using empty patterns list.`);
@@ -35,7 +35,7 @@ export class PatternMatchingService {
     }
   }
 
-  public matchesAPIPattern(options: RequestOptions | string | URL): MatchedPattern | null {
+  public matchesAPIPattern(options: CoolhandRequestOptions | string | URL): CoolhandMatchedPattern | null {
     if (typeof options === 'string') {
       return this.matchesAPIPatternFromURL(options);
     }
@@ -63,7 +63,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public matchesAPIPatternFromURL(url: string): MatchedPattern | null {
+  public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
     try {
       const urlObj = new URL(url);
 
@@ -112,7 +112,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public sanitizeHeaders(headers: any, pattern?: APIPattern): Record<string, any> {
+  public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
     const sanitized = { ...headers };
 
     // Default sanitization rules
@@ -140,7 +140,7 @@ export class PatternMatchingService {
     return sanitized;
   }
 
-  public getLoadedPatterns(): APIPattern[] {
+  public getLoadedPatterns(): CoolhandAPIPattern[] {
     return [...this.apiPatterns];
   }
 
