@@ -41,6 +41,7 @@ export interface CoolhandLogPayload {
 }
 
 export interface CoolhandAPIPattern {
+  id?: string;
   name: string;
   domains: string[];
   paths?: string[];
