@@ -49,7 +49,7 @@ export class RequestMonitoringService {
             monitor.debugRequest('HTTPS REQUEST', options);
 
             // Check if this matches any API pattern
-            const matchedPattern = monitor.patternMatchingService.matchesAPIPattern(options);
+            const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
@@ -73,7 +73,7 @@ export class RequestMonitoringService {
         Object.defineProperty(https, 'get', {
           value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTPS GET', options);
-            const matchedPattern = monitor.patternMatchingService.matchesAPIPattern(options);
+            const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
@@ -103,7 +103,7 @@ export class RequestMonitoringService {
         Object.defineProperty(http, 'request', {
           value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTP REQUEST', options);
-            const matchedPattern = monitor.patternMatchingService.matchesAPIPattern(options);
+            const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
@@ -127,7 +127,7 @@ export class RequestMonitoringService {
         Object.defineProperty(http, 'get', {
           value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTP GET', options);
-            const matchedPattern = monitor.patternMatchingService.matchesAPIPattern(options);
+            const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);

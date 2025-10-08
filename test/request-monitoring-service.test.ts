@@ -126,7 +126,7 @@ describe('RequestMonitoringService', () => {
     });
 
     it('should intercept matching HTTPS requests', () => {
-      mockPatternMatchingService.matchesAPIPattern.mockReturnValue(mockMatchedPattern);
+      mockPatternMatchingService.matchesAPIPattern.mockResolvedValue(mockMatchedPattern);
 
       service.setupMonitoring();
 
@@ -141,7 +141,7 @@ describe('RequestMonitoringService', () => {
     });
 
     it('should not intercept non-matching requests', () => {
-      mockPatternMatchingService.matchesAPIPattern.mockReturnValue(null);
+      mockPatternMatchingService.matchesAPIPattern.mockResolvedValue(null);
 
       service.setupMonitoring();
 

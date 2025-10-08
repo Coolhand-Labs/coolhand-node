@@ -19,10 +19,7 @@
  * That's it! All AI API calls will now be automatically logged.
  */
 
-import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive } from './global-monitor.js';
-
-// Re-export functions for backwards compatibility
-export { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive };
+import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive } from './global-monitor';
 
 // Auto-initialize if environment variables are present
 const apiKey = process.env.COOLHAND_API_KEY;
@@ -34,7 +31,9 @@ if (apiKey) {
   // Async initialization wrapped in IIFE
   (async () => {
     try {
-      console.log('🔧 Auto-initializing global monitoring...');
+      if (!silent) {
+        console.log('🔧 Auto-initializing global monitoring...');
+      }
 
       await initializeGlobalMonitoring({
         apiKey,
@@ -42,17 +41,25 @@ if (apiKey) {
         patternsFile
       });
 
-      console.log('✅ Global monitoring initialized successfully');
-      console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
+      if (!silent) {
+        console.log('✅ Global monitoring initialized successfully');
+        console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
 
-      if (patternsFile) {
-        console.log(`📁 Custom patterns file: ${patternsFile}`);
+        if (patternsFile) {
+          console.log(`📁 Custom patterns file: ${patternsFile}`);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to initialize global monitoring:', (error as Error).message);
     }
   })();
 } else {
-  console.warn('⚠️  COOLHAND_API_KEY not found. Global monitoring not initialized.');
-  console.warn('   Set COOLHAND_API_KEY environment variable to enable monitoring.');
+  // Only warn if not in production to avoid noise
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('⚠️  COOLHAND_API_KEY not found. Global monitoring not initialized.');
+    console.warn('   Set COOLHAND_API_KEY environment variable to enable monitoring.');
+  }
 }
+
+// Re-export functions for backwards compatibility
+export { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive };
