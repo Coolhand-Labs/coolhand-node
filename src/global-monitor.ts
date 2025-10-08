@@ -9,9 +9,6 @@ import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 
-// Type imports for conditional usage
-type HttpModule = typeof import('http');
-type HttpsModule = typeof import('https');
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
 
@@ -129,7 +126,7 @@ function generateRequestId(options: CoolhandRequestOptions | string | URL, metho
 
 function isRequestActive(requestId: string): boolean {
   const active = globalActiveRequests.get(requestId);
-  if (!active) return false;
+  if (!active) {return false;}
 
   const now = Date.now();
   if (now - active.timestamp > DEDUP_WINDOW_MS) {
@@ -370,10 +367,10 @@ function interceptRequest(
     timestamp: new Date().toISOString(),
     method: method,
     url: url,
-    headers: globalPatternService!.sanitizeHeaders(
+    headers: globalPatternService?.sanitizeHeaders(
       typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
       matchedPattern?.pattern
-    ),
+    ) || {},
     request_body: null,
     response_body: null,
     response_headers: null,
@@ -396,7 +393,7 @@ function interceptRequest(
 
     res.on('end', () => {
       callData.response_body = parseJSON(responseBody);
-      callData.response_headers = globalPatternService!.sanitizeHeaders(res.headers, matchedPattern?.pattern);
+      callData.response_headers = globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
       callData.status_code = res.statusCode || null;
 
       // Log to API
@@ -457,12 +454,12 @@ async function interceptFetch(
     timestamp: new Date().toISOString(),
     method: method,
     url: urlStr,
-    headers: globalPatternService!.sanitizeHeaders(
+    headers: globalPatternService?.sanitizeHeaders(
       options.headers instanceof Headers
         ? Object.fromEntries(options.headers.entries())
         : (options.headers || {}),
       matchedPattern?.pattern
-    ),
+    ) || {},
     request_body: options.body ? parseJSON(options.body as string) : null,
     response_body: null,
     response_headers: null,

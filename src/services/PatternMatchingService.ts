@@ -7,13 +7,6 @@ const isEdgeRuntime = () => {
          (typeof (globalThis as any).window !== 'undefined');
 };
 
-// Edge-compatible path utilities
-const pathUtils = {
-  join: (...parts: string[]) => parts.join('/').replace(/\/+/g, '/'),
-  dirname: (path: string) => path.substring(0, path.lastIndexOf('/')),
-  resolve: (path: string) => path.startsWith('/') ? path : `/${path}`,
-  isAbsolute: (path: string) => path.startsWith('/')
-};
 
 // Node.js modules - conditionally imported
 let fs: any = null;
@@ -21,7 +14,7 @@ let path: any = null;
 
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
-  if (isEdgeRuntime()) return false;
+  if (isEdgeRuntime()) {return false;}
 
   try {
     fs = await import('fs');
@@ -42,7 +35,7 @@ export class PatternMatchingService {
   }
 
   private initializePatternsSync(customPatternsFile?: string): void {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {return;}
 
     if (isEdgeRuntime()) {
       // In Edge runtime, use default patterns or skip loading
@@ -61,7 +54,7 @@ export class PatternMatchingService {
           console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.');
           this.loadDefaultPatternsForEdge();
         }
-      } catch (error) {
+      } catch {
         console.warn('Could not load fs/path modules, falling back to default patterns');
         this.loadDefaultPatternsForEdge();
       }
@@ -72,7 +65,7 @@ export class PatternMatchingService {
 
   // Keep async version for explicit async initialization if needed
   private async initializePatterns(customPatternsFile?: string): Promise<void> {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {return;}
 
     if (isEdgeRuntime()) {
       // In Edge runtime, use default patterns or skip loading
@@ -151,7 +144,9 @@ export class PatternMatchingService {
           }
 
           possiblePaths.push(path.join(packageDir, 'dist', 'api-patterns.json'));
-        } catch {}
+        } catch {
+          // Ignore errors when finding package.json
+        }
 
         // Strategy 2: __dirname method
         possiblePaths.push(path.join(__dirname, '..', 'api-patterns.json'));
@@ -190,7 +185,7 @@ export class PatternMatchingService {
             const packagePath = require.resolve('coolhand-node/package.json');
             const packageDir = path.dirname(packagePath);
             defaultPatternsFile = path.join(packageDir, 'dist', 'api-patterns.json');
-          } catch (resolveError) {
+          } catch {
             defaultPatternsFile = path.join(__dirname, '..', 'api-patterns.json');
           }
 
@@ -213,7 +208,7 @@ export class PatternMatchingService {
     }
   }
 
-  private loadAPIPatternsSync(customPatternsFile: string | undefined, fs: any, path: any): void {
+  private loadAPIPatternsSync(customPatternsFile: string | undefined, fs: any, _path: any): void {
     try {
       let patternsFile: string;
 
@@ -237,11 +232,9 @@ export class PatternMatchingService {
           try {
             const path = eval('require')('path');
             const url = eval('require')('url');
-            const { createRequire } = eval('require')('module');
             const importMeta = eval('typeof import.meta !== "undefined" ? import.meta : undefined');
 
             if (importMeta && importMeta.url) {
-              const require = createRequire(importMeta.url);
               const __filename = url.fileURLToPath(importMeta.url);
               const __dirname = path.dirname(__filename);
               patternsFile = path.join(__dirname, '..', 'api-patterns.json');
