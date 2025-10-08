@@ -75,7 +75,6 @@ export interface LLMRequestLogFeedbackPayload {
 
 export interface LLMRequestLogFeedbackResponse {
   id: number;
-  client_id: number;
   llm_request_log_id: number;
   like: boolean;
   explanation?: string;
