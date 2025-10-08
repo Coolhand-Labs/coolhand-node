@@ -36,7 +36,6 @@ describe('FeedbackService', () => {
     it('should successfully create feedback', async () => {
       const mockResponse: LLMRequestLogFeedbackResponse = {
         id: 123,
-        client_id: 1,
         llm_request_log_id: 456,
         like: true,
         explanation: 'Great response!',

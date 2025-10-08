@@ -1,5 +1,3 @@
-import * as https from 'https';
-import * as http from 'http';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { LoggingService } from '../src/services/LoggingService';
 
@@ -251,7 +249,6 @@ describe('Global Monitor', () => {
 
   describe('Fetch Patching', () => {
     it('should replace global fetch function', async () => {
-      const originalFetchMock = globalThis.fetch;
       const config = { apiKey: 'test-key', silent: true };
 
       await globalMonitor.initializeGlobalMonitoring(config);

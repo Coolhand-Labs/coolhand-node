@@ -1,4 +1,4 @@
-import { APIPatterns, APIPattern, MatchedPattern, RequestOptions } from '../types';
+import { CoolhandAPIPatterns, CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
 // Runtime detection utility
 const isEdgeRuntime = () => {
@@ -7,13 +7,6 @@ const isEdgeRuntime = () => {
          (typeof (globalThis as any).window !== 'undefined');
 };
 
-// Edge-compatible path utilities
-const pathUtils = {
-  join: (...parts: string[]) => parts.join('/').replace(/\/+/g, '/'),
-  dirname: (path: string) => path.substring(0, path.lastIndexOf('/')),
-  resolve: (path: string) => path.startsWith('/') ? path : `/${path}`,
-  isAbsolute: (path: string) => path.startsWith('/')
-};
 
 // Node.js modules - conditionally imported
 let fs: any = null;
@@ -21,7 +14,7 @@ let path: any = null;
 
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
-  if (isEdgeRuntime()) return false;
+  if (isEdgeRuntime()) {return false;}
 
   try {
     fs = await import('fs');
@@ -33,7 +26,7 @@ const loadNodeModules = async () => {
 };
 
 export class PatternMatchingService {
-  private apiPatterns: APIPattern[] = [];
+  private apiPatterns: CoolhandAPIPattern[] = [];
   private isInitialized: boolean = false;
 
   constructor(customPatternsFile?: string) {
@@ -42,7 +35,7 @@ export class PatternMatchingService {
   }
 
   private initializePatternsSync(customPatternsFile?: string): void {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {return;}
 
     if (isEdgeRuntime()) {
       // In Edge runtime, use default patterns or skip loading
@@ -50,10 +43,18 @@ export class PatternMatchingService {
     } else {
       // In Node.js runtime, try to load from filesystem synchronously
       try {
-        const fs = require('fs');
-        const path = require('path');
-        this.loadAPIPatternsSync(customPatternsFile, fs, path);
-      } catch (error) {
+        // Check if require is available (CommonJS) or if we need to use dynamic import (ES modules)
+        if (typeof require !== 'undefined') {
+          const fs = require('fs');
+          const path = require('path');
+          this.loadAPIPatternsSync(customPatternsFile, fs, path);
+        } else {
+          // In ES modules, we can't use require synchronously, so fall back to default patterns
+          // The async initialization will handle proper loading later
+          console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.');
+          this.loadDefaultPatternsForEdge();
+        }
+      } catch {
         console.warn('Could not load fs/path modules, falling back to default patterns');
         this.loadDefaultPatternsForEdge();
       }
@@ -64,7 +65,7 @@ export class PatternMatchingService {
 
   // Keep async version for explicit async initialization if needed
   private async initializePatterns(customPatternsFile?: string): Promise<void> {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {return;}
 
     if (isEdgeRuntime()) {
       // In Edge runtime, use default patterns or skip loading
@@ -143,7 +144,9 @@ export class PatternMatchingService {
           }
 
           possiblePaths.push(path.join(packageDir, 'dist', 'api-patterns.json'));
-        } catch {}
+        } catch {
+          // Ignore errors when finding package.json
+        }
 
         // Strategy 2: __dirname method
         possiblePaths.push(path.join(__dirname, '..', 'api-patterns.json'));
@@ -170,7 +173,7 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: APIPatterns = JSON.parse(fileContent);
+        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
         console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
       } else {
@@ -182,13 +185,13 @@ export class PatternMatchingService {
             const packagePath = require.resolve('coolhand-node/package.json');
             const packageDir = path.dirname(packagePath);
             defaultPatternsFile = path.join(packageDir, 'dist', 'api-patterns.json');
-          } catch (resolveError) {
+          } catch {
             defaultPatternsFile = path.join(__dirname, '..', 'api-patterns.json');
           }
 
           if (fs.existsSync(defaultPatternsFile)) {
             const fileContent = fs.readFileSync(defaultPatternsFile, 'utf-8');
-            const patternsData: APIPatterns = JSON.parse(fileContent);
+            const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
             this.apiPatterns = patternsData.patterns;
             console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns as fallback`);
           } else {
@@ -205,21 +208,48 @@ export class PatternMatchingService {
     }
   }
 
-  private loadAPIPatternsSync(customPatternsFile: string | undefined, fs: any, path: any): void {
+  private loadAPIPatternsSync(customPatternsFile: string | undefined, fs: any, _path: any): void {
     try {
       let patternsFile: string;
 
       if (customPatternsFile) {
-        // Use custom patterns file if provided
-        patternsFile = path.resolve(customPatternsFile);
+        // Use custom patterns file if provided - use regular require for test compatibility
+        try {
+          const path = require('path');
+          patternsFile = path.resolve(customPatternsFile);
+        } catch {
+          // Fallback for ES modules
+          patternsFile = customPatternsFile;
+        }
       } else {
-        // Use default patterns file
-        patternsFile = path.join(__dirname, '..', 'api-patterns.json');
+        // Calculate the path to api-patterns.json relative to this file
+        try {
+          // Try regular require first (works with Jest mocks)
+          const path = require('path');
+          patternsFile = path.join(__dirname, '..', 'api-patterns.json');
+        } catch {
+          // Fallback for ES modules when require isn't available
+          try {
+            const path = eval('require')('path');
+            const url = eval('require')('url');
+            const importMeta = eval('typeof import.meta !== "undefined" ? import.meta : undefined');
+
+            if (importMeta && importMeta.url) {
+              const __filename = url.fileURLToPath(importMeta.url);
+              const __dirname = path.dirname(__filename);
+              patternsFile = path.join(__dirname, '..', 'api-patterns.json');
+            } else {
+              patternsFile = '../api-patterns.json';
+            }
+          } catch {
+            patternsFile = '../api-patterns.json';
+          }
+        }
       }
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: APIPatterns = JSON.parse(fileContent);
+        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
         console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
       } else {
@@ -229,6 +259,7 @@ export class PatternMatchingService {
           console.warn(`⚠️  API patterns file not found: ${patternsFile}`);
         }
       }
+
     } catch (error) {
       console.error(`❌ Error loading API patterns:`, (error as Error).message);
       this.loadDefaultPatternsForEdge();
@@ -242,7 +273,7 @@ export class PatternMatchingService {
     }
   }
 
-  public async matchesAPIPattern(options: RequestOptions | string | URL): Promise<MatchedPattern | null> {
+  public async matchesAPIPattern(options: CoolhandRequestOptions | string | URL): Promise<CoolhandMatchedPattern | null> {
     this.ensureInitialized();
 
     if (typeof options === 'string') {
@@ -273,7 +304,7 @@ export class PatternMatchingService {
   }
 
   // Synchronous version for backwards compatibility (uses cached patterns)
-  public matchesAPIPatternSync(options: RequestOptions | string | URL): MatchedPattern | null {
+  public matchesAPIPatternSync(options: CoolhandRequestOptions | string | URL): CoolhandMatchedPattern | null {
     if (typeof options === 'string') {
       return this.matchesAPIPatternFromURL(options);
     }
@@ -301,7 +332,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public matchesAPIPatternFromURL(url: string): MatchedPattern | null {
+  public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
     try {
       const urlObj = new URL(url);
 
@@ -350,7 +381,7 @@ export class PatternMatchingService {
     return null;
   }
 
-  public sanitizeHeaders(headers: any, pattern?: APIPattern): Record<string, any> {
+  public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
     const sanitized = { ...headers };
 
     // Default sanitization rules
@@ -378,7 +409,7 @@ export class PatternMatchingService {
     return sanitized;
   }
 
-  public async getLoadedPatterns(): Promise<APIPattern[]> {
+  public async getLoadedPatterns(): Promise<CoolhandAPIPattern[]> {
     this.ensureInitialized();
     return [...this.apiPatterns];
   }
@@ -389,7 +420,7 @@ export class PatternMatchingService {
   }
 
   // Synchronous versions for backwards compatibility
-  public getLoadedPatternsSync(): APIPattern[] {
+  public getLoadedPatternsSync(): CoolhandAPIPattern[] {
     return [...this.apiPatterns];
   }
 

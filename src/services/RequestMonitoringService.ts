@@ -1,7 +1,7 @@
 import * as https from 'https';
 import * as http from 'http';
-import { CallData, RequestOptions, MatchedPattern } from '../types';
-import { PatternMatchingService } from './PatternMatchingService';
+import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
+import { PatternMatchingService } from './PatternMatchingService.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -45,7 +45,7 @@ export class RequestMonitoringService {
       const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
       if (!requestDescriptor || requestDescriptor.configurable !== false) {
         Object.defineProperty(https, 'request', {
-          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTPS REQUEST', options);
 
             // Check if this matches any API pattern
@@ -71,7 +71,7 @@ export class RequestMonitoringService {
       const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
       if (!getDescriptor || getDescriptor.configurable !== false) {
         Object.defineProperty(https, 'get', {
-          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTPS GET', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
@@ -101,7 +101,7 @@ export class RequestMonitoringService {
       const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
       if (!requestDescriptor || requestDescriptor.configurable !== false) {
         Object.defineProperty(http, 'request', {
-          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTP REQUEST', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
@@ -125,7 +125,7 @@ export class RequestMonitoringService {
       const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
       if (!getDescriptor || getDescriptor.configurable !== false) {
         Object.defineProperty(http, 'get', {
-          value: function(options: RequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
+          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: http.IncomingMessage) => void) {
             monitor.debugRequest('HTTP GET', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
@@ -170,16 +170,16 @@ export class RequestMonitoringService {
 
   private interceptRequest(
     originalRequest: typeof https.request | typeof http.request,
-    options: RequestOptions | string | URL,
+    options: CoolhandRequestOptions | string | URL,
     callback?: (res: http.IncomingMessage) => void,
     protocol: 'https' | 'http' = 'https',
-    matchedPattern?: MatchedPattern
+    matchedPattern?: CoolhandMatchedPattern
   ): http.ClientRequest {
     this.interceptedCalls++;
 
     const url = this.buildURL(options, protocol);
 
-    const callData: CallData = {
+    const callData: CoolhandCallData = {
       id: this.interceptedCalls,
       timestamp: new Date().toISOString(),
       method: typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET',
@@ -251,11 +251,11 @@ export class RequestMonitoringService {
     originalFetch: typeof fetch,
     url: string | URL | Request,
     options: RequestInit,
-    matchedPattern?: MatchedPattern
+    matchedPattern?: CoolhandMatchedPattern
   ): Promise<Response> {
     this.interceptedCalls++;
 
-    const callData: CallData = {
+    const callData: CoolhandCallData = {
       id: this.interceptedCalls,
       timestamp: new Date().toISOString(),
       method: options.method || 'GET',
@@ -295,7 +295,7 @@ export class RequestMonitoringService {
     }
   }
 
-  private buildURL(options: RequestOptions | string | URL, protocol: string): string {
+  private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {
     if (typeof options === 'string') {
       return options;
     }
@@ -322,7 +322,7 @@ export class RequestMonitoringService {
     }
   }
 
-  private debugRequest(type: string, options: RequestOptions | string | URL | any): void {
+  private debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
     const hostname = typeof options === 'string' ? options :
                     options instanceof URL ? options.hostname :
                     options.hostname || options.host || options.url || 'unknown';
@@ -339,7 +339,7 @@ export class RequestMonitoringService {
   }
 
   // Event handler that will be overridden by the main class
-  public onRequestComplete: (callData: CallData, matchedPattern?: MatchedPattern) => void = () => {};
+  public onRequestComplete: (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => void = () => {};
 
   public getStats() {
     return {
