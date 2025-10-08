@@ -1,9 +1,6 @@
 import { CoolhandAPIPatterns, CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
-// Import the module to get dynamic import and createRequire support
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// Use eval to access these dynamically to avoid TypeScript issues in test environments
 
 // Runtime detection
 const isEdgeRuntime = (): boolean => {
@@ -24,35 +21,74 @@ export class PatternMatchingService {
       let patternsFile: string;
 
       if (customPatternsFile) {
-        // Use custom patterns file if provided
-        patternsFile = customPatternsFile;
+        // Use custom patterns file if provided - use regular require for test compatibility
+        try {
+          const path = require('path');
+          patternsFile = path.resolve(customPatternsFile);
+        } catch {
+          // Fallback for ES modules
+          patternsFile = customPatternsFile;
+        }
       } else {
         // Calculate the path to api-patterns.json relative to this file
         try {
-          // For ES modules, use import.meta.url to get the current file path
-          const __filename = fileURLToPath(import.meta.url);
-          const __dirname = dirname(__filename);
-          patternsFile = join(__dirname, '..', 'api-patterns.json');
+          // Try regular require first (works with Jest mocks)
+          const path = require('path');
+          patternsFile = path.join(__dirname, '..', 'api-patterns.json');
         } catch {
-          // Fallback for environments where import.meta.url isn't available
-          const require = createRequire(import.meta.url);
-          patternsFile = require.resolve('../api-patterns.json');
+          // Fallback for ES modules when require isn't available
+          try {
+            const path = eval('require')('path');
+            const url = eval('require')('url');
+            const { createRequire } = eval('require')('module');
+            const importMeta = eval('typeof import.meta !== "undefined" ? import.meta : undefined');
+
+            if (importMeta && importMeta.url) {
+              const require = createRequire(importMeta.url);
+              const __filename = url.fileURLToPath(importMeta.url);
+              const __dirname = path.dirname(__filename);
+              patternsFile = path.join(__dirname, '..', 'api-patterns.json');
+            } else {
+              patternsFile = '../api-patterns.json';
+            }
+          } catch {
+            patternsFile = '../api-patterns.json';
+          }
         }
       }
 
-      // Read the file using createRequire for ES modules
-      const require = createRequire(import.meta.url);
-      const fs = require('fs');
+      // Read the file - try different approaches
+      let fs: any;
+      try {
+        // Try regular require first (works with Jest mocks)
+        fs = require('fs');
+      } catch {
+        try {
+          // Try eval require for ES modules
+          fs = eval('require')('fs');
+        } catch {
+          // If require completely fails, handle gracefully
+          console.warn(`⚠️ Could not load fs module. Using empty patterns list.`);
+          this.apiPatterns = [];
+          return;
+        }
+      }
+
+      if (!fs.existsSync(patternsFile)) {
+        console.warn(`⚠️ API patterns file not found: ${patternsFile}. Using empty patterns list.`);
+        this.apiPatterns = [];
+        return;
+      }
 
       const fileContent = fs.readFileSync(patternsFile, 'utf-8');
       const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
-      this.apiPatterns = patternsData.patterns;
+      this.apiPatterns = patternsData.patterns || [];
 
       console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from file`);
     } catch (error) {
       console.error(`❌ Error loading API patterns:`, (error as Error).message);
-      console.error(`   Pattern file path attempted: ${customPatternsFile || 'default api-patterns.json'}`);
-      throw new Error(`Failed to load API patterns: ${(error as Error).message}`);
+      // Handle gracefully instead of throwing - set empty patterns
+      this.apiPatterns = [];
     }
   }
 

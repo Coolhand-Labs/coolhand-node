@@ -4,7 +4,13 @@ export default {
   roots: ['<rootDir>/test'],
   testMatch: ['**/*.test.ts'],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', {
+      tsconfig: {
+        module: 'ES2020',
+        target: 'ES2020',
+        lib: ['ES2020']
+      }
+    }],
   },
   collectCoverageFrom: [
     'src/**/*.ts',
