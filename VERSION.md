@@ -14,6 +14,12 @@
 - ES Module support with proper `package.json` configuration
 - TypeScript compilation with `tsc` and proper build pipeline
 
+#### 🌐 **Global Monitoring System**
+- **Zero-Configuration Monitoring**: One-line setup with `require('coolhand-node/auto-monitor')`
+- **Universal HTTP Patching**: Patches Node.js HTTP/HTTPS/fetch modules for automatic detection
+- **Auto-Initialization**: Environment variable-based setup (`COOLHAND_API_KEY`)
+- **Edge Runtime Support**: Compatibility with Next.js Edge Runtime and serverless environments
+
 #### 🎯 **Pattern-Based Multi-Provider Support**
 - **Universal API Detection**: Supports OpenAI, Anthropic, Google AI, Cohere, and Hugging Face
 - **Configurable Patterns**: JSON-based API pattern matching system (`api-patterns.json`)
@@ -24,15 +30,17 @@
 #### 📊 **Comprehensive Feedback API**
 - **LLM Response Feedback**: Collect user feedback on AI responses (`createFeedback()`)
 - **Quality Metrics**: Track likes/dislikes, explanations, and revised outputs
-- **Request Correlation**: Link feedback to specific LLM request logs
-- **Client Tracking**: Support for unique client identification
+- **Request Correlation**: Link feedback to specific LLM request logs via multiple matching strategies
+- **Client Tracking**: Support for unique client identification and creator tracking
+
+#### 🐛 **Debug Mode System**
+- **Development Safety**: Debug mode prevents live API calls during development
+- **Environment Control**: Toggle via `COOLHAND_DEBUG` environment variable
 
 #### 🏢 **Modular Service Architecture**
-- **PatternMatchingService**: Handles API pattern detection and matching
 - **LoggingService**: Manages API request/response logging to Coolhand platform
 - **FeedbackService**: Handles feedback collection and submission
 - **RequestMonitoringService**: HTTP/HTTPS/fetch interception and monitoring
-- **Service Composition**: Clean separation of concerns with dependency injection
 
 #### 🧪 **Production-Ready Testing**
 - **Jest Test Framework**: Comprehensive test suite with 85%+ coverage targets
@@ -54,28 +62,59 @@ const monitor = new Coolhand({
   apiKey: 'your-api-key',
   environment: 'production' | 'local',  // New: Environment-specific endpoints
   silent: boolean,                       // Enhanced: Better logging control
-  patternsFile: string                   // New: Custom API patterns support
+  patternsFile: string,                  // New: Custom API patterns support
+  debug: boolean                         // New: Debug mode for development
+});
+```
+
+#### New Environment Variables
+```bash
+# Global monitoring auto-initialization
+COOLHAND_API_KEY=your-api-key
+COOLHAND_SILENT=true|false
+COOLHAND_DEBUG=true|false              # New: Debug mode control
+COOLHAND_PATTERNS_FILE=./patterns.json
+```
+
+#### New Global Monitoring API
+```typescript
+// Auto-initialization
+require('coolhand-node/auto-monitor');
+
+// Manual initialization
+import { initializeGlobalMonitoring } from 'coolhand-node';
+await initializeGlobalMonitoring({
+  apiKey: 'your-api-key',
+  debug: false,
+  silent: true
 });
 ```
 
 #### New Methods
 ```typescript
-// Feedback API
+// Enhanced Feedback API with collector tracking
 await monitor.createFeedback({
   llm_request_log_id?: number,
   like: boolean,
   explanation?: string,
-  revised_output?: string,
+  revised_output?: string,             // New: Enhanced quality data collection
   llm_provider_unique_id?: string,
   original_output?: string,
-  client_unique_id?: string
+  client_unique_id?: string,
+  creator_unique_id?: string           // New: Track feedback creator
 });
 
-// Service Access
+// Global monitoring utilities
+import { getGlobalStats, isGlobalMonitoringActive } from 'coolhand-node';
+const stats = getGlobalStats();
+const isActive = isGlobalMonitoringActive();
+
+// Enhanced Service Access
 import {
   PatternMatchingService,
   LoggingService,
-  FeedbackService
+  FeedbackService,
+  BaseService                          // New: Shared base service
 } from 'coolhand-node';
 ```
 
