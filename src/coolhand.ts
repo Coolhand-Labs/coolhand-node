@@ -35,7 +35,7 @@ export class Coolhand {
 
     // Set up the callback for when requests are completed
     this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {
-      this.loggingService.logRequestToAPI(callData, matchedPattern);
+      this.loggingService.logRequestToAPI(callData, matchedPattern, 'manual');
     };
 
     if (!this.silent) {
@@ -59,7 +59,7 @@ export class Coolhand {
    * @returns Promise resolving to the created feedback response or null if failed
    */
   public async createFeedback(feedback: LLMRequestLogFeedback): Promise<LLMRequestLogFeedbackResponse | null> {
-    return this.feedbackService.createFeedback(feedback);
+    return this.feedbackService.createFeedback(feedback, 'manual');
   }
 
   /**

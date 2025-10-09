@@ -398,7 +398,7 @@ function interceptRequest(
 
       // Log to API
       if (globalLoggingService) {
-        globalLoggingService.logRequestToAPI(callData, matchedPattern);
+        globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
       }
 
       // Cleanup
@@ -482,7 +482,7 @@ async function interceptFetch(
 
     // Log to API
     if (globalLoggingService) {
-      globalLoggingService.logRequestToAPI(callData, matchedPattern);
+      globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
     }
 
     // Cleanup

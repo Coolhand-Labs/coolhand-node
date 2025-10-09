@@ -1,82 +1,40 @@
 import { LLMRequestLogFeedback, LLMRequestLogFeedbackPayload, LLMRequestLogFeedbackResponse } from '../types';
+import { CollectionMethod } from '../utils/collector.js';
+import { BaseService, BaseServiceConfig } from './BaseService.js';
 
-export interface FeedbackServiceConfig {
-  apiKey: string;
-  silent: boolean;
-}
+export interface FeedbackServiceConfig extends BaseServiceConfig {}
 
-export class FeedbackService {
-  private apiKey: string;
-  private silent: boolean;
-  private apiEndpoint: string;
-
+export class FeedbackService extends BaseService {
   constructor(config: FeedbackServiceConfig) {
-    this.apiKey = config.apiKey;
-    this.silent = config.silent;
-    this.apiEndpoint = 'https://coolhand.io/api/v2/llm_request_log_feedbacks';
+    super(config, 'https://coolhand.io/api/v2/llm_request_log_feedbacks');
   }
 
-  public async createFeedback(feedback: LLMRequestLogFeedback): Promise<LLMRequestLogFeedbackResponse | null> {
+  public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {
+    const feedbackWithCollector = this.addCollectorToData(feedback, collectionMethod);
+
     const payload: LLMRequestLogFeedbackPayload = {
-      llm_request_log_feedback: feedback
+      llm_request_log_feedback: feedbackWithCollector
     };
 
-    const requestOptions: RequestInit = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.apiKey
-      },
-      body: JSON.stringify(payload)
-    };
+    this.logFeedbackInfo(feedback);
 
-    try {
-      if (!this.silent) {
-        console.log(`\n📝 CREATING FEEDBACK for LLM Request Log ID: ${feedback.llm_request_log_id}`);
-        console.log(`👍/👎 Like: ${feedback.like}`);
-        if (feedback.explanation) {
-          console.log(`💭 Explanation: ${feedback.explanation.substring(0, 100)}${feedback.explanation.length > 100 ? '...' : ''}`);
-        }
-        console.log(`📤 Sending to: ${this.apiEndpoint}`);
-      }
+    const result = await this.sendRequest<LLMRequestLogFeedbackResponse>(
+      payload,
+      `✅ Successfully created feedback with ID: ${feedback.llm_request_log_id || 'N/A'}`
+    );
 
-      // Use fetch if available
-      if (typeof fetch !== 'undefined') {
-        const response = await fetch(this.apiEndpoint, requestOptions);
-
-        if (response.ok) {
-          const result = await response.json() as LLMRequestLogFeedbackResponse;
-          this.log(`✅ Successfully created feedback with ID: ${result.id}`);
-
-          if (!this.silent) {
-            console.log('═'.repeat(60));
-          }
-
-          return result;
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ Failed to create feedback: ${response.status} - ${errorText}`);
-          return null;
-        }
-      } else {
-        console.error('❌ Fetch not available. Feedback service requires Node.js 18+ or a fetch polyfill.');
-        return null;
-      }
-
-    } catch (error) {
-      console.error(`❌ Error creating feedback:`, (error as Error).message);
-      return null;
-    }
+    this.logSeparator();
+    return result;
   }
 
-  private log(...args: any[]): void {
+  private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {
     if (!this.silent) {
-      console.log(...args);
+      console.log(`\n📝 CREATING FEEDBACK for LLM Request Log ID: ${feedback.llm_request_log_id}`);
+      console.log(`👍/👎 Like: ${feedback.like}`);
+      if (feedback.explanation) {
+        console.log(`💭 Explanation: ${feedback.explanation.substring(0, 100)}${feedback.explanation.length > 100 ? '...' : ''}`);
+      }
+      console.log(`📤 Sending to: ${this.apiEndpoint}`);
     }
   }
-
-  public getApiEndpoint(): string {
-    return this.apiEndpoint;
-  }
-
 }
