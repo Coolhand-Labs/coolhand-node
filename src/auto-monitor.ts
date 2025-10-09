@@ -8,6 +8,7 @@
  * - COOLHAND_API_KEY (required)
  * - COOLHAND_SILENT (optional: 'true' | 'false', default: 'true')
  * - COOLHAND_PATTERNS_FILE (optional: path to custom patterns file)
+ * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false')
  *
  * Usage:
  * Just import this module at the very top of your main file:
@@ -27,6 +28,7 @@ const apiKey = process.env.COOLHAND_API_KEY;
 if (apiKey) {
   const silent = process.env.COOLHAND_SILENT !== 'false'; // Default to true unless explicitly false
   const patternsFile = process.env.COOLHAND_PATTERNS_FILE;
+  const debug = process.env.COOLHAND_DEBUG === 'true'; // Default to false unless explicitly true
 
   // Async initialization wrapped in IIFE
   (async () => {
@@ -38,12 +40,17 @@ if (apiKey) {
       await initializeGlobalMonitoring({
         apiKey,
         silent,
-        patternsFile
+        patternsFile,
+        debug
       });
 
       if (!silent) {
         console.log('✅ Global monitoring initialized successfully');
         console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
+
+        if (debug) {
+          console.log('🐛 Debug mode: ON (API calls will be mocked)');
+        }
 
         if (patternsFile) {
           console.log(`📁 Custom patterns file: ${patternsFile}`);
