@@ -37,6 +37,7 @@ export interface CoolhandRequestOptions {
 export interface CoolhandLogPayload {
   llm_request_log: {
     raw_request: CoolhandCallData;
+    collector?: string;
   };
 }
 
@@ -60,13 +61,14 @@ export interface CoolhandMatchedPattern {
 
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {
-  llm_request_log_id: number;
+  llm_request_log_id?: number;
   like: boolean;
   explanation?: string;
   revised_output?: string;
   llm_provider_unique_id?: string;
   original_output?: string;
   client_unique_id?: string;
+  collector?: string;
 }
 
 export interface LLMRequestLogFeedbackPayload {

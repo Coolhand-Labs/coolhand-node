@@ -208,6 +208,204 @@ describe('FeedbackService', () => {
     });
   });
 
+  describe('Collector field behavior', () => {
+    it('should include collector field with default collection method', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback);
+
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toMatch(/^coolhand-node-/);
+    });
+
+    it('should include collector field with manual collection method', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback, 'manual');
+
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toMatch(/^coolhand-node-.*-manual$/);
+    });
+
+    it('should include collector field with global-monitoring collection method', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback, 'global-monitoring');
+
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toMatch(/^coolhand-node-.*-global-monitoring$/);
+    });
+
+    it('should include collector field with auto-monitor collection method', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback, 'auto-monitor');
+
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toMatch(/^coolhand-node-.*-auto-monitor$/);
+    });
+
+    it('should not override existing collector field in feedback', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true,
+        collector: 'existing-collector-value'
+      };
+
+      await service.createFeedback(feedback, 'manual');
+
+      // The addCollectorToData method should override the existing collector field
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toMatch(/^coolhand-node-.*-manual$/);
+      expect(capturedRequestBody.llm_request_log_feedback.collector).not.toBe('existing-collector-value');
+    });
+
+    it('should ensure collector field is in llm_request_log_feedback object, not at payload root', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const config: FeedbackServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new FeedbackService(config);
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        like: true
+      };
+
+      await service.createFeedback(feedback, 'manual');
+
+      // Ensure collector is in the feedback object
+      expect(capturedRequestBody.llm_request_log_feedback.collector).toBeDefined();
+
+      // Ensure collector is NOT at the payload root level
+      expect(capturedRequestBody.collector).toBeUndefined();
+
+      // Ensure payload structure is correct
+      expect(capturedRequestBody).toHaveProperty('llm_request_log_feedback');
+      expect(Object.keys(capturedRequestBody)).toEqual(['llm_request_log_feedback']);
+    });
+  });
+
   describe('Logging behavior', () => {
     it('should not output logs in silent mode', async () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
