@@ -59,6 +59,7 @@ interface GlobalMonitorConfig {
   apiKey: string;
   silent?: boolean;
   patternsFile?: string;
+  debug?: boolean;
 }
 
 /**
@@ -77,7 +78,8 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   globalPatternService = new PatternMatchingService(config.patternsFile);
   globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
-    silent
+    silent,
+    debug: config.debug
   });
 
   // Load Node.js modules if available
@@ -94,6 +96,9 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
 
   if (!silent) {
     console.log('🌐 Global Coolhand monitoring initialized');
+    if (config.debug) {
+      console.log('🐛 Debug mode: ON (API calls will be mocked)');
+    }
     console.log(`🎯 API Endpoint: ${globalLoggingService.getApiEndpoint()}`);
     console.log(`📋 Loaded ${await globalPatternService.getPatternsCount()} AI API patterns`);
     console.log(`🔍 Monitoring mode: ${hasNodeModules ? 'Full (HTTP/HTTPS/Fetch)' : 'Fetch only (Edge runtime)'}`);

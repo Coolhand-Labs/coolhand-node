@@ -1,138 +1,61 @@
-import * as https from 'https';
-import * as http from 'http';
 import { CoolhandCallData, CoolhandLogPayload, CoolhandMatchedPattern } from '../types';
-import { getCollectorString, CollectionMethod } from '../utils/collector.js';
+import { CollectionMethod } from '../utils/collector.js';
+import { BaseService, BaseServiceConfig } from './BaseService.js';
 
-export interface LoggingServiceConfig {
-  apiKey: string;
-  silent: boolean;
-}
+export interface LoggingServiceConfig extends BaseServiceConfig {}
 
-export class LoggingService {
-  private apiKey: string;
-  private silent: boolean;
-  private apiEndpoint: string;
-
+export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
-    this.apiKey = config.apiKey;
-    this.silent = config.silent;
-    this.apiEndpoint = 'https://coolhand.io/api/v2/llm_request_logs';
+    super(config, 'https://coolhand.io/api/v2/llm_request_logs');
   }
 
   public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern, collectionMethod?: CollectionMethod): Promise<void> {
+    const logData = this.addCollectorToData({ raw_request: callData }, collectionMethod);
+
     const payload: CoolhandLogPayload = {
-      llm_request_log: {
-        raw_request: callData,
-        collector: getCollectorString(collectionMethod)
+      llm_request_log: logData
+    };
+
+    this.logRequestInfo(callData, matchedPattern);
+
+    await this.sendRequest(
+      payload,
+      `✅ Successfully logged to API with ID for call #${callData.id}`
+    );
+
+    this.logSeparator();
+  }
+
+  private logRequestInfo(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): void {
+    if (!this.silent) {
+      const apiName = matchedPattern?.pattern.name || 'API';
+      console.log(`\n🎉 LOGGING ${apiName} API Call #${callData.id}`);
+      console.log(`🕐 Time: ${callData.timestamp}`);
+      console.log(`🎯 ${callData.method} ${callData.url}`);
+      console.log(`📊 Status: ${callData.status_code}`);
+      console.log(`🔧 Protocol: ${callData.protocol}`);
+      if (matchedPattern) {
+        console.log(`🔍 Matched by: ${matchedPattern.matchType} (${matchedPattern.matchValue})`);
       }
-    };
 
-    const requestOptions: RequestInit = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.apiKey
-      },
-      body: JSON.stringify(payload)
-    };
+      if (callData.request_body?.model) {
+        console.log(`🤖 Model: ${callData.request_body.model}`);
+      }
 
-    try {
-      if (!this.silent) {
-        const apiName = matchedPattern?.pattern.name || 'API';
-        console.log(`\n🎉 LOGGING ${apiName} API Call #${callData.id}`);
-        console.log(`🕐 Time: ${callData.timestamp}`);
-        console.log(`🎯 ${callData.method} ${callData.url}`);
-        console.log(`📊 Status: ${callData.status_code}`);
-        console.log(`🔧 Protocol: ${callData.protocol}`);
-        if (matchedPattern) {
-          console.log(`🔍 Matched by: ${matchedPattern.matchType} (${matchedPattern.matchValue})`);
-        }
+      if (callData.request_body?.messages) {
+        console.log(`💬 Messages: ${callData.request_body.messages.length}`);
+      }
 
-        if (callData.request_body?.model) {
-          console.log(`🤖 Model: ${callData.request_body.model}`);
-        }
+      if (callData.request_body?.temperature !== undefined) {
+        console.log(`🌡️  Temperature: ${callData.request_body.temperature}`);
+      }
 
-        if (callData.request_body?.messages) {
-          console.log(`💬 Messages: ${callData.request_body.messages.length}`);
-        }
-
-        if (callData.request_body?.temperature !== undefined) {
-          console.log(`🌡️  Temperature: ${callData.request_body.temperature}`);
-        }
-
+      if (this.debug) {
+        console.log(`🐛 DEBUG MODE: Will skip API call`);
+      } else {
         console.log(`📤 Sending to: ${this.apiEndpoint}`);
       }
-
-      // Use fetch if available, otherwise use https/http
-      if (typeof fetch !== 'undefined') {
-        const response = await fetch(this.apiEndpoint, requestOptions);
-
-        if (response.ok) {
-          const result = await response.json() as any;
-          this.log(`✅ Successfully logged to API with ID: ${result.id}`);
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ Failed to log to API: ${response.status} - ${errorText}`);
-        }
-      } else {
-        // Fallback to using https/http modules
-        await this.logWithHTTPS(payload);
-      }
-
-      if (!this.silent) {
-        console.log('═'.repeat(60));
-      }
-
-    } catch (error) {
-      console.error(`❌ Error logging to API:`, (error as Error).message);
     }
-  }
-
-  private async logWithHTTPS(payload: CoolhandLogPayload): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const url = new URL(this.apiEndpoint);
-      const postData = JSON.stringify(payload);
-
-      const options = {
-        hostname: url.hostname,
-        port: url.port || (url.protocol === 'https:' ? 443 : 80),
-        path: url.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData),
-          'X-API-Key': this.apiKey
-        }
-      };
-
-      const req = (url.protocol === 'https:' ? https : http).request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            this.log(`✅ Successfully logged to API`);
-            resolve();
-          } else {
-            console.error(`❌ Failed to log to API: ${res.statusCode} - ${data}`);
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.write(postData);
-      req.end();
-    });
-  }
-
-  private log(...args: any[]): void {
-    if (!this.silent) {
-      console.log(...args);
-    }
-  }
-
-  public getApiEndpoint(): string {
-    return this.apiEndpoint;
   }
 
 }

@@ -5,16 +5,19 @@ import { getCollectorString, CollectionMethod } from '../utils/collector.js';
 export interface BaseServiceConfig {
   apiKey: string;
   silent: boolean;
+  debug?: boolean;
 }
 
 export abstract class BaseService {
   protected apiKey: string;
   protected silent: boolean;
+  protected debug: boolean;
   protected apiEndpoint: string;
 
   constructor(config: BaseServiceConfig, endpoint: string) {
     this.apiKey = config.apiKey;
     this.silent = config.silent;
+    this.debug = config.debug || false;
     this.apiEndpoint = endpoint;
   }
 
@@ -40,6 +43,16 @@ export abstract class BaseService {
   }
 
   protected async sendRequest<T>(payload: any, successMessage: string): Promise<T | null> {
+    // In debug mode, skip the actual API call and show debug info
+    if (this.debug) {
+      if (!this.silent) {
+        console.log(`🐛 DEBUG MODE: Skipping API call to ${this.apiEndpoint}`);
+        console.log(`🐛 DEBUG MODE: Would send payload:`, JSON.stringify(payload, null, 2));
+      }
+      this.log(`🐛 DEBUG: ${successMessage.replace('✅', '🐛')}`);
+      return null; // Return null for debug mode as services handle mock responses themselves
+    }
+
     const requestOptions = this.createRequestOptions(payload);
 
     try {

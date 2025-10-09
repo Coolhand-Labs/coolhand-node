@@ -2,6 +2,7 @@ export interface CoolhandOptions {
   apiKey: string;
   silent?: boolean;
   patternsFile?: string;
+  debug?: boolean;
 }
 
 export interface CoolhandCallData {

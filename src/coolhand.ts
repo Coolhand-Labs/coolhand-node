@@ -26,7 +26,8 @@ export class Coolhand {
 
     const serviceConfig = {
       apiKey,
-      silent: this.silent
+      silent: this.silent,
+      debug: options.debug
     };
 
     this.loggingService = new LoggingService(serviceConfig);
@@ -40,6 +41,9 @@ export class Coolhand {
 
     if (!this.silent) {
       console.log('🔍 Setting up Coolhand...');
+      if (options.debug) {
+        console.log('🐛 DEBUG MODE: API calls will be mocked');
+      }
       console.log(`🎯 API Endpoint: ${this.loggingService.getApiEndpoint()}`);
       console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCount()} API patterns`);
     }
