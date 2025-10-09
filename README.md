@@ -289,6 +289,10 @@ The monitor handles errors gracefully:
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns
 
+## Other Languages
+
+- **Ruby**: [coolhand-ruby gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
+
 ## Community
 
 - **Questions?** [Create a discussion](https://github.com/coolhand-io/coolhand-node/discussions)
