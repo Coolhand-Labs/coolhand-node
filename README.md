@@ -4,8 +4,6 @@ Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google
 
 ## Installation
 
-Install via npm:
-
 ```bash
 npm install coolhand-node
 ```
@@ -39,6 +37,7 @@ require('coolhand-node/auto-monitor');
 ```bash
 # .env
 COOLHAND_API_KEY=your_api_key_here
+COOLHAND_DEBUG=false  # Set to true for debug mode
 ```
 
 **Or manual initialization:**
@@ -48,7 +47,8 @@ import { initializeGlobalMonitoring } from 'coolhand-node';
 
 // Initialize once at application startup
 initializeGlobalMonitoring({
-  apiKey: 'your-api-key'
+  apiKey: 'your-api-key',
+  debug: false
 });
 
 // Now ALL outbound AI API calls are automatically monitored
@@ -61,10 +61,6 @@ initializeGlobalMonitoring({
 - ⚡ **Performance optimized** - Negligible overhead
 - 🛡️ **Future-proof** - Automatically captures new AI calls added by your team
 
-**Supported Frameworks:** Designed for all Node.js frameworks (Express.js, NestJS, Fastify, Koa, Hapi, AWS Lambda, Vercel Functions), extensively tested with Next.js/T3 Stack
-
-📚 **[Complete Framework Integration Guide](./docs/framework-integration.md)** - Detailed setup instructions for all frameworks
-
 ### Option 2: Instance-Based Monitoring (Explicit Control)
 
 For cases where you need explicit control over which AI calls are monitored:
@@ -74,64 +70,49 @@ const Coolhand = require('coolhand-node');
 
 // Initialize the monitor
 const monitor = new Coolhand({
-    apiKey: 'your-api-key'
+    apiKey: 'your-api-key',
+    debug: false  // Enable debug mode if needed
 });
 ```
 
-## Framework Compatibility
+## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
 
-🎯 **Primary Testing**: This library has been extensively tested and validated with **Next.js/T3 Stack** applications.
-
-🌐 **Universal Design**: Built using Node.js HTTP module patching, this library is designed to work with **any Node.js framework** that makes HTTP requests.
+**Supported Frameworks:** Works with any Node.js framework (Express.js, NestJS, Fastify, Koa, AWS Lambda, Vercel Functions), extensively tested with Next.js/T3 Stack
 
 ### Quick Links by Framework:
 - **[Next.js / T3 Stack](./docs/frameworks/nextjs.md)** - ✅ Production-ready
-- **[React Frontend](./docs/frameworks/react.md)** - ✅ Frontend integration patterns
+- **[React Frontend](./docs/frameworks/react.md)** - 🧪 Frontend integration patterns
 - **[Express.js](./docs/frameworks/express.md)** - 🧪 Needs testing
 - **[NestJS](./docs/frameworks/nestjs.md)** - 🧪 Needs testing
 - **[Fastify](./docs/frameworks/fastify.md)** - 🧪 Needs testing
 - **[Koa.js](./docs/frameworks/koa.md)** - 🧪 Needs testing
 - **[Serverless (AWS Lambda, Vercel, Netlify)](./docs/frameworks/serverless.md)** - 🧪 Needs testing
 
-🤝 **Community Validation**: We're actively seeking feedback from users of other frameworks:
-
-- **Using Express.js, NestJS, Fastify, or other frameworks?** Please share your experience!
-- **Encountered issues?** [Report them here](https://github.com/coolhand-io/coolhand-node/issues) and help us improve
-- **Success stories?** [Share your implementation](https://github.com/coolhand-io/coolhand-node/discussions) to help other developers
-- **Framework-specific tips?** [Contribute to our documentation](https://github.com/coolhand-io/coolhand-node/pulls)
-
-Your feedback helps us ensure reliable compatibility across the entire Node.js ecosystem.
-
 ## Configuration Options
-
-### Instance-Based Monitoring Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `apiKey` | string | *required* | Your Coolhand API key for authentication |
-| `environment` | `'local'` \| `'production'` | `'production'` | Environment for logging (affects API endpoint) |
-| `silent` | boolean | `true` | Whether to suppress console output |
-| `patternsFile` | string | `undefined` | Path to custom API patterns file |
 
 ### Global Monitoring Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | string | *required* | Your Coolhand API key for authentication |
-| `environment` | `'local'` \| `'production'` | `'production'` | Environment for logging (affects API endpoint) |
 | `silent` | boolean | `true` | Whether to suppress console output |
+| `debug` | boolean | `false` | Enable debug mode (API calls will be mocked) |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
 
-### Auto-Monitor Environment Variables
+### Environment Variables
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
-| `COOLHAND_ENVIRONMENT` | `'local'` \| `'production'` | `'production'` | Environment for logging |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Whether to suppress console output |
+| `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable debug mode |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
+
+### Instance-Based Monitoring Options
+
+Same options as global monitoring, passed to the `Coolhand` constructor.
 
 ## TypeScript Support
 
@@ -142,68 +123,72 @@ import { Coolhand, CoolhandOptions, CoolhandCallData, CoolhandStats } from 'cool
 
 const monitor = new Coolhand({
   apiKey: 'your-api-key',
-  silent: true
+  silent: true,
+  debug: false
 });
 ```
 
-##
+## What Gets Logged
 
-### Basic
+The monitor captures:
+
+- **Request Data**: Method, URL, headers, request body
+- **Response Data**: Status code, headers, response body
+- **Metadata**: Timestamp, protocol used
+- **LLM-Specific**: Model used, token counts, temperature settings
+
+Headers containing API keys are automatically sanitized for security.
+
+## Supported Libraries
+
+The monitor works with any Node.js library that makes HTTP(S) requests to LLM APIs, including:
+
+- OpenAI official SDK
+- Anthropic SDK
+- Google AI SDK
+- LangChain
+- Direct `fetch()` calls
+- `https`/`http` module usage
+- Any other HTTP client
+
+## Custom AI Providers
+
+Add support for custom AI providers by creating a patterns file:
 
 ```javascript
-const Coolhand = require('coolhand-node');
-
 const monitor = new Coolhand({
-    apiKey: process.env.COOLHAND_API_KEY
+    apiKey: 'your-api-key',
+    patternsFile: './my-patterns.json'
 });
 ```
 
-### Custom AI Service Monitoring
+Example patterns file (`my-patterns.json`):
+
 ```json
-// custom-patterns.json
 {
   "patterns": [
     {
-      "name": "Custom AI Service",
-      "domains": ["api.customai.com"],
-      "paths": ["/v1/generate"],
+      "name": "My Custom AI",
+      "domains": ["api.mycustomai.com"],
+      "paths": ["/v1/generate", "/v1/chat"],
       "headers": {
-        "authorization": "[REDACTED]"
+        "authorization": "[REDACTED]",
+        "api-key": "[REDACTED]"
       }
     }
   ]
 }
 ```
 
-```javascript
-initializeGlobalMonitoring({
-  apiKey: 'your-api-key',
-  patternsFile: './custom-patterns.json'
-});
-```
-
-#### Monitoring Statistics
-```javascript
-const { getGlobalStats } = require('coolhand-node');
-
-setInterval(() => {
-  const stats = getGlobalStats();
-  console.log(`AI Calls: ${stats.interceptedCalls}, Total Requests: ${stats.totalRequests}`);
-}, 60000);
-```
-
-For complete documentation, see: [Global Monitoring Guide](./docs/global-monitoring.md)
-
 ## Feedback API
 
-Coolhand now supports collecting feedback on LLM responses to improve model performance and quality:
+Collect feedback on LLM responses to improve model performance:
 
 ```typescript
 import { Coolhand } from 'coolhand-node';
 
 const monitor = new Coolhand({
-  apiKey: 'your-api-key',
-  environment: 'production'
+  apiKey: 'your-api-key'
 });
 
 // Create feedback for an LLM response
@@ -222,86 +207,44 @@ if (feedback) {
 }
 ```
 
-## What Gets Logged
+## Monitoring Statistics
 
-The monitor captures:
-
-- **Request Data**: Method, URL, headers, request body
-- **Response Data**: Status code, headers, response body
-- **Metadata**: Timestamp, protocol used
-- **LLM-Specific**: Model used, token counts, temperature settings
-
-Headers containing API keys are automatically sanitized for security.
-
-## Adding (or Limiting) LLM Providers
-
-You can add support for additional providers (and override the defaults that Coolhand monitors) by creating a custom patterns file:
+Track monitoring statistics in your application:
 
 ```javascript
+const { getGlobalStats } = require('coolhand-node');
+
+setInterval(() => {
+  const stats = getGlobalStats();
+  console.log(`AI Calls: ${stats.interceptedCalls}, Total Requests: ${stats.totalRequests}`);
+}, 60000);
+```
+
+## Debug Mode
+
+Enable debug mode for development and testing:
+
+```javascript
+// Global monitoring with debug mode
+require('coolhand-node/auto-monitor'); // Set COOLHAND_DEBUG=true in .env
+
+// Or instance-based with debug mode
 const monitor = new Coolhand({
-    apiKey: 'your-api-key',
-    patternsFile: './my-patterns.json'
+  apiKey: 'your-api-key',
+  debug: true
 });
 ```
 
-Example custom patterns file (`my-patterns.json`):
-
-```json
-{
-  "patterns": [
-    {
-      "name": "My Custom AI",
-      "domains": ["api.mycustomai.com"],
-      "paths": ["/v1/generate", "/v1/chat"],
-      "headers": {
-        "authorization": "[REDACTED]",
-        "api-key": "[REDACTED]"
-      }
-    }
-  ]
-}
-```
-
-## Supported Libraries
-
-The monitor works with any Node.js library that makes HTTP(S) requests to LLM APIs, including:
-
-- OpenAI official SDK
-- Anthropic SDK
-- Google AI SDK
-- LangChain
-- Direct `fetch()` calls
-- `https`/`http` module usage
-- Any other HTTP client
+When debug mode is enabled:
+- API calls to Coolhand will be mocked
+- Debug messages will show what would have been sent
+- No data will be sent to Coolhand servers
 
 ## Advanced Usage
 
 ### Modular Architecture
 
-Coolhand uses a modular service-based architecture for easy extensibility:
-
-```typescript
-import {
-  Coolhand,
-  PatternMatchingService,
-  LoggingService,
-  FeedbackService,
-  RequestMonitoringService
-} from 'coolhand-node';
-
-// Main class coordinates all services
-const monitor = new Coolhand({
-  apiKey: 'your-api-key',
-  environment: 'production'
-});
-
-// Services are also available for advanced use cases
-// (though typically you'll just use the main Coolhand class)
-```
-
-### Direct Service Access
-
-For advanced integrations, you can access individual services:
+Access individual services for advanced use cases:
 
 ```typescript
 import { PatternMatchingService, LoggingService } from 'coolhand-node';
@@ -313,16 +256,18 @@ const match = patternService.matchesAPIPattern(requestOptions);
 // Use logging service independently
 const loggingService = new LoggingService({
   apiKey: 'your-key',
-  environment: 'production',
-  silent: false
+  silent: false,
+  debug: false
 });
 ```
 
-## Miscellany
+## Getting Started
 
-## Getting Your API Key
-
-Visit [coolhand.io](https://coolhand.io/) to create a free account.
+1. **Get API Key**: Visit [coolhand.io](https://coolhand.io/) to create a free account
+2. **Install**: `npm install coolhand-node`
+3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
+4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
+5. **Deploy**: Your AI calls are now automatically monitored!
 
 ## Error Handling
 
@@ -336,3 +281,16 @@ The monitor handles errors gracefully:
 
 - API keys in request headers are automatically redacted
 - No sensitive data is exposed in logs
+- Debug mode prevents data from being sent to external servers
+
+## Documentation
+
+- **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks
+- **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features
+- **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns
+
+## Community
+
+- **Questions?** [Create a discussion](https://github.com/coolhand-io/coolhand-node/discussions)
+- **Issues?** [Report bugs](https://github.com/coolhand-io/coolhand-node/issues)
+- **Contribute?** [Submit a pull request](https://github.com/coolhand-io/coolhand-node/pulls)
