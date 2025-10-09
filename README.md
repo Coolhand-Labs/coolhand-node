@@ -8,6 +8,14 @@ Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google
 npm install coolhand-node
 ```
 
+## Getting Started
+
+1. **Get API Key**: Visit [coolhand.io](https://coolhand.io/) to create a free account
+2. **Install**: `npm install coolhand-node`
+3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
+4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
+5. **Deploy**: Your AI calls are now automatically monitored!
+
 ## Quick Start
 
 ### Option 1: Universal Global Monitoring (Recommended)
@@ -272,13 +280,15 @@ const loggingService = new LoggingService({
 });
 ```
 
-## Getting Started
+## Free Account & API Key
 
-1. **Get API Key**: Visit [coolhand.io](https://coolhand.io/) to create a free account
-2. **Install**: `npm install coolhand-node`
-3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
-4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
-5. **Deploy**: Your AI calls are now automatically monitored!
+🆓 **Sign up for free** at [coolhand.io](https://coolhand.io/) to get your API key and start monitoring your LLM usage.
+
+**What you get:**
+- Complete LLM request and response logging
+- Usage analytics and insights
+- Feedback collection and quality scoring
+- No credit card required to start
 
 ## Error Handling
 
@@ -296,14 +306,14 @@ The monitor handles errors gracefully:
 
 ## Documentation
 
-- **[API Documentation](https://docs.coolhand.io/)** - Complete API reference and guides
-- **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks
-- **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features
-- **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns
+- **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks. (Well, some are more complete than others.)
+- **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
+- **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 
 ## Other Languages
 
 - **Ruby**: [coolhand-ruby gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
+- **API Docs**: [API Documentation](https://coolhand.io/docs) - Doing a direct API integration? Very hardcore. Respect.
 
 ## Community
 
