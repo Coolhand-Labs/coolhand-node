@@ -75,6 +75,44 @@ const monitor = new Coolhand({
 });
 ```
 
+## Feedback API
+
+Collect feedback on LLM responses to improve model performance:
+
+```typescript
+import { Coolhand } from 'coolhand-node';
+
+const coolhand = new Coolhand({
+  apiKey: 'your-api-key'
+});
+
+// Create feedback for an LLM response
+const feedback = await coolhand.createFeedback({
+  llm_request_log_id: 123,
+  llm_provider_unique_id: 'req_xxxxxxx',
+  client_unique_id: 'workorder-chat-456',
+  creator_unique_id: 'user-789'
+  original_output: 'Here is the original LLM response!',
+  revised_output: 'Here is the human edit of the original LLM response.',
+  explanation: 'Tone of the original response read like AI-generated open source README docs',
+  like: true,
+});
+```
+
+**Field Guide:** All fields are optional, but here's how to get the best results:
+
+### Matching Fields
+- **`llm_request_log_id`** 🎯 *Exact Match* - ID from the Coolhand API response when the original LLM request was logged. Provides exact matching.
+- **`llm_provider_unique_id`** 🎯 *Exact Match* - The x-request-id from the LLM API response (e.g., "req_xxxxxxx")
+- **`original_output`** 🔍 *Fuzzy Match* - The original LLM response text. Provides fuzzy matching but isn't 100% reliable.
+- **`client_unique_id`** 🔗 *Your Internal Matcher* - Connect to an identifier from your system for internal matching
+
+### Quality Data
+- **`revised_output`** ⭐ *Best Signal* - End user revision of the LLM response. The highest value data for improving quality scores.
+- **`explanation`** 💬 *Medium Signal* - End user explanation of why the response was good or bad. Valuable qualitative data.
+- **`like`** 👍 *Low Signal* - Boolean like/dislike. Lower quality signal but easy for users to provide.
+- **`creator_unique_id`** 👤 *User Tracking* - Unique ID to match feedback to the end user who created it
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -180,33 +218,6 @@ Example patterns file (`my-patterns.json`):
 }
 ```
 
-## Feedback API
-
-Collect feedback on LLM responses to improve model performance:
-
-```typescript
-import { Coolhand } from 'coolhand-node';
-
-const monitor = new Coolhand({
-  apiKey: 'your-api-key'
-});
-
-// Create feedback for an LLM response
-const feedback = await monitor.createFeedback({
-  llm_request_log_id: 123, // ID from a logged LLM request
-  like: true, // true for positive, false for negative
-  explanation: 'Great response! Very helpful and accurate.',
-  revised_output: 'This could be an improved version if needed',
-  llm_provider_unique_id: 'openai-gpt-4',
-  original_output: 'The original AI response',
-  client_unique_id: 'user-session-456'
-});
-
-if (feedback) {
-  console.log('Feedback created:', feedback.id);
-}
-```
-
 ## Monitoring Statistics
 
 Track monitoring statistics in your application:
@@ -285,6 +296,7 @@ The monitor handles errors gracefully:
 
 ## Documentation
 
+- **[API Documentation](https://docs.coolhand.io/)** - Complete API reference and guides
 - **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns
