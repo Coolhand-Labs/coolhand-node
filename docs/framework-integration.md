@@ -7,6 +7,7 @@ Coolhand's global monitoring works with **any Node.js framework** because it pat
 | Framework | Compatibility | Integration Method | Status |
 |-----------|---------------|-------------------|--------|
 | **Next.js/T3** | ✅ **Tested** | next.config.js | Production-ready implementation |
+| **React** | 🧪 Theoretical | Instance-based | Frontend integration patterns |
 | **Express.js** | 🧪 Theoretical | Startup hook | Needs testing - please contribute! |
 | **NestJS** | 🧪 Theoretical | Bootstrap | Needs testing - please contribute! |
 | **Fastify** | 🧪 Theoretical | Register hook | Needs testing - please contribute! |
@@ -22,6 +23,7 @@ Coolhand's global monitoring works with **any Node.js framework** because it pat
 Choose your framework for detailed integration instructions:
 
 - **[Next.js / T3 Stack](./frameworks/nextjs.md)** - ✅ Production-ready, thoroughly tested
+- **[React Frontend](./frameworks/react.md)** - 🧪 Theoretical, needs community testing
 - **[Express.js](./frameworks/express.md)** - 🧪 Theoretical, needs community testing
 - **[NestJS](./frameworks/nestjs.md)** - 🧪 Theoretical, needs community testing
 - **[Fastify](./frameworks/fastify.md)** - 🧪 Theoretical, needs community testing

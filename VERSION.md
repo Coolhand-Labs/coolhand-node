@@ -1,9 +1,9 @@
 # Version History
 
-## 0.1.0 (Current)
+## 0.1.0-rc1 (Current)
 
 **Release Date**: October 2025
-**Branch**: `0.1.0`
+**Tag**: `0.1.0-rc1`
 **Status**: Stable
 
 ### Major Features
@@ -43,7 +43,7 @@
 
 ### Installation
 ```bash
-npm install coolhand-node@0.1.0
+npm install coolhand-node@0.1.0-rc1
 ```
 
 ### API Changes
@@ -104,20 +104,20 @@ Legacy type exports are still available but deprecated:
 
 ### Migration Guide
 
-#### From 0.0.1 to 0.1.0
+#### From 0.0.1 to 0.1.0-rc1
 ```javascript
 // Before (0.0.1)
 const Coolhand = require('coolhand-node');
 const monitor = new Coolhand({ apiKey: 'key' });
 
-// After (0.1.0) - JavaScript
+// After (0.1.0-rc1) - JavaScript
 import Coolhand from 'coolhand-node';
 const monitor = new Coolhand({
   apiKey: 'key',
   environment: 'production'
 });
 
-// After (0.1.0) - TypeScript with namespaced types
+// After (0.1.0-rc1) - TypeScript with namespaced types
 import { Coolhand, CoolhandOptions, CoolhandStats, CoolhandCallData } from 'coolhand-node';
 const options: CoolhandOptions = {
   apiKey: 'key',
