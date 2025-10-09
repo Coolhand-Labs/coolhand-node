@@ -280,7 +280,7 @@ const loggingService = new LoggingService({
 });
 ```
 
-## Free Account & API Key
+## API Key
 
 🆓 **Sign up for free** at [coolhand.io](https://coolhand.io/) to get your API key and start monitoring your LLM usage.
 
