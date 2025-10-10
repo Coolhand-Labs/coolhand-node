@@ -29,12 +29,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mikecarroll/coolhand-node.git"
+    "url": "https://github.com/Coolhand-Labs/coolhand-node.git"
   },
   "bugs": {
-    "url": "https://github.com/mikecarroll/coolhand-node/issues"
+    "url": "https://github.com/Coolhand-Labs/coolhand-node/issues"
   },
-  "homepage": "https://github.com/mikecarroll/coolhand-node#readme",
+  "homepage": "https://coolhand.io",
   "engines": {
     "node": ">=14.0.0"
   },
