@@ -90,8 +90,8 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should try to load from filesystem and succeed in test environment
-      // This will load the actual patterns file with 5 patterns
-      expect(service.getPatternsCountSync()).toBe(5);
+      // This will load the actual patterns file with 3 patterns
+      expect(service.getPatternsCountSync()).toBe(3);
     });
   });
 
@@ -168,13 +168,13 @@ describe('Edge Runtime Detection and Loading', () => {
       delete (globalThis as any).window;
       delete process.env.NEXT_RUNTIME;
 
-      // Test Node.js runtime (will load from filesystem with 5 patterns)
+      // Test Node.js runtime (will load from filesystem with 3 patterns)
       const nodeService = new PatternMatchingService();
       const nodePatterns = nodeService.getLoadedPatternsSync();
 
-      // Edge runtime uses 3 default patterns, Node.js loads 5 from file
+      // Edge runtime uses 3 default patterns, Node.js loads 3 from file
       expect(edgePatterns).toHaveLength(3);
-      expect(nodePatterns).toHaveLength(5);
+      expect(nodePatterns).toHaveLength(3);
 
       // But the loading paths should be different (check console output)
       expect(console.log).toHaveBeenCalledWith(

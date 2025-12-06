@@ -19,27 +19,11 @@
     },
     {
       "name": "Google AI",
-      "domains": ["generativelanguage.googleapis.com", "ai.googleapis.com"],
-      "paths": ["/v1/models", "/v1beta/models"],
+      "domains": ["generativelanguage.googleapis.com"],
+      "paths": ["/v1/models", "/v1beta/models", ":generateContent"],
       "headers": {
         "authorization": "[REDACTED]",
         "x-goog-api-key": "[REDACTED]"
-      }
-    },
-    {
-      "name": "Cohere",
-      "domains": ["api.cohere.ai"],
-      "paths": ["/v1/generate", "/v1/embed", "/v1/classify"],
-      "headers": {
-        "authorization": "[REDACTED]"
-      }
-    },
-    {
-      "name": "Hugging Face",
-      "domains": ["api-inference.huggingface.co"],
-      "paths": ["/models"],
-      "headers": {
-        "authorization": "[REDACTED]"
       }
     }
   ]
