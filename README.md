@@ -10,7 +10,7 @@ npm install coolhand-node
 
 ## Getting Started
 
-1. **Get API Key**: Visit [coolhand.io](https://coolhand.io/) to create a free account
+1. **Get API Key**: Visit [coolhandlabs.com](https://coolhandlabs.com/) to create a free account
 2. **Install**: `npm install coolhand-node`
 3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
 4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
@@ -282,7 +282,7 @@ const loggingService = new LoggingService({
 
 ## API Key
 
-🆓 **Sign up for free** at [coolhand.io](https://coolhand.io/) to get your API key and start monitoring your LLM usage.
+🆓 **Sign up for free** at [coolhandlabs.com](https://coolhandlabs.com/) to get your API key and start monitoring your LLM usage.
 
 **What you get:**
 - Complete LLM request and response logging
@@ -313,7 +313,7 @@ The monitor handles errors gracefully:
 ## Other Languages
 
 - **Ruby**: [coolhand-ruby gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
-- **API Docs**: [API Documentation](https://coolhand.io/docs) - Doing a direct API integration? Very hardcore. Respect.
+- **API Docs**: [API Documentation](https://coolhandlabs.com/docs) - Doing a direct API integration? Very hardcore. Respect.
 
 ## Community
 

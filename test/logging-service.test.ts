@@ -63,7 +63,7 @@ describe('LoggingService', () => {
 
       const service = new LoggingService(config);
 
-      expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_logs');
+      expect(service.getApiEndpoint()).toBe('https://coolhandlabs.com/api/v2/llm_request_logs');
     });
   });
 

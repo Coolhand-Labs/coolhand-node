@@ -28,7 +28,7 @@ describe('FeedbackService', () => {
 
       const service = new FeedbackService(config);
 
-      expect(service.getApiEndpoint()).toBe('https://coolhand.io/api/v2/llm_request_log_feedbacks');
+      expect(service.getApiEndpoint()).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
     });
   });
 

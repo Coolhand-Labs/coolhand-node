@@ -28,7 +28,7 @@ describe('Coolhand Node Monitor', () => {
       });
 
       const stats = monitor.getStats();
-      expect(stats.apiEndpoint).toBe('https://coolhand.io/api/v2/llm_request_logs');
+      expect(stats.apiEndpoint).toBe('https://coolhandlabs.com/api/v2/llm_request_logs');
     });
   });
 

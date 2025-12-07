@@ -34,7 +34,7 @@
   "bugs": {
     "url": "https://github.com/Coolhand-Labs/coolhand-node/issues"
   },
-  "homepage": "https://coolhand.io",
+  "homepage": "https://coolhandlabs.com",
   "engines": {
     "node": ">=14.0.0"
   },

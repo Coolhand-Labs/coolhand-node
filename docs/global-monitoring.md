@@ -295,7 +295,7 @@ console.log('Stats:', {
 
 ```
 🌐 Global Coolhand monitoring initialized
-🎯 API Endpoint: https://coolhand.io/api/v2/llm_request_logs
+🎯 API Endpoint: https://coolhandlabs.com/api/v2/llm_request_logs
 📋 Loaded 5 AI API patterns
 🔍 Now monitoring ALL outbound HTTP requests for AI API calls...
 
@@ -312,7 +312,7 @@ console.log('Stats:', {
 🤖 Model: gpt-3.5-turbo
 💬 Messages: 1
 🌡️  Temperature: 0.7
-📤 Sending to: https://coolhand.io/api/v2/llm_request_logs
+📤 Sending to: https://coolhandlabs.com/api/v2/llm_request_logs
 ```
 
 ## 🎨 Advanced Usage
