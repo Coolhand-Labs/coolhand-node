@@ -10,7 +10,7 @@ npm install coolhand-node
 
 ## Getting Started
 
-1. **Get API Key**: Visit [coolhandlabs.com](https://coolhandlabs.com/) to create a free account
+1. **Get API Key**: Visit [coolhandlabs.com](https://coolhandlabs.com/) and get an API key
 2. **Install**: `npm install coolhand-node`
 3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
 4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
