@@ -2,6 +2,15 @@
 
 Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, Cohere, Hugging Face, and more) to the Coolhand analytics platform.
 
+## Related Packages
+
+| Package | Environment | Purpose |
+|---------|-------------|---------|
+| `coolhand-node` | Node.js | Server-side monitoring and logging of LLM API calls |
+| `coolhand` | Browser | Feedback widget for collecting user sentiment on AI outputs |
+
+This package (`coolhand-node`) is the **server-side SDK** for monitoring LLM calls. For browser-based feedback collection widgets, see [coolhand](https://github.com/Coolhand-Labs/coolhand-js).
+
 ## Installation
 
 ```bash
@@ -85,7 +94,9 @@ const monitor = new Coolhand({
 
 ## Feedback API
 
-Collect feedback on LLM responses to improve model performance:
+Collect feedback on LLM responses to improve model performance.
+
+> **Frontend Feedback Widget**: For browser-based feedback collection, see [coolhand-js](https://github.com/Coolhand-Labs/coolhand-js) - an accessible, lightweight JavaScript widget that leverages best UX practices to capture actionable user feedback on any AI output.
 
 ```typescript
 import { Coolhand } from 'coolhand-node';
@@ -310,10 +321,11 @@ The monitor handles errors gracefully:
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 
-## Other Languages
+## Related Packages
 
-- **Ruby**: [coolhand-ruby gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
-- **API Docs**: [API Documentation](https://coolhandlabs.com/docs) - Doing a direct API integration? Very hardcore. Respect.
+- **Frontend (Feedback Collection Widget)**: [coolhand-js](https://github.com/Coolhand-Labs/coolhand-js) - Frontend feedback widget for collecting user feedback on AI outputs
+- **Ruby**: [coolhand gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
+- **Python**: [coolhand package](https://github.com/Coolhand-Labs/coolhand-python) - Coolhand monitoring for Python applications
 
 ## Community
 
