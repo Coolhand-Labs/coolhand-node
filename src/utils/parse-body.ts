@@ -1,7 +1,7 @@
 export function parseBody(
   text: string | undefined | null
 ): Record<string, unknown> | string | null {
-  if (!text) return null;
+  if (!text) { return null; }
   try {
     const parsed = JSON.parse(text);
     if (Array.isArray(parsed)) {
