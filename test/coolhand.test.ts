@@ -66,32 +66,6 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
-  describe('JSON parsing', () => {
-    let monitor: Coolhand;
-
-    beforeEach(() => {
-      monitor = new Coolhand({
-        apiKey: 'test-key',
-        silent: true
-      });
-    });
-
-    it('should parse valid JSON correctly', () => {
-      const result = monitor.parseJSON('{"test": "value"}');
-      expect(result).toEqual({ test: "value" });
-    });
-
-    it('should return original string for invalid JSON', () => {
-      const result = monitor.parseJSON('invalid json');
-      expect(result).toBe('invalid json');
-    });
-
-    it('should handle null input', () => {
-      const result = monitor.parseJSON(null);
-      expect(result).toBe(null);
-    });
-  });
-
   describe('API Pattern loading', () => {
     it('should load API patterns successfully', () => {
       expect(() => {

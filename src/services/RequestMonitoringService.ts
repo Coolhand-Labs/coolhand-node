@@ -2,6 +2,7 @@ import * as https from 'https';
 import * as http from 'http';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
+import { parseBody } from '../utils/parse-body.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -209,7 +210,7 @@ export class RequestMonitoringService {
       });
 
       res.on('end', () => {
-        callData.response_body = this.parseJSON(responseBody);
+        callData.response_body = parseBody(responseBody);
         callData.response_headers = this.patternMatchingService.sanitizeHeaders(res.headers, matchedPattern?.pattern);
         callData.status_code = res.statusCode || null;
 
@@ -235,7 +236,7 @@ export class RequestMonitoringService {
       if (chunk) {
         requestBody += chunk.toString();
       }
-      callData.request_body = this.parseJSON(requestBody);
+      callData.request_body = parseBody(requestBody);
       this.log(`📤 Request complete for call #${callData.id}`);
       return originalEnd(chunk, encoding, callback);
     }).bind(this);
@@ -266,7 +267,7 @@ export class RequestMonitoringService {
           : (options.headers || {}),
         matchedPattern?.pattern
       ),
-      request_body: options.body ? this.parseJSON(options.body as string) : null,
+      request_body: options.body ? parseBody(options.body as string) : null,
       response_body: null,
       response_headers: null,
       status_code: null,
@@ -284,7 +285,7 @@ export class RequestMonitoringService {
       // Clone response to read body without consuming it
       const responseClone = response.clone();
       const responseText = await responseClone.text();
-      callData.response_body = this.parseJSON(responseText);
+      callData.response_body = parseBody(responseText);
 
       this.onRequestComplete(callData, matchedPattern);
 
@@ -311,15 +312,6 @@ export class RequestMonitoringService {
     const port = options.port ? `:${options.port}` : '';
 
     return `${protocol}://${hostname}${port}${path}`;
-  }
-
-  private parseJSON(str: string | null): any {
-    if (!str) {return null;}
-    try {
-      return JSON.parse(str);
-    } catch {
-      return str;
-    }
   }
 
   private debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {

@@ -8,6 +8,7 @@
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
+import { parseBody } from './utils/parse-body.js';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
@@ -397,7 +398,7 @@ function interceptRequest(
     });
 
     res.on('end', () => {
-      callData.response_body = parseJSON(responseBody);
+      callData.response_body = parseBody(responseBody);
       callData.response_headers = globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
       callData.status_code = res.statusCode || null;
 
@@ -428,7 +429,7 @@ function interceptRequest(
     if (chunk) {
       requestBody += chunk.toString();
     }
-    callData.request_body = parseJSON(requestBody);
+    callData.request_body = parseBody(requestBody);
     log(`📤 Request complete for call #${callData.id}`);
     return originalEnd(chunk, encoding, callback);
   });
@@ -465,7 +466,7 @@ async function interceptFetch(
         : (options.headers || {}),
       matchedPattern?.pattern
     ) || {},
-    request_body: options.body ? parseJSON(options.body as string) : null,
+    request_body: options.body ? parseBody(options.body as string) : null,
     response_body: null,
     response_headers: null,
     status_code: null,
@@ -483,7 +484,7 @@ async function interceptFetch(
     // Clone response to read body without consuming it
     const responseClone = response.clone();
     const responseText = await responseClone.text();
-    callData.response_body = parseJSON(responseText);
+    callData.response_body = parseBody(responseText);
 
     // Log to API
     if (globalLoggingService) {
@@ -518,15 +519,6 @@ function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol
   const port = options.port ? `:${options.port}` : '';
 
   return `${protocol}://${hostname}${port}${path}`;
-}
-
-function parseJSON(str: string | null): any {
-  if (!str) { return null; }
-  try {
-    return JSON.parse(str);
-  } catch {
-    return str;
-  }
 }
 
 function debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
