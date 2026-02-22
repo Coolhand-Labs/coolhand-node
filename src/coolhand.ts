@@ -22,7 +22,7 @@ export class Coolhand {
     }
 
     // Initialize services
-    this.patternMatchingService = new PatternMatchingService(options.patternsFile);
+    this.patternMatchingService = new PatternMatchingService({ customPatternsFile: options.patternsFile, silent: this.silent });
 
     const serviceConfig = {
       apiKey,

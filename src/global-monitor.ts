@@ -76,7 +76,7 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   silent = config.silent !== false;
 
   // Initialize services
-  globalPatternService = new PatternMatchingService(config.patternsFile);
+  globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent });
   globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
     silent,
