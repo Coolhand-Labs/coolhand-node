@@ -1,9 +1,9 @@
 /**
- * Single source of truth for package version
- * This file is used by both the build process and runtime code
+ * Auto-generated from package.json — do not edit manually.
+ * Run `npm run sync-version` or `npm run build` to regenerate.
  */
 
-export const PACKAGE_VERSION = '0.1.0-rc1';
+export const PACKAGE_VERSION = '0.2.0';
 export const PACKAGE_NAME = 'coolhand-node';
 
 /**

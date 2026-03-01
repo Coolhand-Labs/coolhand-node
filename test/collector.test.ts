@@ -3,27 +3,28 @@
  */
 
 import { getCollectorString, getPackageName, getPackageVersion, CollectionMethod } from '../src/utils/collector';
+import { PACKAGE_VERSION, PACKAGE_NAME } from '../src/version';
 
 describe('Collector Utility', () => {
   describe('getCollectorString', () => {
     it('should return base collector string without method', () => {
       const result = getCollectorString();
-      expect(result).toBe('coolhand-node-0.1.0-rc1');
+      expect(result).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}`);
     });
 
     it('should return collector string with global-monitoring method', () => {
       const result = getCollectorString('global-monitoring');
-      expect(result).toBe('coolhand-node-0.1.0-rc1-global-monitoring');
+      expect(result).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-global-monitoring`);
     });
 
     it('should return collector string with manual method', () => {
       const result = getCollectorString('manual');
-      expect(result).toBe('coolhand-node-0.1.0-rc1-manual');
+      expect(result).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-manual`);
     });
 
     it('should return collector string with auto-monitor method', () => {
       const result = getCollectorString('auto-monitor');
-      expect(result).toBe('coolhand-node-0.1.0-rc1-auto-monitor');
+      expect(result).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-auto-monitor`);
     });
   });
 
@@ -35,7 +36,7 @@ describe('Collector Utility', () => {
 
   describe('getPackageVersion', () => {
     it('should return correct package version', () => {
-      expect(getPackageVersion()).toBe('0.1.0-rc1');
+      expect(getPackageVersion()).toBe(PACKAGE_VERSION);
     });
   });
 
@@ -85,14 +86,14 @@ describe('Service Integration', () => {
           status_code: 200,
           protocol: 'fetch'
         },
-        collector: 'coolhand-node-0.1.0-rc1-global-monitoring'
+        collector: `${PACKAGE_NAME}-${PACKAGE_VERSION}-global-monitoring`
       }
     };
 
     // Verify structure
     expect(mockPayload.llm_request_log).toHaveProperty('raw_request');
     expect(mockPayload.llm_request_log).toHaveProperty('collector');
-    expect(mockPayload.llm_request_log.collector).toBe('coolhand-node-0.1.0-rc1-global-monitoring');
+    expect(mockPayload.llm_request_log.collector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-global-monitoring`);
   });
 
   it('should include collector field in feedback payload structure', () => {
@@ -103,13 +104,13 @@ describe('Service Integration', () => {
         like: true,
         explanation: 'Good response'
       },
-      collector: 'coolhand-node-0.1.0-rc1-manual'
+      collector: `${PACKAGE_NAME}-${PACKAGE_VERSION}-manual`
     };
 
     // Verify structure
     expect(mockPayload).toHaveProperty('llm_request_log_feedback');
     expect(mockPayload).toHaveProperty('collector');
-    expect(mockPayload.collector).toBe('coolhand-node-0.1.0-rc1-manual');
+    expect(mockPayload.collector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-manual`);
   });
 });
 
@@ -137,12 +138,12 @@ describe('Expected API Payloads', () => {
           status_code: 200,
           protocol: 'fetch'
         },
-        collector: 'coolhand-node-0.1.0-rc1-global-monitoring'
+        collector: `${PACKAGE_NAME}-${PACKAGE_VERSION}-global-monitoring`
       }
     };
 
     // This represents what should be sent to the API
-    expect(expectedPayload.llm_request_log.collector).toBe('coolhand-node-0.1.0-rc1-global-monitoring');
+    expect(expectedPayload.llm_request_log.collector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-global-monitoring`);
     expect(expectedPayload.llm_request_log.raw_request.url).toContain('anthropic.com');
     expect(expectedPayload.llm_request_log.raw_request.status_code).toBe(200);
   });
@@ -156,11 +157,11 @@ describe('Expected API Payloads', () => {
         llm_provider_unique_id: 'msg_123',
         client_unique_id: 'user_456'
       },
-      collector: 'coolhand-node-0.1.0-rc1-manual'
+      collector: `${PACKAGE_NAME}-${PACKAGE_VERSION}-manual`
     };
 
     // This represents what should be sent to the API
-    expect(expectedPayload.collector).toBe('coolhand-node-0.1.0-rc1-manual');
+    expect(expectedPayload.collector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}-manual`);
     expect(expectedPayload.llm_request_log_feedback.llm_request_log_id).toBe(122866);
     expect(expectedPayload.llm_request_log_feedback.like).toBe(true);
   });
@@ -168,15 +169,15 @@ describe('Expected API Payloads', () => {
   it('should create log payload without collector field when not specified', () => {
     // When collection method is not provided, collector should still be included with base string
     const baseCollector = getCollectorString();
-    expect(baseCollector).toBe('coolhand-node-0.1.0-rc1');
+    expect(baseCollector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}`);
 
     const expectedPayload = {
       llm_request_log: {
         raw_request: { /* request data */ },
-        collector: 'coolhand-node-0.1.0-rc1'
+        collector: `${PACKAGE_NAME}-${PACKAGE_VERSION}`
       }
     };
 
-    expect(expectedPayload.llm_request_log.collector).toBe('coolhand-node-0.1.0-rc1');
+    expect(expectedPayload.llm_request_log.collector).toBe(`${PACKAGE_NAME}-${PACKAGE_VERSION}`);
   });
 });
