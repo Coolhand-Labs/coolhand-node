@@ -99,7 +99,8 @@ export class PatternMatchingService {
         name: 'Google AI',
         domains: ['generativelanguage.googleapis.com'],
         headers: {
-          'authorization': 'Bearer [REDACTED]'
+          'authorization': 'Bearer [REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
         }
       }
     ];
@@ -407,6 +408,26 @@ export class PatternMatchingService {
     }
 
     return sanitized;
+  }
+
+  public sanitizeURL(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      if (!urlObj.search) {
+        return url;
+      }
+      const sensitiveParams = new Set(['key', 'api_key', 'apikey', 'token', 'access_token', 'secret']);
+      let redacted = false;
+      for (const [name] of urlObj.searchParams.entries()) {
+        if (sensitiveParams.has(name.toLowerCase())) {
+          urlObj.searchParams.set(name, '[REDACTED]');
+          redacted = true;
+        }
+      }
+      return redacted ? urlObj.toString() : url;
+    } catch {
+      return url;
+    }
   }
 
   public async getLoadedPatterns(): Promise<CoolhandAPIPattern[]> {

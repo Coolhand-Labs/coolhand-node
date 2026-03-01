@@ -20,7 +20,7 @@
     {
       "name": "Google AI",
       "domains": ["generativelanguage.googleapis.com"],
-      "paths": ["/v1/models", "/v1beta/models", ":generateContent"],
+      "paths": ["/v1/models", "/v1beta/models", ":generateContent", ":streamGenerateContent", ":countTokens", ":embedContent"],
       "headers": {
         "authorization": "[REDACTED]",
         "x-goog-api-key": "[REDACTED]"

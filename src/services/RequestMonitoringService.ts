@@ -183,7 +183,7 @@ export class RequestMonitoringService {
       id: this.interceptedCalls,
       timestamp: new Date().toISOString(),
       method: typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET',
-      url: url,
+      url: this.patternMatchingService.sanitizeURL(url),
       headers: this.patternMatchingService.sanitizeHeaders(
         typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
         matchedPattern?.pattern
@@ -259,7 +259,7 @@ export class RequestMonitoringService {
       id: this.interceptedCalls,
       timestamp: new Date().toISOString(),
       method: options.method || 'GET',
-      url: url.toString(),
+      url: this.patternMatchingService.sanitizeURL(url.toString()),
       headers: this.patternMatchingService.sanitizeHeaders(
         options.headers instanceof Headers
           ? Object.fromEntries(options.headers.entries())
