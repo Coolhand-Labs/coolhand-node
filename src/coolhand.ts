@@ -22,7 +22,7 @@ export class Coolhand {
     }
 
     // Initialize services
-    this.patternMatchingService = new PatternMatchingService(options.patternsFile);
+    this.patternMatchingService = new PatternMatchingService({ customPatternsFile: options.patternsFile, silent: this.silent });
 
     const serviceConfig = {
       apiKey,
@@ -74,20 +74,6 @@ export class Coolhand {
    */
   public sanitizeHeaders(headers: any, pattern?: any): Record<string, any> {
     return this.patternMatchingService.sanitizeHeaders(headers, pattern);
-  }
-
-  /**
-   * Parse JSON string safely
-   * @param str String to parse
-   * @returns Parsed object or the original string if parsing fails
-   */
-  public parseJSON(str: string | null): any {
-    if (!str) {return null;}
-    try {
-      return JSON.parse(str);
-    } catch {
-      return str;
-    }
   }
 
   /**

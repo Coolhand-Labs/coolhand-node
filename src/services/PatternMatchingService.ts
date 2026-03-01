@@ -25,13 +25,24 @@ const loadNodeModules = async () => {
   }
 };
 
+export interface PatternMatchingServiceOptions {
+  customPatternsFile?: string;
+  silent?: boolean;
+}
+
 export class PatternMatchingService {
   private apiPatterns: CoolhandAPIPattern[] = [];
   private isInitialized: boolean = false;
+  private silent: boolean;
 
-  constructor(customPatternsFile?: string) {
-    // Always initialize synchronously in constructor
-    this.initializePatternsSync(customPatternsFile);
+  constructor(options?: string | PatternMatchingServiceOptions) {
+    if (typeof options === 'string') {
+      this.silent = false;
+      this.initializePatternsSync(options);
+    } else {
+      this.silent = options?.silent ?? false;
+      this.initializePatternsSync(options?.customPatternsFile);
+    }
   }
 
   private initializePatternsSync(customPatternsFile?: string): void {
@@ -51,11 +62,11 @@ export class PatternMatchingService {
         } else {
           // In ES modules, we can't use require synchronously, so fall back to default patterns
           // The async initialization will handle proper loading later
-          console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.');
+          if (!this.silent) { console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.'); }
           this.loadDefaultPatternsForEdge();
         }
       } catch {
-        console.warn('Could not load fs/path modules, falling back to default patterns');
+        if (!this.silent) { console.warn('Could not load fs/path modules, falling back to default patterns'); }
         this.loadDefaultPatternsForEdge();
       }
     }
@@ -103,14 +114,14 @@ export class PatternMatchingService {
         }
       }
     ];
-    console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`);
+    if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`); }
   }
 
   private async loadAPIPatterns(customPatternsFile?: string): Promise<void> {
     // Load Node.js modules first
     const hasNodeModules = await loadNodeModules();
     if (!hasNodeModules) {
-      console.warn('⚠️  Node.js modules not available, falling back to default patterns');
+      if (!this.silent) { console.warn('⚠️  Node.js modules not available, falling back to default patterns'); }
       this.loadDefaultPatternsForEdge();
       return;
     }
@@ -159,7 +170,7 @@ export class PatternMatchingService {
         for (const candidatePath of possiblePaths) {
           if (fs.existsSync(candidatePath)) {
             foundPath = candidatePath;
-            console.log(`🔧 DEBUG: Found patterns file at: ${foundPath}`);
+            if (!this.silent) { console.log(`🔧 DEBUG: Found patterns file at: ${foundPath}`); }
             break;
           }
         }
@@ -167,7 +178,7 @@ export class PatternMatchingService {
         // If we still haven't found it, use the first candidate as fallback
         patternsFile = foundPath || possiblePaths[0] || path.join(__dirname, '..', 'api-patterns.json');
         if (!foundPath) {
-          console.log(`🔧 DEBUG: No valid path found, using fallback: ${patternsFile}`);
+          if (!this.silent) { console.log(`🔧 DEBUG: No valid path found, using fallback: ${patternsFile}`); }
         }
       }
 
@@ -175,10 +186,10 @@ export class PatternMatchingService {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
         const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
-        console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
+        if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`); }
       } else {
         if (customPatternsFile) {
-          console.warn(`⚠️  Custom patterns file not found: ${patternsFile}. Falling back to default patterns.`);
+          if (!this.silent) { console.warn(`⚠️  Custom patterns file not found: ${patternsFile}. Falling back to default patterns.`); }
           // Try to load default patterns file as fallback using the same method
           let defaultPatternsFile: string;
           try {
@@ -193,7 +204,7 @@ export class PatternMatchingService {
             const fileContent = fs.readFileSync(defaultPatternsFile, 'utf-8');
             const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
             this.apiPatterns = patternsData.patterns;
-            console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns as fallback`);
+            if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns as fallback`); }
           } else {
             throw new Error('Default patterns file not found');
           }
@@ -202,8 +213,8 @@ export class PatternMatchingService {
         }
       }
     } catch (error) {
-      console.error(`❌ Error loading API patterns:`, (error as Error).message);
-      console.warn(`⚠️  Falling back to default patterns for Edge runtime compatibility`);
+      if (!this.silent) { console.error(`❌ Error loading API patterns:`, (error as Error).message); }
+      if (!this.silent) { console.warn(`⚠️  Falling back to default patterns for Edge runtime compatibility`); }
       this.loadDefaultPatternsForEdge();
     }
   }
@@ -251,17 +262,17 @@ export class PatternMatchingService {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
         const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
         this.apiPatterns = patternsData.patterns;
-        console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`);
+        if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`); }
       } else {
         if (customPatternsFile) {
-          console.warn(`⚠️  API patterns file not found: ${patternsFile}`);
+          if (!this.silent) { console.warn(`⚠️  API patterns file not found: ${patternsFile}`); }
         } else {
-          console.warn(`⚠️  API patterns file not found: ${patternsFile}`);
+          if (!this.silent) { console.warn(`⚠️  API patterns file not found: ${patternsFile}`); }
         }
       }
 
     } catch (error) {
-      console.error(`❌ Error loading API patterns:`, (error as Error).message);
+      if (!this.silent) { console.error(`❌ Error loading API patterns:`, (error as Error).message); }
       this.loadDefaultPatternsForEdge();
     }
   }

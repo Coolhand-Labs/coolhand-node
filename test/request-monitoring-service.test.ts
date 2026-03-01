@@ -395,28 +395,6 @@ describe('RequestMonitoringService', () => {
     });
   });
 
-  describe('JSON Parsing', () => {
-    it('should parse valid JSON', () => {
-      const result = (service as any).parseJSON('{"test": true}');
-      expect(result).toEqual({ test: true });
-    });
-
-    it('should return original string for invalid JSON', () => {
-      const result = (service as any).parseJSON('invalid json');
-      expect(result).toBe('invalid json');
-    });
-
-    it('should handle null input', () => {
-      const result = (service as any).parseJSON(null);
-      expect(result).toBe(null);
-    });
-
-    it('should handle empty string', () => {
-      const result = (service as any).parseJSON('');
-      expect(result).toBe(null);
-    });
-  });
-
   describe('Debug and Logging', () => {
     it('should debug requests and increment counter', () => {
       const options = { hostname: 'api.test.com' };
