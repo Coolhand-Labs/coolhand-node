@@ -39,6 +39,15 @@ describe('PatternMatchingService', () => {
         headers: {
           "api-key": "[REDACTED]"
         }
+      },
+      {
+        name: "Google AI",
+        domains: ["generativelanguage.googleapis.com"],
+        paths: ["/v1/models", "/v1beta/models", ":generateContent", ":streamGenerateContent", ":countTokens", ":embedContent"],
+        headers: {
+          "authorization": "[REDACTED]",
+          "x-goog-api-key": "[REDACTED]"
+        }
       }
     ]
   };
@@ -69,7 +78,7 @@ describe('PatternMatchingService', () => {
       expect(mockPath.join).toHaveBeenCalledWith(expect.any(String), '..', 'api-patterns.json');
       expect(mockFs.existsSync).toHaveBeenCalled();
       expect(mockFs.readFileSync).toHaveBeenCalledWith('/mock/path/api-patterns.json', 'utf-8');
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
     });
 
     it('should load custom patterns file when specified', () => {
@@ -80,7 +89,7 @@ describe('PatternMatchingService', () => {
 
       expect(mockPath.resolve).toHaveBeenCalledWith('./custom-patterns.json');
       expect(mockFs.existsSync).toHaveBeenCalledWith('/resolved/./custom-patterns.json');
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
     });
 
     it('should handle missing patterns file gracefully', () => {
@@ -381,7 +390,7 @@ describe('PatternMatchingService', () => {
     it('should return loaded patterns', () => {
       const patterns = service.getLoadedPatternsSync();
 
-      expect(patterns).toHaveLength(3);
+      expect(patterns).toHaveLength(4);
       expect(patterns[0]).toMatchObject({
         name: 'OpenAI',
         domains: ['openai.com', 'api.openai.com']
@@ -395,11 +404,11 @@ describe('PatternMatchingService', () => {
         domains: ['modified.com']
       });
 
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
     });
 
     it('should return correct patterns count', () => {
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
     });
 
     it('should return zero count when no patterns loaded', () => {
@@ -500,7 +509,7 @@ describe('PatternMatchingService', () => {
       const asyncCount = await service.getPatternsCount();
 
       expect(syncCount).toBe(asyncCount);
-      expect(syncCount).toBe(3);
+      expect(syncCount).toBe(4);
     });
 
     it('should return consistent patterns between async and sync methods', async () => {
@@ -508,7 +517,7 @@ describe('PatternMatchingService', () => {
       const asyncPatterns = await service.getLoadedPatterns();
 
       expect(syncPatterns).toEqual(asyncPatterns);
-      expect(syncPatterns).toHaveLength(3);
+      expect(syncPatterns).toHaveLength(4);
     });
   });
 
@@ -928,6 +937,134 @@ describe('PatternMatchingService', () => {
           });
         }
       });
+    });
+  });
+
+  describe('Google AI / Gemini Pattern Matching', () => {
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+      service = new PatternMatchingService();
+    });
+
+    it('should match Gemini generateContent URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      });
+    });
+
+    it('should match Gemini streamGenerateContent URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      });
+    });
+
+    it('should match Gemini countTokens URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:countTokens'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      });
+    });
+
+    it('should match :generateContent path on a non-Google domain (proxy scenario)', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://my-proxy.example.com/v1beta/models/gemini-pro:generateContent'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'path',
+        matchValue: '/v1beta/models'
+      });
+    });
+
+    it('should match :streamGenerateContent path on a non-Google domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://my-proxy.example.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'path',
+        matchValue: '/v1beta/models'
+      });
+    });
+
+    it('should match Gemini URL with ?key= query param', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyDEADBEEF'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      });
+    });
+
+    it('should sanitize x-goog-api-key header via pattern rules', () => {
+      const pattern: CoolhandAPIPattern = {
+        name: 'Google AI',
+        domains: ['generativelanguage.googleapis.com'],
+        headers: {
+          'authorization': '[REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
+        }
+      };
+
+      const headers = {
+        'x-goog-api-key': 'AIzaSyDEADBEEF1234',
+        'content-type': 'application/json'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+  });
+
+  describe('URL Sanitization', () => {
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+      service = new PatternMatchingService();
+    });
+
+    it('should redact key param from Gemini URL', () => {
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyDEADBEEF1234';
+      const result = service.sanitizeURL(url);
+      expect(result).not.toContain('AIzaSyDEADBEEF1234');
+      expect(result).toContain('key=%5BREDACTED%5D');
+      expect(result).toContain('generativelanguage.googleapis.com');
+    });
+
+    it('should preserve alt=sse and other non-sensitive params', () => {
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?key=AIzaSySecret&alt=sse';
+      const result = service.sanitizeURL(url);
+      expect(result).not.toContain('AIzaSySecret');
+      expect(result).toContain('alt=sse');
+    });
+
+    it('should be a no-op for URLs without sensitive params', () => {
+      const url = 'https://api.openai.com/v1/chat/completions?model=gpt-4&stream=true';
+      const result = service.sanitizeURL(url);
+      expect(result).toBe(url);
+    });
+
+    it('should handle invalid URLs gracefully', () => {
+      const result = service.sanitizeURL('not-a-valid-url');
+      expect(result).toBe('not-a-valid-url');
     });
   });
 });
