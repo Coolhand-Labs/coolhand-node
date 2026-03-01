@@ -1,6 +1,6 @@
 # Coolhand Node.js Monitor
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, Cohere, Hugging Face, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
