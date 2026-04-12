@@ -1,11 +1,10 @@
-// examples/basic-example.js - Example usage of Coolhand Node Monitor
+// examples/basic.js - Example usage of Coolhand Node Monitor
 
-const Coolhand = require('../index');
+import Coolhand from '../dist/index.js';
 
 // Example 1: Local Development Setup
 console.log('🧪 Example 1: Local Development Setup');
 const localMonitor = new Coolhand({
-    environment: 'local',
     apiKey: 'your-local-api-key-here',
     silent: false
 });
@@ -16,7 +15,6 @@ console.log('Stats:', localMonitor.getStats());
 /*
 console.log('🚀 Example 2: Production Setup');
 const prodMonitor = new Coolhand({
-    environment: 'production',
     apiKey: process.env.COOLHAND_API_KEY,
     silent: true
 });
