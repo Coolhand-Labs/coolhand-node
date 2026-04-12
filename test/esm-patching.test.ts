@@ -8,7 +8,6 @@
  *  4. PatternMatchingService path resolution when __dirname is unavailable
  */
 
-import * as fs from 'fs';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { LoggingService } from '../src/services/LoggingService';
 

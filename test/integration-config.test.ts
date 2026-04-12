@@ -316,8 +316,11 @@ describe('Auto-monitor environment variable configuration', () => {
   afterEach(() => {
     // Restore env
     for (const [key, val] of Object.entries(envBackup)) {
-      if (val === undefined) delete process.env[key];
-      else process.env[key] = val;
+      if (val === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = val;
+      }
     }
   });
 
