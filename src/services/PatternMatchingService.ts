@@ -234,7 +234,10 @@ export class PatternMatchingService {
         } else {
           try {
             const metaUrl: string = eval('import.meta.url');
-            baseDir = _path.dirname(new URL(metaUrl).pathname);
+            // Use fileURLToPath instead of new URL().pathname to handle
+            // Windows paths correctly (e.g. /C:/foo/bar.js → C:\foo\bar.js)
+            const { fileURLToPath } = require('url');
+            baseDir = _path.dirname(fileURLToPath(metaUrl));
           } catch {
             baseDir = process.cwd();
           }
