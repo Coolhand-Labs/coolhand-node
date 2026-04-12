@@ -32,8 +32,26 @@ const loadNodeModules = async () => {
   }
 
   try {
-    https = await import('https');
-    http = await import('http');
+    let httpsModule = await import('https') as any;
+    let httpModule = await import('http') as any;
+
+    // ESM namespace objects have non-configurable properties which cannot be patched
+    // via Object.defineProperty. Detect this and fall back to createRequire, which
+    // returns the mutable CJS module object where properties are configurable.
+    const desc = Object.getOwnPropertyDescriptor(httpsModule, 'request');
+    if (desc && desc.configurable === false) {
+      const { createRequire: cr } = await import('module') as any;
+      // Use eval to access import.meta.url without causing ts-jest compile errors.
+      // Falls back to process.cwd() in CJS environments where import.meta is unavailable.
+      let baseUrl: string;
+      try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
+      const cjsRequire = cr(baseUrl);
+      httpsModule = cjsRequire('https');
+      httpModule = cjsRequire('http');
+    }
+
+    https = httpsModule;
+    http = httpModule;
     return true;
   } catch {
     console.warn('⚠️  Node.js HTTP modules not available - falling back to fetch() only');
@@ -205,6 +223,8 @@ function patchHTTPS(): void {
         writable: true,
         configurable: true
       });
+    } else {
+      console.warn('⚠️  Could not patch https.request: property is non-configurable');
     }
   } catch {
     log('Warning: Could not patch https.request');
@@ -240,6 +260,8 @@ function patchHTTPS(): void {
         writable: true,
         configurable: true
       });
+    } else {
+      console.warn('⚠️  Could not patch https.get: property is non-configurable');
     }
   } catch {
     log('Warning: Could not patch https.get');
@@ -281,6 +303,8 @@ function patchHTTP(): void {
         writable: true,
         configurable: true
       });
+    } else {
+      console.warn('⚠️  Could not patch http.request: property is non-configurable');
     }
   } catch {
     log('Warning: Could not patch http.request');
@@ -316,6 +340,8 @@ function patchHTTP(): void {
         writable: true,
         configurable: true
       });
+    } else {
+      console.warn('⚠️  Could not patch http.get: property is non-configurable');
     }
   } catch {
     log('Warning: Could not patch http.get');
