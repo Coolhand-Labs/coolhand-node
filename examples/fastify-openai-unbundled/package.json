@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
-    "coolhand-node": "^0.3.0",
+    "coolhand-node": "^0.3.1",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "openai": "^4.82.0",
