@@ -1,46 +1,42 @@
 # Koa.js Integration
 
-> **⚠️ Status: Theoretical** - These examples are untested. Please test and [contribute improvements](https://github.com/anthropics/coolhand-node/issues)!
+> **⚠️ Status: Theoretical** - Based on tested Fastify patterns. Please test and [contribute improvements](https://github.com/Coolhand-Labs/coolhand-node/issues)!
 
-## 🎯 Recommended: Startup Initialization
+## Module System Background
+
+`coolhand-node` is an **ES module** package. Koa apps are typically CommonJS, so you cannot use `require('coolhand-node')`. Use dynamic `import()` instead.
+
+## 🎯 Recommended: Async Startup Initialization
 
 ```javascript
-// app.js
+// app.js (CommonJS)
 const Koa = require('koa');
 
 async function startServer() {
   try {
     // Initialize global monitoring BEFORE setting up app
     if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
+      const { initializeGlobalMonitoring } = await import('coolhand-node');
       await initializeGlobalMonitoring({
         apiKey: process.env.COOLHAND_API_KEY,
         silent: process.env.NODE_ENV === 'production'
       });
-      console.log('✅ Global monitoring enabled for all AI API calls!');
+      console.log('✅ Coolhand monitoring enabled');
     }
 
-    // Import AI modules AFTER global monitoring initialization
-    const { ChatOpenAI } = require('@langchain/openai');
     const app = new Koa();
 
-    app.use(async (ctx, next) => {
+    app.use(async (ctx) => {
       if (ctx.path === '/chat' && ctx.method === 'POST') {
-        const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-        // This AI call should be automatically logged
+        // AI calls here are automatically monitored
         const response = await model.invoke(ctx.request.body.message);
         ctx.body = { response: response.content };
-      } else {
-        await next();
       }
     });
 
     app.listen(3000);
-    console.log('✅ Koa server running with global AI monitoring!');
   } catch (error) {
-    console.error('❌ Failed to start Koa server:', error);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
@@ -51,165 +47,125 @@ startServer();
 ## With Koa Router
 
 ```javascript
-// app.js
+// app.js (CommonJS)
 const Koa = require('koa');
 const Router = require('@koa/router');
 const bodyParser = require('koa-bodyparser');
 
 async function startServer() {
-  try {
-    // Initialize global monitoring first
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      console.log('✅ Global monitoring enabled!');
-    }
-
-    const { ChatOpenAI } = require('@langchain/openai');
-    const app = new Koa();
-    const router = new Router();
-
-    // Enable body parsing
-    app.use(bodyParser());
-
-    // AI route
-    router.post('/chat', async (ctx) => {
-      const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const response = await model.invoke(ctx.request.body.message);
-      ctx.body = { response: response.content };
+  // Initialize global monitoring first
+  if (process.env.COOLHAND_API_KEY) {
+    const { initializeGlobalMonitoring } = await import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: process.env.NODE_ENV === 'production'
     });
-
-    app.use(router.routes());
-    app.use(router.allowedMethods());
-
-    app.listen(3000);
-    console.log('✅ Koa server with router running!');
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
   }
+
+  const app = new Koa();
+  const router = new Router();
+
+  app.use(bodyParser());
+
+  router.post('/chat', async (ctx) => {
+    // AI calls here are automatically monitored
+    const response = await model.invoke(ctx.request.body.message);
+    ctx.body = { response: response.content };
+  });
+
+  app.use(router.routes());
+  app.use(router.allowedMethods());
+
+  app.listen(3000);
 }
 
 startServer();
 ```
 
-## TypeScript Example
+## TypeScript Compiling to CommonJS
+
+If your `tsconfig.json` has `"module": "commonjs"`, TypeScript compiles `await import()` into `require()`, which fails for ESM packages. Use the `new Function` workaround:
 
 ```typescript
 // app.ts
 import Koa from 'koa';
 import Router from '@koa/router';
 import bodyParser from 'koa-bodyparser';
-import { ChatOpenAI } from '@langchain/openai';
-
-interface ChatRequest {
-  message: string;
-}
 
 async function startServer() {
-  try {
-    // Initialize global monitoring
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      console.log('✅ Global monitoring enabled!');
-    }
-
-    const app = new Koa();
-    const router = new Router();
-
-    app.use(bodyParser());
-
-    const model = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-      modelName: 'gpt-3.5-turbo'
+  if (process.env.COOLHAND_API_KEY) {
+    // new Function emits a native import() that survives CJS compilation
+    const _import = new Function('m', 'return import(m)');
+    const { initializeGlobalMonitoring } = await _import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: process.env.NODE_ENV === 'production'
     });
-
-    router.post('/chat', async (ctx) => {
-      const { message } = ctx.request.body as ChatRequest;
-      const response = await model.invoke(message);
-      ctx.body = { response: response.content };
-    });
-
-    app.use(router.routes());
-    app.use(router.allowedMethods());
-
-    app.listen(3000);
-    console.log('✅ TypeScript Koa server running!');
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
   }
+
+  const app = new Koa();
+  const router = new Router();
+
+  app.use(bodyParser());
+
+  router.post('/chat', async (ctx) => {
+    const response = await model.invoke(ctx.request.body.message);
+    ctx.body = { response: response.content };
+  });
+
+  app.use(router.routes());
+  app.use(router.allowedMethods());
+
+  app.listen(3000);
 }
 
 startServer();
 ```
 
-## Alternative: Middleware-based Initialization (Untested)
+> **Tip:** If your tsconfig uses `"module": "ES2020"`, `"ESNext"`, or `"NodeNext"`, TypeScript preserves the native `import()` and you can use `await import('coolhand-node')` directly without the `new Function` workaround.
+
+## ESM Koa Projects
+
+If your Koa project uses ESM (`"type": "module"` in package.json):
 
 ```javascript
-// middleware/coolhand.js
-const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
+// app.js (ESM)
+import Koa from 'koa';
+import { initializeGlobalMonitoring } from 'coolhand-node';
 
-let isInitialized = false;
-
-module.exports = async (ctx, next) => {
-  if (!isInitialized && process.env.COOLHAND_API_KEY) {
-    try {
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      isInitialized = true;
-      console.log('✅ Coolhand initialized via middleware');
-    } catch (error) {
-      console.error('❌ Failed to initialize Coolhand:', error);
-    }
+async function startServer() {
+  if (process.env.COOLHAND_API_KEY) {
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: process.env.NODE_ENV === 'production'
+    });
   }
-  await next();
-};
 
-// app.js
-const Koa = require('koa');
-const coolhandMiddleware = require('./middleware/coolhand');
+  const app = new Koa();
+  // ... routes
+  app.listen(3000);
+}
 
-const app = new Koa();
-
-// Initialize Coolhand first
-app.use(coolhandMiddleware);
-
-// Rest of your middleware and routes
+startServer();
 ```
 
-## 📝 Please Test and Contribute!
+## Key Points
 
-If you're using Koa.js with Coolhand, please test the approach above and share your experience!
-
-**Koa-specific considerations:**
-- Middleware execution order
-- Async/await patterns
-- Context object interaction
-- Router integration
+- **Initialize before setting up routes** — Coolhand patches `http`/`https`/`fetch` at initialization time.
+- **`require('coolhand-node')` will not work** — This package is ESM-only. Always use `import()` or `import` syntax.
+- **Koa middleware order doesn't matter** — Coolhand patches at the Node.js module level, not the middleware level.
 
 ## Environment Setup
 
 ```bash
 # .env
 COOLHAND_API_KEY=your_coolhand_key
-NODE_ENV=development
+COOLHAND_DEBUG=false
 ```
 
 ## Expected Behavior
 
 When working correctly, you should see:
-- Koa startup logs showing global monitoring initialization
+- Startup logs showing global monitoring initialization
 - AI API calls automatically logged to Coolhand
 - Normal Koa middleware flow preserved

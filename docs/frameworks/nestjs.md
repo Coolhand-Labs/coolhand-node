@@ -1,10 +1,16 @@
 # NestJS Integration
 
-> **⚠️ Status: Theoretical** - These examples are untested. Please test and [contribute improvements](https://github.com/anthropics/coolhand-node/issues)!
+> **⚠️ Status: Theoretical** - Based on tested Fastify patterns. Please test and [contribute improvements](https://github.com/Coolhand-Labs/coolhand-node/issues)!
+
+## Module System Background
+
+`coolhand-node` is an **ES module** package. NestJS compiles TypeScript to CommonJS by default (`"module": "commonjs"` in tsconfig), which means:
+
+- `import { ... } from 'coolhand-node'` at the top level won't work (compiled to `require()`)
+- `await import('coolhand-node')` won't work (compiled to `require()`)
+- You need the `new Function` workaround to emit a native ESM `import()`
 
 ## 🎯 Recommended: Bootstrap Integration
-
-Based on Next.js learnings, async bootstrap initialization should be most reliable:
 
 ```typescript
 // main.ts
@@ -15,20 +21,23 @@ async function bootstrap() {
   try {
     // Initialize global monitoring BEFORE creating app
     if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
+      // new Function emits a native import() that survives CJS compilation.
+      // NestJS tsconfig uses "module": "commonjs", which compiles
+      // await import() into require() — this workaround preserves the
+      // native import() call.
+      const _import = new Function('m', 'return import(m)');
+      const { initializeGlobalMonitoring } = await _import('coolhand-node');
       await initializeGlobalMonitoring({
         apiKey: process.env.COOLHAND_API_KEY,
         silent: process.env.NODE_ENV === 'production'
       });
-      console.log('✅ Global monitoring enabled for all AI API calls!');
+      console.log('✅ Coolhand monitoring enabled');
     }
 
     const app = await NestFactory.create(AppModule);
     await app.listen(3000);
-    console.log('✅ NestJS app running with global AI monitoring!');
   } catch (error) {
-    console.error('❌ Failed to start NestJS app:', error);
+    console.error('Failed to start NestJS app:', error);
     process.exit(1);
   }
 }
@@ -36,7 +45,9 @@ async function bootstrap() {
 bootstrap();
 ```
 
-## Alternative: Global Module (Untested)
+> **Tip:** If your NestJS project uses `"module": "ES2020"` or `"NodeNext"` in tsconfig, TypeScript preserves the native `import()` and you can use `await import('coolhand-node')` directly without the `new Function` workaround.
+
+## Alternative: Global Module
 
 ```typescript
 // coolhand/coolhand.module.ts
@@ -48,14 +59,15 @@ export class CoolhandModule implements OnModuleInit {
   async onModuleInit() {
     if (process.env.COOLHAND_API_KEY) {
       try {
-        const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
+        const _import = new Function('m', 'return import(m)');
+        const { initializeGlobalMonitoring } = await _import('coolhand-node');
         await initializeGlobalMonitoring({
           apiKey: process.env.COOLHAND_API_KEY,
           silent: process.env.NODE_ENV === 'production'
         });
-        console.log('✅ Global monitoring enabled via NestJS module!');
+        console.log('✅ Coolhand monitoring enabled via NestJS module');
       } catch (error) {
-        console.error('❌ Failed to initialize global monitoring:', error);
+        console.error('Failed to initialize Coolhand:', error);
       }
     }
   }
@@ -76,24 +88,24 @@ export class AppModule {}
 ```typescript
 // ai/ai.service.ts
 import { Injectable } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
+import OpenAI from 'openai';
 
 @Injectable()
 export class AiService {
-  private model: ChatOpenAI;
+  private openai: OpenAI;
 
   constructor() {
-    // No Coolhand setup needed - global monitoring should handle everything!
-    this.model = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      modelName: 'gpt-3.5-turbo',
-    });
+    // No Coolhand setup needed here — global monitoring handles everything
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
 
   async generateResponse(prompt: string): Promise<string> {
-    // This call should be automatically logged by global monitoring
-    const response = await this.model.invoke(prompt);
-    return response.content as string;
+    // This call is automatically intercepted and logged by Coolhand
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }]
+    });
+    return response.choices[0].message.content ?? '';
   }
 }
 ```
@@ -117,26 +129,18 @@ export class AiController {
 }
 ```
 
-## 📝 Please Test and Contribute!
+## Key Points
 
-If you're using NestJS with Coolhand:
-1. **Try the bootstrap initialization approach above**
-2. **Verify that AI API calls in services are being logged**
-3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results
-4. **Share any improvements** for NestJS-specific patterns
-
-**Common areas to test:**
-- Module initialization order
-- Dependency injection compatibility
-- Guards and interceptors interaction
-- Microservice communication monitoring
+- **Initialize in `bootstrap()` before `NestFactory.create()`** — This ensures HTTP/HTTPS patching is active before any modules are loaded.
+- **AI clients can be created in service constructors** — Coolhand patches the underlying Node.js `http`/`https` modules, not SDK objects.
+- **`require('coolhand-node')` will not work** — This package is ESM-only. The `new Function` pattern is required for NestJS's default CJS compilation.
 
 ## Environment Setup
 
 ```bash
 # .env
 COOLHAND_API_KEY=your_coolhand_key
-NODE_ENV=development
+COOLHAND_DEBUG=false
 ```
 
 ## Expected Behavior

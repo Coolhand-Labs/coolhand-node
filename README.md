@@ -21,7 +21,7 @@ npm install coolhand-node
 
 1. **Get API Key**: Visit [coolhandlabs.com](https://coolhandlabs.com/) and get an API key
 2. **Install**: `npm install coolhand-node`
-3. **Initialize**: Add `require('coolhand-node/auto-monitor')` to your main file
+3. **Initialize**: Add monitoring to your app's startup (see examples below)
 4. **Configure**: Set `COOLHAND_API_KEY` in your environment variables
 5. **Deploy**: Your AI calls are now automatically monitored!
 
@@ -35,9 +35,13 @@ npm install coolhand-node
 
 **Set it and forget it! Monitor ALL AI API calls across your entire application with just one line of code, so you'll never be surprised by new LLM calls added to your production codebase.**
 
+> **Important:** `coolhand-node` is an **ES module** package. See [Module System Compatibility](#module-system-compatibility) for setup in CommonJS environments.
+
+**ESM projects** (`"type": "module"` in package.json):
+
 ```javascript
 // Add this ONE line at the top of your main application file
-require('coolhand-node/auto-monitor');
+import 'coolhand-node/auto-monitor';
 
 // That's it! ALL AI API calls are now automatically monitored:
 // ✅ OpenAI SDK calls
@@ -63,7 +67,7 @@ COOLHAND_DEBUG=false  # Set to true for debug mode
 import { initializeGlobalMonitoring } from 'coolhand-node';
 
 // Initialize once at application startup
-initializeGlobalMonitoring({
+await initializeGlobalMonitoring({
   apiKey: 'your-api-key',
   debug: false
 });
@@ -83,7 +87,7 @@ initializeGlobalMonitoring({
 For cases where you need explicit control over which AI calls are monitored:
 
 ```javascript
-const Coolhand = require('coolhand-node');
+import Coolhand from 'coolhand-node';
 
 // Initialize the monitor
 const monitor = new Coolhand({
@@ -91,6 +95,63 @@ const monitor = new Coolhand({
     debug: false  // Enable debug mode if needed
 });
 ```
+
+## Module System Compatibility
+
+`coolhand-node` is published as an **ES module** (`"type": "module"`). How you import it depends on your project's module system.
+
+### ESM Projects
+
+If your `package.json` has `"type": "module"`, or you use `.mjs` files:
+
+```javascript
+import { initializeGlobalMonitoring } from 'coolhand-node';
+// or
+import 'coolhand-node/auto-monitor';
+```
+
+### CommonJS Projects
+
+If your project uses CommonJS (no `"type": "module"`, or `.cjs` files), you cannot use `require()` with this package. Use dynamic `import()` inside an async function:
+
+```javascript
+async function startServer() {
+  // Dynamic import works in CJS
+  const { initializeGlobalMonitoring } = await import('coolhand-node');
+  await initializeGlobalMonitoring({
+    apiKey: process.env.COOLHAND_API_KEY,
+    silent: true
+  });
+
+  // ... start your server
+}
+
+startServer();
+```
+
+### TypeScript Compiling to CommonJS
+
+If your `tsconfig.json` has `"module": "commonjs"`, TypeScript converts `await import()` into `require()` at compile time, which will fail. Use the `new Function` workaround to emit a native ESM `import()`:
+
+```typescript
+async function startServer() {
+  if (process.env.COOLHAND_API_KEY) {
+    // new Function emits a native import() that survives CJS compilation
+    const _import = new Function('m', 'return import(m)');
+    const { initializeGlobalMonitoring } = await _import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: true
+    });
+  }
+
+  // ... start your server
+}
+```
+
+> **Tip:** If your tsconfig uses `"module": "ES2020"`, `"ESNext"`, or `"NodeNext"`, TypeScript preserves the native `import()` and you can use `await import('coolhand-node')` directly without the workaround.
+
+See the [framework guides](#framework-integration) for complete examples.
 
 ## Feedback API
 
@@ -140,10 +201,10 @@ const feedback = await coolhand.createFeedback({
 
 ### Quick Links by Framework:
 - **[Next.js / T3 Stack](./docs/frameworks/nextjs.md)** - ✅ Production-ready
+- **[Fastify](./docs/frameworks/fastify.md)** - ✅ Tested with working example app
 - **[React Frontend](./docs/frameworks/react.md)** - 🧪 Frontend integration patterns
 - **[Express.js](./docs/frameworks/express.md)** - 🧪 Needs testing
 - **[NestJS](./docs/frameworks/nestjs.md)** - 🧪 Needs testing
-- **[Fastify](./docs/frameworks/fastify.md)** - 🧪 Needs testing
 - **[Koa.js](./docs/frameworks/koa.md)** - 🧪 Needs testing
 - **[Serverless (AWS Lambda, Vercel, Netlify)](./docs/frameworks/serverless.md)** - 🧪 Needs testing
 
@@ -213,6 +274,8 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 Add support for custom AI providers by creating a patterns file:
 
 ```javascript
+import Coolhand from 'coolhand-node';
+
 const monitor = new Coolhand({
     apiKey: 'your-api-key',
     patternsFile: './my-patterns.json'
@@ -242,7 +305,7 @@ Example patterns file (`my-patterns.json`):
 Track monitoring statistics in your application:
 
 ```javascript
-const { getGlobalStats } = require('coolhand-node');
+import { getGlobalStats } from 'coolhand-node';
 
 setInterval(() => {
   const stats = getGlobalStats();
@@ -255,11 +318,14 @@ setInterval(() => {
 Enable debug mode for development and testing:
 
 ```javascript
-// Global monitoring with debug mode
-require('coolhand-node/auto-monitor'); // Set COOLHAND_DEBUG=true in .env
+// Via environment variable
+// Set COOLHAND_DEBUG=true in .env, then:
+import 'coolhand-node/auto-monitor';
 
-// Or instance-based with debug mode
-const monitor = new Coolhand({
+// Or via manual initialization
+import { initializeGlobalMonitoring } from 'coolhand-node';
+
+await initializeGlobalMonitoring({
   apiKey: 'your-api-key',
   debug: true
 });

@@ -1,172 +1,154 @@
 # Fastify Integration
 
-> **⚠️ Status: Theoretical** - These examples are untested. Please test and [contribute improvements](https://github.com/anthropics/coolhand-node/issues)!
+> **✅ Status: Tested** - Verified with the `examples/fastify-openai-unbundled` example app. See the [working example](../../examples/fastify-openai-unbundled/) for a complete reference.
 
-## 🎯 Recommended: Startup Initialization
+## Module System Background
 
-Based on Next.js learnings, initialize before server startup:
+`coolhand-node` is an **ES module** package. How you import it depends on your Fastify project's module system:
 
-```javascript
-// app.js
-const fastify = require('fastify')({ logger: true });
+- **ESM projects** (`"type": "module"` in package.json): Use `import` or `await import()` directly
+- **CJS/TypeScript projects** (`"module": "commonjs"` in tsconfig): TypeScript compiles `await import()` into `require()`, which fails for ESM packages. Use the `new Function` workaround shown below.
 
-async function startServer() {
-  try {
-    // Initialize global monitoring BEFORE registering routes
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      console.log('✅ Global monitoring enabled for all AI API calls!');
-    }
+## 🎯 Recommended: TypeScript + CJS (Most Common Fastify Setup)
 
-    // Import AI modules AFTER global monitoring initialization
-    const { ChatOpenAI } = require('@langchain/openai');
-    const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // Register AI routes
-    fastify.post('/chat', async (request, reply) => {
-      // This AI call should be automatically logged
-      const response = await model.invoke(request.body.message);
-      return { response: response.content };
-    });
-
-    // Start server
-    await fastify.listen({ port: 3000 });
-    console.log('✅ Fastify server running with global AI monitoring!');
-  } catch (error) {
-    console.error('❌ Failed to start Fastify server:', error);
-    process.exit(1);
-  }
-}
-
-startServer();
-```
-
-## Alternative: Plugin-Based Initialization (Untested)
-
-```javascript
-// plugins/coolhand.js
-async function coolhandPlugin(fastify, options) {
-  if (process.env.COOLHAND_API_KEY) {
-    try {
-      const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      fastify.log.info('✅ Coolhand global monitoring initialized');
-    } catch (error) {
-      fastify.log.error('❌ Failed to initialize Coolhand:', error);
-    }
-  }
-}
-
-module.exports = coolhandPlugin;
-
-// app.js
-const fastify = require('fastify')({ logger: true });
-
-async function startServer() {
-  // Register Coolhand plugin first
-  await fastify.register(require('./plugins/coolhand'));
-
-  // Register AI routes
-  const { ChatOpenAI } = require('@langchain/openai');
-  const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  fastify.post('/chat', async (request, reply) => {
-    const response = await model.invoke(request.body.message);
-    return { response: response.content };
-  });
-
-  await fastify.listen({ port: 3000 });
-}
-
-startServer();
-```
-
-## TypeScript Example
+Most Fastify + TypeScript projects compile to CommonJS. This is the tested, working approach:
 
 ```typescript
-// app.ts
+// main.ts
+import config from './config';
+import build from './app';
+
+const server = build();
+
+export async function start(port = 3000) {
+  // Initialize Coolhand BEFORE server.listen()
+  if (process.env.COOLHAND_API_KEY) {
+    // new Function emits a native import() that survives CJS compilation.
+    // TypeScript compiles `await import()` to `require()`, which fails
+    // because coolhand-node is an ES module.
+    const _import = new Function('m', 'return import(m)');
+    const { initializeGlobalMonitoring } = await _import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      debug: process.env.COOLHAND_DEBUG === 'true',
+      silent: false
+    });
+    server.log.info('Coolhand LLM monitoring initialized');
+  }
+
+  await server.listen({ port, host: '0.0.0.0' });
+}
+
+start();
+```
+
+```json
+// tsconfig.json — note "module": "commonjs"
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2022",
+    "esModuleInterop": true,
+    "outDir": "./dist"
+  }
+}
+```
+
+> **Why `new Function`?** When tsconfig has `"module": "commonjs"`, TypeScript converts `await import('coolhand-node')` into `require('coolhand-node')` at compile time. Since `coolhand-node` is ESM-only, `require()` throws `ERR_REQUIRE_ESM`. The `new Function('m', 'return import(m)')` pattern emits a real native `import()` in the compiled output that Node.js executes as ESM.
+
+## ESM Fastify Projects
+
+If your Fastify project is already ESM (`"type": "module"` in package.json, or `"module": "ES2020"+"` in tsconfig), you can import directly:
+
+```typescript
+// main.ts (ESM)
+import { initializeGlobalMonitoring } from 'coolhand-node';
 import Fastify from 'fastify';
-import { ChatOpenAI } from '@langchain/openai';
 
 const fastify = Fastify({ logger: true });
 
 async function startServer() {
-  try {
-    // Initialize global monitoring
-    if (process.env.COOLHAND_API_KEY) {
-      console.log('🌐 Initializing Coolhand global monitoring...');
-      const { initializeGlobalMonitoring } = await import('coolhand-node/auto-monitor');
-      await initializeGlobalMonitoring({
-        apiKey: process.env.COOLHAND_API_KEY,
-        silent: process.env.NODE_ENV === 'production'
-      });
-      console.log('✅ Global monitoring enabled!');
-    }
-
-    const model = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-      modelName: 'gpt-3.5-turbo'
+  if (process.env.COOLHAND_API_KEY) {
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      debug: process.env.COOLHAND_DEBUG === 'true',
+      silent: false
     });
-
-    // Define schema
-    const chatSchema = {
-      body: {
-        type: 'object',
-        required: ['message'],
-        properties: {
-          message: { type: 'string' }
-        }
-      }
-    };
-
-    fastify.post('/chat', { schema: chatSchema }, async (request, reply) => {
-      const { message } = request.body as { message: string };
-      const response = await model.invoke(message);
-      return { response: response.content };
-    });
-
-    await fastify.listen({ port: 3000, host: '0.0.0.0' });
-  } catch (error) {
-    fastify.log.error(error);
-    process.exit(1);
+    fastify.log.info('Coolhand LLM monitoring initialized');
   }
+
+  // Register routes...
+  await fastify.listen({ port: 3000, host: '0.0.0.0' });
 }
 
 startServer();
 ```
 
-## 📝 Please Test and Contribute!
+## Alternative: Plugin-Based Initialization
 
-If you're using Fastify with Coolhand:
-1. **Try the startup initialization approach above**
-2. **Test plugin-based initialization as alternative**
-3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results
+```typescript
+// plugins/coolhand.ts
+import { FastifyPluginAsync } from 'fastify';
 
-**Fastify-specific considerations:**
-- Plugin loading order and lifecycle
-- Performance impact (should be zero)
-- TypeScript integration
-- Schema validation interaction
+const coolhandPlugin: FastifyPluginAsync = async (fastify) => {
+  if (process.env.COOLHAND_API_KEY) {
+    try {
+      const _import = new Function('m', 'return import(m)');
+      const { initializeGlobalMonitoring } = await _import('coolhand-node');
+      await initializeGlobalMonitoring({
+        apiKey: process.env.COOLHAND_API_KEY,
+        silent: process.env.NODE_ENV === 'production'
+      });
+      fastify.log.info('Coolhand global monitoring initialized');
+    } catch (error) {
+      fastify.log.error('Failed to initialize Coolhand:', error);
+    }
+  }
+};
+
+export default coolhandPlugin;
+```
+
+## Working Example App
+
+See [`examples/fastify-openai-unbundled/`](../../examples/fastify-openai-unbundled/) for a complete, tested example with:
+
+- Fastify + TypeScript compiling to CommonJS
+- OpenAI SDK v4.82+ (client created at module scope)
+- `coolhand-node` initialized via `new Function` import in `start()`
+- Full HTTP/HTTPS/Fetch monitoring confirmed working
+
+To run:
+```bash
+cd examples/fastify-openai-unbundled
+npm install
+npm run build
+OPENAI_API_KEY=sk-... COOLHAND_API_KEY=your-key node dist/main.js
+```
+
+## Key Points
+
+- **Initialize before `server.listen()`** — Coolhand patches `http`/`https`/`fetch` at initialization. Calls made before initialization won't be captured.
+- **AI clients can be created at module scope** — The OpenAI client (or any AI SDK) can be instantiated before Coolhand initializes. Coolhand patches the underlying `http`/`https` modules, not the SDK objects.
+- **Zero performance impact** — Monitoring adds negligible overhead to request processing.
 
 ## Environment Setup
 
 ```bash
 # .env
 COOLHAND_API_KEY=your_coolhand_key
-NODE_ENV=development
+COOLHAND_DEBUG=false
+OPENAI_API_KEY=your_openai_key
 ```
 
 ## Expected Behavior
 
 When working correctly, you should see:
-- Fastify startup logs showing global monitoring initialization
-- AI API calls automatically logged to Coolhand
-- No impact on Fastify's performance characteristics
+```
+🌐 Global Coolhand monitoring initialized
+🎯 API Endpoint: https://coolhandlabs.com/api/v2/llm_request_logs
+📋 Loaded 3 AI API patterns
+🔍 Monitoring mode: Full (HTTP/HTTPS/Fetch)
+```
+
+AI API calls (OpenAI, Anthropic, Google AI, etc.) are automatically intercepted, sanitized, and logged to Coolhand.
