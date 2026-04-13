@@ -642,7 +642,17 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized.authorization).toBe('Bearer [REDACTED]');
-      expect(sanitized.accept).toEqual(['application/json', 'text/plain']);
+      expect(sanitized.accept).toBe('application/json, text/plain');
+    });
+
+    it('should unwrap single-element header arrays to string', () => {
+      const headers = {
+        'content-type': ['application/json']
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized['content-type']).toBe('application/json');
     });
 
     it('should handle multiple Bearer token formats', () => {
