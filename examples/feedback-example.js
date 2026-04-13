@@ -1,6 +1,6 @@
 // examples/feedback-example.js - Example usage of LLM Request Log Feedback API
 
-const { Coolhand } = require('../dist/index');
+import { Coolhand } from '../dist/index.js';
 
 async function demonstrateFeedback() {
   console.log('🔍 Coolhand Feedback API Example\n');
@@ -8,7 +8,6 @@ async function demonstrateFeedback() {
   // Initialize Coolhand
   const monitor = new Coolhand({
     apiKey: process.env.COOLHAND_API_KEY || 'your-api-key-here',
-    environment: 'local', // Use local for testing
     silent: false
   });
 

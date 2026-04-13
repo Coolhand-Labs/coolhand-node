@@ -1,30 +1,35 @@
 # Serverless Integration
 
-> **⚠️ Status: Theoretical** - These examples are untested. Please test and [contribute improvements](https://github.com/anthropics/coolhand-node/issues)!
+> **⚠️ Status: Theoretical** - These examples are untested. Please test and [contribute improvements](https://github.com/Coolhand-Labs/coolhand-node/issues)!
+
+## Module System Background
+
+`coolhand-node` is an **ES module** package. You cannot use `require('coolhand-node')`. Use dynamic `import()` instead. In TypeScript projects compiling to CommonJS, use the `new Function` workaround (see [TypeScript Lambda](#typescript-lambda) below).
 
 ## AWS Lambda
 
-### Basic Lambda Handler
+### Basic Lambda Handler (ESM)
 
 ```javascript
-// handler.js
-const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
+// handler.mjs (ESM — use .mjs extension or "type": "module" in package.json)
+let monitoringInitialized = false;
 
 // Initialize once (outside handler for container reuse)
-if (process.env.COOLHAND_API_KEY) {
-  initializeGlobalMonitoring({
-    apiKey: process.env.COOLHAND_API_KEY,
-    environment: 'production',
-    silent: true
-  });
+async function ensureMonitoring() {
+  if (!monitoringInitialized && process.env.COOLHAND_API_KEY) {
+    const { initializeGlobalMonitoring } = await import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: true
+    });
+    monitoringInitialized = true;
+  }
 }
 
-const { ChatOpenAI } = require('@langchain/openai');
+export const handler = async (event) => {
+  await ensureMonitoring();
 
-exports.handler = async (event) => {
-  const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  // Automatically monitored!
+  // AI calls here are automatically monitored
   const response = await model.invoke(event.body.message);
 
   return {
@@ -39,39 +44,42 @@ exports.handler = async (event) => {
 ```typescript
 // handler.ts
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { initializeGlobalMonitoring } from 'coolhand-node/auto-monitor';
-import { ChatOpenAI } from '@langchain/openai';
+import OpenAI from 'openai';
 
-// Initialize once per container
-if (process.env.COOLHAND_API_KEY && !global._coolhandInitialized) {
-  initializeGlobalMonitoring({
-    apiKey: process.env.COOLHAND_API_KEY,
-    environment: 'production',
-    silent: true
-  });
-  global._coolhandInitialized = true;
+let monitoringInitialized = false;
+
+async function ensureMonitoring() {
+  if (!monitoringInitialized && process.env.COOLHAND_API_KEY) {
+    // new Function emits a native import() that survives CJS compilation
+    const _import = new Function('m', 'return import(m)');
+    const { initializeGlobalMonitoring } = await _import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: true
+    });
+    monitoringInitialized = true;
+  }
 }
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  await ensureMonitoring();
+
   try {
     const body = JSON.parse(event.body || '{}');
 
-    const model = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-      modelName: 'gpt-3.5-turbo'
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: body.message }]
     });
-
-    const response = await model.invoke(body.message);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({ response: response.content })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: response.choices[0].message.content })
     };
   } catch (error) {
     console.error('Handler error:', error);
@@ -83,37 +91,38 @@ export const handler = async (
 };
 ```
 
+> **Tip:** If your Lambda uses ESM (Node.js 18+ with `"type": "module"` or `.mjs` handler), you can use `await import('coolhand-node')` directly without the `new Function` workaround.
+
 ## Vercel Functions
 
-> **⚠️ Note**: May have Edge runtime limitations
+> **⚠️ Note**: Vercel Serverless Functions run Node.js. Vercel Edge Functions have limited Node.js API support.
 
 ```javascript
-// api/chat.js
-import { initializeGlobalMonitoring } from 'coolhand-node/auto-monitor';
+// api/chat.js (Vercel uses ESM by default in recent versions)
+import { initializeGlobalMonitoring } from 'coolhand-node';
 
-// Initialize monitoring (runs once per cold start)
-if (process.env.COOLHAND_API_KEY && !global._coolhandInitialized) {
-  initializeGlobalMonitoring({
-    apiKey: process.env.COOLHAND_API_KEY,
-    environment: 'production',
-    silent: true
-  });
-  global._coolhandInitialized = true;
+let monitoringInitialized = false;
+
+async function ensureMonitoring() {
+  if (!monitoringInitialized && process.env.COOLHAND_API_KEY) {
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: true
+    });
+    monitoringInitialized = true;
+  }
 }
 
-import { ChatOpenAI } from '@langchain/openai';
-
 export default async function handler(req, res) {
+  await ensureMonitoring();
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // Automatically monitored!
+    // AI calls here are automatically monitored
     const response = await model.invoke(req.body.message);
-
     res.json({ response: response.content });
   } catch (error) {
     console.error('API error:', error);
@@ -125,44 +134,34 @@ export default async function handler(req, res) {
 ## Netlify Functions
 
 ```javascript
-// netlify/functions/chat.js
-const { initializeGlobalMonitoring } = require('coolhand-node/auto-monitor');
+// netlify/functions/chat.mjs (use .mjs for ESM)
+let monitoringInitialized = false;
 
-// Initialize once per function instance
-if (process.env.COOLHAND_API_KEY && !global._coolhandInitialized) {
-  initializeGlobalMonitoring({
-    apiKey: process.env.COOLHAND_API_KEY,
-    environment: 'production',
-    silent: true
-  });
-  global._coolhandInitialized = true;
+async function ensureMonitoring() {
+  if (!monitoringInitialized && process.env.COOLHAND_API_KEY) {
+    const { initializeGlobalMonitoring } = await import('coolhand-node');
+    await initializeGlobalMonitoring({
+      apiKey: process.env.COOLHAND_API_KEY,
+      silent: true
+    });
+    monitoringInitialized = true;
+  }
 }
 
-const { ChatOpenAI } = require('@langchain/openai');
+export const handler = async (event) => {
+  await ensureMonitoring();
 
-exports.handler = async (event, context) => {
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: 'Method not allowed' })
-    };
+    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   try {
     const { message } = JSON.parse(event.body);
-
-    const model = new ChatOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // Automatically monitored!
     const response = await model.invoke(message);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ response: response.content })
     };
   } catch (error) {
@@ -177,28 +176,29 @@ exports.handler = async (event, context) => {
 
 ## Cloudflare Workers
 
-> **⚠️ Limited Support**: Cloudflare Workers have limited Node.js API support
+> **⚠️ Limited Support**: Cloudflare Workers run in an Edge-like runtime with limited Node.js API support. HTTP/HTTPS patching is not available — only `fetch()` monitoring works.
 
 ```javascript
 // worker.js
-import { initializeGlobalMonitoring } from 'coolhand-node/auto-monitor';
+import { initializeGlobalMonitoring } from 'coolhand-node';
 
-// Limited initialization for Edge runtime
-if (globalThis.COOLHAND_API_KEY) {
-  try {
-    initializeGlobalMonitoring({
-      apiKey: globalThis.COOLHAND_API_KEY,
-      environment: 'production',
-      silent: true
-    });
-  } catch (error) {
-    // Edge runtime may not support full monitoring
-    console.warn('Limited Coolhand support in Cloudflare Workers');
-  }
-}
+let monitoringInitialized = false;
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
+    if (!monitoringInitialized) {
+      try {
+        await initializeGlobalMonitoring({
+          apiKey: env.COOLHAND_API_KEY,
+          silent: true
+        });
+        monitoringInitialized = true;
+      } catch (error) {
+        // Edge runtime — limited monitoring support
+        console.warn('Limited Coolhand support in Cloudflare Workers');
+      }
+    }
+
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405 });
     }
@@ -206,7 +206,7 @@ export default {
     try {
       const { message } = await request.json();
 
-      // Use fetch-based AI APIs (OpenAI works via fetch)
+      // fetch-based AI calls are monitored
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -214,16 +214,13 @@ export default {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
+          model: 'gpt-4o-mini',
           messages: [{ role: 'user', content: message }]
         })
       });
 
       const data = await response.json();
-
-      return Response.json({
-        response: data.choices[0].message.content
-      });
+      return Response.json({ response: data.choices[0].message.content });
     } catch (error) {
       return new Response('Internal error', { status: 500 });
     }
@@ -231,65 +228,25 @@ export default {
 };
 ```
 
-## Supabase Edge Functions
-
-```typescript
-// supabase/functions/chat/index.ts
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
-
-// Note: Deno runtime - limited Node.js compatibility
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  try {
-    const { message } = await req.json();
-
-    // Use fetch-based approach for AI APIs
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: message }]
-      })
-    });
-
-    const data = await response.json();
-
-    return new Response(JSON.stringify({
-      response: data.choices[0].message.content
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-});
-```
-
-## 📝 Best Practices for Serverless
+## Best Practices for Serverless
 
 ### 1. Cold Start Optimization
-```javascript
-// Initialize outside handler for container reuse
-let isInitialized = false;
+Initialize outside the handler so monitoring persists across warm invocations:
 
-if (process.env.COOLHAND_API_KEY && !isInitialized) {
-  initializeGlobalMonitoring({ /* config */ });
-  isInitialized = true;
+```javascript
+let monitoringInitialized = false;
+
+async function ensureMonitoring() {
+  if (!monitoringInitialized && process.env.COOLHAND_API_KEY) {
+    const { initializeGlobalMonitoring } = await import('coolhand-node');
+    await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY, silent: true });
+    monitoringInitialized = true;
+  }
 }
 
-exports.handler = async (event) => {
-  // Handler logic here
+export const handler = async (event) => {
+  await ensureMonitoring();
+  // ...
 };
 ```
 
@@ -298,7 +255,6 @@ exports.handler = async (event) => {
 # AWS Lambda / Netlify / Vercel
 COOLHAND_API_KEY=your_key
 OPENAI_API_KEY=your_openai_key
-NODE_ENV=production
 
 # Cloudflare Workers (wrangler.toml)
 [vars]
@@ -307,12 +263,15 @@ OPENAI_API_KEY = "your_openai_key"
 ```
 
 ### 3. Error Handling
+Always wrap initialization in try/catch — monitoring failure should never take down your function:
+
 ```javascript
 try {
-  initializeGlobalMonitoring(config);
+  const { initializeGlobalMonitoring } = await import('coolhand-node');
+  await initializeGlobalMonitoring(config);
 } catch (error) {
-  console.warn('Coolhand initialization failed:', error);
-  // Continue without monitoring rather than failing
+  console.warn('Coolhand initialization failed:', error.message);
+  // Continue without monitoring
 }
 ```
 
@@ -323,20 +282,14 @@ try {
 | **AWS Lambda** | ✅ Full | ✅ Yes | ✅ Yes | Theoretical |
 | **Vercel Functions** | ⚠️ Limited | ⚠️ Maybe | ✅ Yes | Theoretical |
 | **Netlify Functions** | ✅ Full | ✅ Yes | ✅ Yes | Theoretical |
-| **Cloudflare Workers** | ❌ Limited | ❌ No | ⚠️ Manual | Limited |
+| **Cloudflare Workers** | ❌ Limited | ❌ No | ⚠️ Fetch only | Limited |
 | **Supabase Edge** | ❌ Deno | ❌ No | ⚠️ Manual | Limited |
 
-## 📝 Please Test and Contribute!
+## Please Test and Contribute!
 
 Serverless environments vary significantly. If you're using any serverless platform:
 
 1. **Test the initialization approach for your platform**
 2. **Verify AI API calls are being logged**
-3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results
+3. **[Create an issue](https://github.com/Coolhand-Labs/coolhand-node/issues)** with your results
 4. **Share platform-specific gotchas and solutions**
-
-**Common considerations:**
-- Cold start performance impact
-- Runtime environment limitations
-- Environment variable configuration
-- Container reuse patterns

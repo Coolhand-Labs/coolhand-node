@@ -224,38 +224,25 @@ export class PatternMatchingService {
       let patternsFile: string;
 
       if (customPatternsFile) {
-        // Use custom patterns file if provided - use regular require for test compatibility
-        try {
-          const path = require('path');
-          patternsFile = path.resolve(customPatternsFile);
-        } catch {
-          // Fallback for ES modules
-          patternsFile = customPatternsFile;
-        }
+        patternsFile = _path.resolve(customPatternsFile);
       } else {
-        // Calculate the path to api-patterns.json relative to this file
-        try {
-          // Try regular require first (works with Jest mocks)
-          const path = require('path');
-          patternsFile = path.join(__dirname, '..', 'api-patterns.json');
-        } catch {
-          // Fallback for ES modules when require isn't available
+        // __dirname is available in CJS but not in ESM. Use eval to access
+        // import.meta.url without causing ts-jest compile errors.
+        let baseDir: string;
+        if (typeof __dirname !== 'undefined') {
+          baseDir = __dirname;
+        } else {
           try {
-            const path = eval('require')('path');
-            const url = eval('require')('url');
-            const importMeta = eval('typeof import.meta !== "undefined" ? import.meta : undefined');
-
-            if (importMeta && importMeta.url) {
-              const __filename = url.fileURLToPath(importMeta.url);
-              const __dirname = path.dirname(__filename);
-              patternsFile = path.join(__dirname, '..', 'api-patterns.json');
-            } else {
-              patternsFile = '../api-patterns.json';
-            }
+            const metaUrl: string = eval('import.meta.url');
+            // Use fileURLToPath instead of new URL().pathname to handle
+            // Windows paths correctly (e.g. /C:/foo/bar.js → C:\foo\bar.js)
+            const { fileURLToPath } = require('url');
+            baseDir = _path.dirname(fileURLToPath(metaUrl));
           } catch {
-            patternsFile = '../api-patterns.json';
+            baseDir = process.cwd();
           }
         }
+        patternsFile = _path.join(baseDir, '..', 'api-patterns.json');
       }
 
       if (fs.existsSync(patternsFile)) {
@@ -397,9 +384,12 @@ export class PatternMatchingService {
 
     // Default sanitization rules
     if (sanitized.authorization) {
-      sanitized.authorization = (sanitized.authorization as string).replace(/Bearer .+/, 'Bearer [REDACTED]');
+      const auth = Array.isArray(sanitized.authorization)
+        ? sanitized.authorization[0]
+        : sanitized.authorization;
+      sanitized.authorization = String(auth).replace(/Bearer .+/, 'Bearer [REDACTED]');
     }
-    if (sanitized['api-key']) {
+    if (sanitized['api-key'] !== undefined) {
       sanitized['api-key'] = '[REDACTED]';
     }
 
