@@ -407,6 +407,14 @@ export class PatternMatchingService {
       }
     }
 
+    // Normalize header arrays to strings
+    for (const key of Object.keys(sanitized)) {
+      const val = sanitized[key];
+      if (Array.isArray(val)) {
+        sanitized[key] = val.length === 1 ? val[0] : val.join(', ');
+      }
+    }
+
     return sanitized;
   }
 

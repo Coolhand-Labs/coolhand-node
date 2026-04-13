@@ -23,6 +23,7 @@ const isEdgeRuntime = () => {
 // Node.js modules - conditionally imported
 let https: any = null;
 let http: any = null;
+let zlib: any = null;
 
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
@@ -53,6 +54,14 @@ const loadNodeModules = async () => {
 
     https = httpsModule;
     http = httpModule;
+
+    try {
+      const zlibModule = await import('zlib');
+      zlib = zlibModule;
+    } catch {
+      log('zlib not available — response decompression disabled');
+    }
+
     return true;
   } catch {
     console.warn('⚠️  Node.js HTTP modules not available - falling back to fetch() only');
@@ -381,6 +390,40 @@ function patchFetch(): void {
   }
 }
 
+function decompressBuffer(buffer: Buffer, encoding: string | undefined): Promise<string> {
+  return new Promise((resolve) => {
+    if (!encoding || !zlib) {
+      resolve(buffer.toString('utf-8'));
+      return;
+    }
+
+    const enc = encoding.trim().toLowerCase();
+    let decompressFn: ((buf: Buffer, cb: (err: Error | null, result: Buffer) => void) => void) | null = null;
+
+    if (enc === 'gzip' || enc === 'x-gzip') {
+      decompressFn = zlib.gunzip;
+    } else if (enc === 'deflate') {
+      decompressFn = zlib.inflate;
+    } else if (enc === 'br') {
+      decompressFn = zlib.brotliDecompress;
+    }
+
+    if (!decompressFn) {
+      resolve(buffer.toString('utf-8'));
+      return;
+    }
+
+    decompressFn(buffer, (err: Error | null, result: Buffer) => {
+      if (err) {
+        log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
+        resolve(buffer.toString('utf-8'));
+      } else {
+        resolve(result.toString('utf-8'));
+      }
+    });
+  });
+}
+
 function interceptRequest(
   originalRequest: any,
   options: CoolhandRequestOptions | string | URL,
@@ -418,14 +461,22 @@ function interceptRequest(
   const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-    let responseBody = '';
+    const responseChunks: Buffer[] = [];
 
     res.on('data', (chunk: any) => {
-      responseBody += chunk.toString();
+      responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
-    res.on('end', () => {
-      callData.response_body = parseBody(responseBody);
+    res.on('end', async () => {
+      try {
+        const rawBuffer = Buffer.concat(responseChunks);
+        const contentEncoding = res.headers?.['content-encoding'];
+        const responseBody = await decompressBuffer(rawBuffer, contentEncoding);
+        callData.response_body = parseBody(responseBody);
+      } catch (err: any) {
+        log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
+        callData.response_body = null;
+      }
       callData.response_headers = globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
       callData.status_code = res.statusCode || null;
 
