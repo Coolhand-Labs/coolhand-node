@@ -40,6 +40,7 @@ const loadNodeModules = async () => {
     // returns the mutable CJS module object where properties are configurable.
     const desc = Object.getOwnPropertyDescriptor(httpsModule, 'request');
     if (desc && desc.configurable === false) {
+      log('ESM namespace detected (non-configurable properties), using createRequire fallback');
       const { createRequire: cr } = await import('module') as any;
       // Use eval to access import.meta.url without causing ts-jest compile errors.
       // Falls back to process.cwd() in CJS environments where import.meta is unavailable.

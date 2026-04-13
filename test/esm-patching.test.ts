@@ -82,13 +82,24 @@ describe('ESM namespace detection and createRequire fallback', () => {
   });
 
   it('should proceed without createRequire when properties are configurable (CJS / bundled)', async () => {
-    // Simulate CJS module objects: configurable = true
-    jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({
-      configurable: true,
-      writable: true,
-      enumerable: true,
-      value: jest.fn(),
-    });
+    // Use a targeted mock that delegates to the real Object.getOwnPropertyDescriptor
+    // but returns configurable: true for 'request' and 'get'. This avoids masking bugs
+    // by blanket-mocking all property descriptor lookups.
+    const realGetOwnPropDesc = Object.getOwnPropertyDescriptor;
+    jest.spyOn(Object, 'getOwnPropertyDescriptor').mockImplementation(
+      (obj: any, prop: PropertyKey) => {
+        const realDesc = realGetOwnPropDesc(obj, prop);
+        if (prop === 'request' || prop === 'get') {
+          return {
+            configurable: true,
+            writable: true,
+            enumerable: true,
+            value: realDesc?.value ?? jest.fn(),
+          };
+        }
+        return realDesc;
+      }
+    );
     jest.spyOn(Object, 'defineProperty').mockImplementation((obj, prop, desc) => {
       (obj as any)[prop] = desc.value;
       return obj;
@@ -238,12 +249,25 @@ describe('PatternMatchingService path resolution in loadAPIPatternsSync', () => 
     });
   });
 
-  it('should fall back to process.cwd() when __dirname and import.meta.url are unavailable', () => {
-    // This tests the outermost fallback in the loadAPIPatternsSync path resolution.
-    // In the test environment __dirname IS defined, so this branch is not normally hit.
-    // We document the expectation here: process.cwd() is the last resort.
-    expect(typeof process.cwd()).toBe('string');
-    expect(process.cwd().length).toBeGreaterThan(0);
+  it('should handle missing api-patterns.json without crashing', () => {
+    // When the default patterns file is not found on disk, the service
+    // initializes without crashing and remains usable (with 0 patterns).
+    jest.isolateModules(() => {
+      jest.unmock('../src/services/PatternMatchingService');
+
+      // Mock fs so existsSync always returns false (file not found)
+      jest.doMock('fs', () => ({
+        existsSync: jest.fn().mockReturnValue(false),
+        readFileSync: jest.fn(),
+      }));
+
+      const { PatternMatchingService: RealService } = require('../src/services/PatternMatchingService');
+      const svc = new RealService({ silent: true });
+
+      // Service should be usable — matchesAPIPatternSync returns null, no crash
+      expect(svc.matchesAPIPatternSync({ hostname: 'api.openai.com', path: '/' })).toBeNull();
+      expect(typeof svc.getPatternsCountSync()).toBe('number');
+    });
   });
 });
 
