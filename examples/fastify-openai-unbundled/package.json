@@ -12,7 +12,7 @@
     "@fastify/cors": "^10.0.2",
     "coolhand-node": "file:../../",
     "dotenv": "^16.4.7",
-    "fastify": "^5.2.1",
+    "fastify": "^5.8.5",
     "openai": "^4.82.0",
     "pino": "^9.6.0",
     "zod": "^3.24.2"
