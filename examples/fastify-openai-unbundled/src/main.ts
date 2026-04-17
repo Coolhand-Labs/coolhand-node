@@ -1,6 +1,25 @@
 import config from './config';
 import build from './app';
 
+/* bootstrap datadog agent — mirrors culina-chatops pattern */
+let tracer: any;
+if (config.datadog.enabled) {
+    tracer = require('dd-trace').init({
+        llmobs: {
+            mlApp: config.datadog.mlApp,
+            agentlessEnabled: true
+        },
+        site: config.datadog.site,
+        env: config.datadog.env,
+        service: config.datadog.service,
+        apiKey: config.datadog.apiKey
+    });
+    // eslint-disable-next-line no-console
+    console.log('[dd-trace] initialized');
+} else {
+    tracer = { llmobs: { annotate: () => {}, flush: () => {} } };
+}
+
 const server = build();
 
 export async function start(port = +config.port) {
@@ -43,4 +62,4 @@ signals.forEach((signal) =>
     })
 );
 
-export { server };
+export { server, tracer };
