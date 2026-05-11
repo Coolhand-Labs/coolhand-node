@@ -2,11 +2,13 @@ import { CoolhandCallData, CoolhandLogPayload, CoolhandMatchedPattern } from '..
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
-export interface LoggingServiceConfig extends BaseServiceConfig {}
+export interface LoggingServiceConfig extends BaseServiceConfig {
+  baseUrl?: string;
+}
 
 export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_logs');
+    super(config, BaseService.resolveBaseUrl(config.baseUrl) + '/api/v2/llm_request_logs');
   }
 
   public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern, collectionMethod?: CollectionMethod): Promise<void> {

@@ -6,6 +6,7 @@
  *
  * Environment Variables:
  * - COOLHAND_API_KEY (required)
+ * - COOLHAND_BASE_URL (optional: e.g. https://feedback.example.com)
  * - COOLHAND_SILENT (optional: 'true' | 'false', default: 'true')
  * - COOLHAND_PATTERNS_FILE (optional: path to custom patterns file)
  * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false')
@@ -29,6 +30,7 @@ if (apiKey) {
   const silent = process.env.COOLHAND_SILENT !== 'false'; // Default to true unless explicitly false
   const patternsFile = process.env.COOLHAND_PATTERNS_FILE;
   const debug = process.env.COOLHAND_DEBUG === 'true'; // Default to false unless explicitly true
+  const baseUrl = process.env.COOLHAND_BASE_URL;
 
   // Async initialization wrapped in IIFE
   (async () => {
@@ -41,7 +43,8 @@ if (apiKey) {
         apiKey,
         silent,
         patternsFile,
-        debug
+        debug,
+        baseUrl
       });
 
       if (!silent) {

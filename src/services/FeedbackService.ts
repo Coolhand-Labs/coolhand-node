@@ -2,11 +2,13 @@ import { LLMRequestLogFeedback, LLMRequestLogFeedbackPayload, LLMRequestLogFeedb
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
-export interface FeedbackServiceConfig extends BaseServiceConfig {}
+export interface FeedbackServiceConfig extends BaseServiceConfig {
+  baseUrl?: string;
+}
 
 export class FeedbackService extends BaseService {
   constructor(config: FeedbackServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
+    super(config, BaseService.resolveBaseUrl(config.baseUrl) + '/api/v2/llm_request_log_feedbacks');
   }
 
   public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {

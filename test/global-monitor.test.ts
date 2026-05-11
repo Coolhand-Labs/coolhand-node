@@ -372,5 +372,16 @@ describe('Global Monitor', () => {
       // Verify the configuration was accepted
       expect(config.patternsFile).toBe('./custom-patterns.json');
     });
+
+    it('should accept baseUrl configuration', async () => {
+      const config = {
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://self-hosted.example.com'
+      };
+
+      // Should accept baseUrl without throwing
+      await expect(globalMonitor.initializeGlobalMonitoring(config)).resolves.not.toThrow();
+    });
   });
 });

@@ -30,6 +30,58 @@ describe('Coolhand Node Monitor', () => {
       const stats = monitor.getStats();
       expect(stats.apiEndpoint).toBe('https://coolhandlabs.com/api/v2/llm_request_logs');
     });
+
+    it('should use custom baseUrl when provided', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://feedback.example.com'
+      });
+      expect(monitor.getStats().apiEndpoint).toBe(
+        'https://feedback.example.com/api/v2/llm_request_logs'
+      );
+    });
+
+    it('should normalize trailing slash in baseUrl', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://feedback.example.com/'
+      });
+      expect(monitor.getStats().apiEndpoint).toBe(
+        'https://feedback.example.com/api/v2/llm_request_logs'
+      );
+    });
+
+    it('should allow http://localhost for local dev', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://localhost:3000'
+      })).not.toThrow();
+    });
+
+    it('should reject non-https non-localhost baseUrl', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://example.com'
+      })).toThrow('baseUrl must use https://');
+    });
+
+    it('should reject hosts that only prefix-match localhost', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://localhost.evil.com'
+      })).toThrow('baseUrl must use https://');
+
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://127.0.0.1.attacker.com'
+      })).toThrow('baseUrl must use https://');
+    });
   });
 
   describe('Header sanitization', () => {

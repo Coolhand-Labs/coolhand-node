@@ -14,6 +14,28 @@ export abstract class BaseService {
   protected debug: boolean;
   protected apiEndpoint: string;
 
+  static resolveBaseUrl(baseUrl?: string): string {
+    if (!baseUrl) return 'https://coolhandlabs.com';
+    const normalized = baseUrl.replace(/\/$/, '');
+
+    let parsed: URL;
+    try {
+      parsed = new URL(normalized);
+    } catch {
+      throw new Error(
+        `baseUrl must use https:// (or http://localhost for local dev). Got: ${baseUrl}`
+      );
+    }
+
+    if (parsed.protocol === 'https:') return normalized;
+    if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      return normalized;
+    }
+    throw new Error(
+      `baseUrl must use https:// (or http://localhost for local dev). Got: ${baseUrl}`
+    );
+  }
+
   constructor(config: BaseServiceConfig, endpoint: string) {
     this.apiKey = config.apiKey;
     this.silent = config.silent;
