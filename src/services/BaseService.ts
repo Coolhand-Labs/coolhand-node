@@ -15,7 +15,7 @@ export abstract class BaseService {
   protected apiEndpoint: string;
 
   static resolveBaseUrl(baseUrl?: string): string {
-    if (!baseUrl) return 'https://coolhandlabs.com';
+    if (!baseUrl) { return 'https://coolhandlabs.com'; }
     const normalized = baseUrl.replace(/\/$/, '');
 
     let parsed: URL;
@@ -27,7 +27,7 @@ export abstract class BaseService {
       );
     }
 
-    if (parsed.protocol === 'https:') return normalized;
+    if (parsed.protocol === 'https:') { return normalized; }
     if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
       return normalized;
     }
