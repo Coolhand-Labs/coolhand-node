@@ -6,7 +6,7 @@ export interface LoggingServiceConfig extends BaseServiceConfig {}
 
 export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_logs');
+    super(config, BaseService.buildEndpoint(config.baseUrl, '/api/v2/llm_request_logs'));
   }
 
   public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern, collectionMethod?: CollectionMethod): Promise<void> {

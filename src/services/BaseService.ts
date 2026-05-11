@@ -6,6 +6,7 @@ export interface BaseServiceConfig {
   apiKey: string;
   silent: boolean;
   debug?: boolean;
+  baseUrl?: string;
 }
 
 export abstract class BaseService {
@@ -13,6 +14,25 @@ export abstract class BaseService {
   protected silent: boolean;
   protected debug: boolean;
   protected apiEndpoint: string;
+
+  static buildEndpoint(baseUrl: string | undefined, path: string): string {
+    const base = (baseUrl ?? 'https://coolhandlabs.com').replace(/\/+$/, '');
+    let parsed: URL;
+    try {
+      parsed = new URL(base);
+    } catch {
+      throw new Error(`baseUrl is not a valid URL. Got: ${base}`);
+    }
+    const isHttps = parsed.protocol === 'https:';
+    const isLocalHttp = parsed.protocol === 'http:' &&
+      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+    if (!isHttps && !isLocalHttp) {
+      throw new Error(
+        `baseUrl must use https:// (use http://localhost or http://127.0.0.1 for local dev). Got: ${base}`
+      );
+    }
+    return base + path;
+  }
 
   constructor(config: BaseServiceConfig, endpoint: string) {
     this.apiKey = config.apiKey;

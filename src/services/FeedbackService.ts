@@ -6,7 +6,7 @@ export interface FeedbackServiceConfig extends BaseServiceConfig {}
 
 export class FeedbackService extends BaseService {
   constructor(config: FeedbackServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
+    super(config, BaseService.buildEndpoint(config.baseUrl, '/api/v2/llm_request_log_feedbacks'));
   }
 
   public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {
