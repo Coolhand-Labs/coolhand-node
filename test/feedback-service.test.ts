@@ -30,6 +30,72 @@ describe('FeedbackService', () => {
 
       expect(service.getApiEndpoint()).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
     });
+
+    it('should use custom baseUrl for feedback endpoint', () => {
+      const service = new FeedbackService({
+        apiKey: 'test-api-key',
+        silent: true,
+        baseUrl: 'https://self-hosted.example.com'
+      });
+      expect(service.getApiEndpoint()).toBe(
+        'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks'
+      );
+    });
+
+    it('should strip multiple trailing slashes from baseUrl', () => {
+      const service = new FeedbackService({
+        apiKey: 'test-api-key',
+        silent: true,
+        baseUrl: 'https://self-hosted.example.com//'
+      });
+      expect(service.getApiEndpoint()).toBe(
+        'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks'
+      );
+    });
+
+    it('should allow http://127.0.0.1 for local dev', () => {
+      const service = new FeedbackService({
+        apiKey: 'test-api-key',
+        silent: true,
+        baseUrl: 'http://127.0.0.1:3000'
+      });
+      expect(service.getApiEndpoint()).toBe(
+        'http://127.0.0.1:3000/api/v2/llm_request_log_feedbacks'
+      );
+    });
+
+    it('should use default endpoint when baseUrl is undefined', () => {
+      const service = new FeedbackService({
+        apiKey: 'test-api-key',
+        silent: true,
+        baseUrl: undefined
+      });
+      expect(service.getApiEndpoint()).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
+    });
+
+    it('should POST feedback to the custom baseUrl', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 1, like: true, created_at: '', updated_at: '' }),
+          text: jest.fn().mockResolvedValue('')
+        };
+      });
+
+      const service = new FeedbackService({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://self-hosted.example.com'
+      });
+
+      await service.createFeedback({ like: true });
+      expect(capturedUrl).toBe(
+        'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks'
+      );
+    });
   });
 
   describe('Feedback creation', () => {

@@ -16,7 +16,7 @@ export abstract class BaseService {
 
   static resolveBaseUrl(baseUrl?: string): string {
     if (!baseUrl) { return 'https://coolhandlabs.com'; }
-    const normalized = baseUrl.replace(/\/$/, '');
+    const normalized = baseUrl.replace(/\/+$/, '');
 
     let parsed: URL;
     try {

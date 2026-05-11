@@ -61,6 +61,65 @@ describe('Coolhand Node Monitor', () => {
       })).not.toThrow();
     });
 
+    it('should allow http://127.0.0.1 for local dev', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://127.0.0.1:3000'
+      });
+      expect(monitor.getStats().apiEndpoint).toBe(
+        'http://127.0.0.1:3000/api/v2/llm_request_logs'
+      );
+    });
+
+    it('should strip multiple trailing slashes from baseUrl', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://feedback.example.com//'
+      });
+      expect(monitor.getStats().apiEndpoint).toBe(
+        'https://feedback.example.com/api/v2/llm_request_logs'
+      );
+    });
+
+    it('should use default endpoint when baseUrl is undefined', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: undefined
+      });
+      expect(monitor.getStats().apiEndpoint).toBe(
+        'https://coolhandlabs.com/api/v2/llm_request_logs'
+      );
+    });
+
+    it('should POST feedback to the custom baseUrl (HTTP-layer)', async () => {
+      const originalFetch = (global as any).fetch;
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 1, like: true, created_at: '', updated_at: '' }),
+          text: jest.fn().mockResolvedValue('')
+        };
+      });
+
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'https://self-hosted.example.com'
+      });
+
+      await monitor.createFeedback({ like: true });
+      expect(capturedUrl).toBe(
+        'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks'
+      );
+      (global as any).fetch = originalFetch;
+    });
+
     it('should reject non-https non-localhost baseUrl', () => {
       expect(() => new Coolhand({
         apiKey: 'test-key',
