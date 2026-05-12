@@ -8,11 +8,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./auto-monitor": {
       "types": "./dist/auto-monitor.d.ts",
-      "import": "./dist/auto-monitor.js"
+      "import": "./dist/auto-monitor.js",
+      "require": "./dist/auto-monitor.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -45,7 +47,7 @@
   ],
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
-    "build": "npm run sync-version && tsc && cp src/api-patterns.json dist/",
+    "build": "npm run sync-version && tsup && cp src/api-patterns.json dist/",
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -55,6 +57,7 @@
     "lint:fix": "eslint src test --ext .ts --fix",
     "dev": "tsc --watch",
     "clean": "rm -rf dist coverage",
+    "test:cjs": "node scripts/verify-cjs.cjs",
     "example": "node examples/basic.js"
   },
   "devDependencies": {
@@ -68,6 +71,7 @@
     "jest": "^30.2.0",
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.0.0"
   }
 }

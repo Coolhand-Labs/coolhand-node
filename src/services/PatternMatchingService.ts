@@ -242,7 +242,13 @@ export class PatternMatchingService {
             baseDir = process.cwd();
           }
         }
-        patternsFile = _path.join(baseDir, '..', 'api-patterns.json');
+        // Try the current directory first (tsup bundle: dist/index.cjs → baseDir = dist/).
+        // Fall back to the parent directory (tsc/Jest source: src/services/ → need ../ to reach src/).
+        const candidates: string[] = [
+          _path.join(baseDir, 'api-patterns.json'),
+          _path.join(baseDir, '..', 'api-patterns.json'),
+        ];
+        patternsFile = candidates.find((p: string) => fs.existsSync(p)) || candidates[0];
       }
 
       if (fs.existsSync(patternsFile)) {
