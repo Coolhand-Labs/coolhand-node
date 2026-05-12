@@ -1,6 +1,20 @@
 import { Coolhand } from '../src/index';
 import { LoggingService } from '../src/services/LoggingService';
 import { FeedbackService } from '../src/services/FeedbackService';
+import { CoolhandCallData } from '../src/types';
+
+const fakeCallData: CoolhandCallData = {
+  id: 1,
+  timestamp: new Date().toISOString(),
+  method: 'POST',
+  url: 'https://api.openai.com/v1/chat/completions',
+  headers: {},
+  request_body: null,
+  response_body: null,
+  response_headers: null,
+  status_code: 200,
+  protocol: 'https'
+};
 
 describe('baseUrl configuration', () => {
   describe('Coolhand constructor', () => {
@@ -83,6 +97,31 @@ describe('baseUrl configuration', () => {
         baseUrl: 'not-a-url'
       })).toThrow('Invalid baseUrl');
     });
+
+    it('rejects ftp:// (valid URL, wrong scheme)', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'ftp://files.example.com'
+      })).toThrow('baseUrl must use https://');
+    });
+
+    // Pin these so a future refactor to startsWith/includes can't accidentally allow them
+    it('rejects http://localhost.attacker.com (prefix-bypass attempt)', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://localhost.attacker.com'
+      })).toThrow('baseUrl must use https://');
+    });
+
+    it('rejects http://127.0.0.1.evil.com (prefix-bypass attempt)', () => {
+      expect(() => new Coolhand({
+        apiKey: 'test-key',
+        silent: true,
+        baseUrl: 'http://127.0.0.1.evil.com'
+      })).toThrow('baseUrl must use https://');
+    });
   });
 
   describe('LoggingService', () => {
@@ -94,6 +133,29 @@ describe('baseUrl configuration', () => {
       });
       expect(svc.getApiEndpoint()).toBe('https://self-hosted.internal/api/v2/llm_request_logs');
     });
+
+    it('POSTs to the custom baseUrl at the HTTP layer', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 42 })
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        const svc = new LoggingService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        await svc.logRequestToAPI(fakeCallData);
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://self-hosted.example.com/api/v2/llm_request_logs',
+          expect.objectContaining({ method: 'POST' })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 
   describe('FeedbackService', () => {
@@ -104,6 +166,29 @@ describe('baseUrl configuration', () => {
         baseUrl: 'https://self-hosted.internal'
       });
       expect(svc.getApiEndpoint()).toBe('https://self-hosted.internal/api/v2/llm_request_log_feedbacks');
+    });
+
+    it('POSTs to the custom baseUrl at the HTTP layer', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 1, like: true })
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        const svc = new FeedbackService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        await svc.createFeedback({ like: true });
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks',
+          expect.objectContaining({ method: 'POST' })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 

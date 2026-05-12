@@ -16,10 +16,13 @@ function validateBaseUrl(raw: string): void {
   } catch {
     throw new Error(`Invalid baseUrl: "${raw}" is not a valid URL`);
   }
+  if (!url.hostname) {
+    throw new Error(`baseUrl must include a hostname. Got: "${raw}"`);
+  }
   if (url.protocol === 'https:') { return; }
   if (url.protocol === 'http:') {
     const h = url.hostname;
-    if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost')) { return; }
+    if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') { return; }
   }
   throw new Error(
     `baseUrl must use https:// (got: "${raw}"). For local dev, http://localhost is allowed.`
