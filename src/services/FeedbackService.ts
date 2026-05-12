@@ -9,7 +9,7 @@ const FEEDBACK_PATH = '/api/v2/llm_request_log_feedbacks';
 export class FeedbackService extends BaseService {
   constructor(config: FeedbackServiceConfig) {
     const base = config.baseUrl ?? BaseService.DEFAULT_BASE_URL;
-    if (config.baseUrl) BaseService.validateBaseUrl(base);
+    if (config.baseUrl) { BaseService.validateBaseUrl(base); }
     super(config, BaseService.normalizeBaseUrl(base) + FEEDBACK_PATH);
   }
 

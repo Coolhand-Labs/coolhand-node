@@ -27,13 +27,13 @@ export abstract class BaseService {
     if (!parsed.hostname) {
       throw new Error(`baseUrl must include a hostname. Got: ${baseUrl}`);
     }
-    if (parsed.protocol === 'https:') return;
+    if (parsed.protocol === 'https:') { return; }
     if (parsed.protocol === 'http:') {
       const isLocal = parsed.hostname === 'localhost' ||
                       parsed.hostname === '127.0.0.1' ||
                       parsed.hostname === '::1' ||
                       parsed.hostname === '[::1]';
-      if (isLocal) return;
+      if (isLocal) { return; }
       throw new Error(
         `baseUrl must use https:// for non-local hosts. Got: ${baseUrl}\n` +
         `  For local development, http://localhost:... is allowed.`

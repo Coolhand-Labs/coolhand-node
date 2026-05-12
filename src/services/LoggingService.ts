@@ -9,7 +9,7 @@ const LOG_PATH = '/api/v2/llm_request_logs';
 export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
     const base = config.baseUrl ?? BaseService.DEFAULT_BASE_URL;
-    if (config.baseUrl) BaseService.validateBaseUrl(base);
+    if (config.baseUrl) { BaseService.validateBaseUrl(base); }
     super(config, BaseService.normalizeBaseUrl(base) + LOG_PATH);
   }
 
