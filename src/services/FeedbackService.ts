@@ -9,14 +9,20 @@ export class FeedbackService extends BaseService {
     super(config, '/api/v2/llm_request_log_feedbacks');
   }
 
+  private normalizeSentiment(feedback: LLMRequestLogFeedback): LLMRequestLogFeedback {
+    if (feedback.sentiment !== undefined || feedback.like === undefined) { return feedback; }
+    return { ...feedback, sentiment: feedback.like ? 'like' : 'dislike' };
+  }
+
   public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {
-    const feedbackWithCollector = this.addCollectorToData(feedback, collectionMethod);
+    const normalized = this.normalizeSentiment(feedback);
+    const feedbackWithCollector = this.addCollectorToData(normalized, collectionMethod);
 
     const payload: LLMRequestLogFeedbackPayload = {
       llm_request_log_feedback: feedbackWithCollector
     };
 
-    this.logFeedbackInfo(feedback);
+    this.logFeedbackInfo(normalized);
 
     const result = await this.sendRequest<LLMRequestLogFeedbackResponse>(
       payload,
@@ -30,8 +36,7 @@ export class FeedbackService extends BaseService {
   private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {
     if (!this.silent) {
       console.log(`\n📝 CREATING FEEDBACK for LLM Request Log ID: ${feedback.llm_request_log_id}`);
-      const sentimentDisplay = feedback.sentiment ?? (feedback.like === true ? 'like' : feedback.like === false ? 'dislike' : undefined);
-      console.log(`👍/👎 Sentiment: ${sentimentDisplay ?? 'N/A'}`);
+      console.log(`🎭 Sentiment: ${feedback.sentiment ?? 'N/A'}`);
       if (feedback.explanation) {
         console.log(`💭 Explanation: ${feedback.explanation.substring(0, 100)}${feedback.explanation.length > 100 ? '...' : ''}`);
       }

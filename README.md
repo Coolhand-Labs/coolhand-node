@@ -191,8 +191,15 @@ const feedback = await coolhand.createFeedback({
 ### Quality Data
 - **`revised_output`** ⭐ *Best Signal* - End user revision of the LLM response. The highest value data for improving quality scores.
 - **`explanation`** 💬 *Medium Signal* - End user explanation of why the response was good or bad. Valuable qualitative data.
-- **`sentiment`** 👍 *Low Signal* - `"like"`, `"dislike"`, or `"neutral"`. Preferred over `like`. Lower quality signal but easy for users to provide.
-- **`like`** *(deprecated)* - Boolean like/dislike. Use `sentiment` instead.
+- **`sentiment`** 🎭 *Preferred* - String: `'like'`, `'dislike'`, or `'neutral'`. Takes precedence if both `sentiment` and `like` are provided.
+- **`like`** 👍 *Low Signal (Deprecated)* - Boolean: `true` = like, `false` = dislike. Use `sentiment` instead. Automatically converted to `sentiment` before sending.
+
+  | `like` (boolean) | `sentiment` (string) |
+  |------------------|----------------------|
+  | `true`           | `"like"`             |
+  | `false`          | `"dislike"`          |
+  | omitted          | *(no conversion)*    |
+
 - **`creator_unique_id`** 👤 *User Tracking* - Unique ID to match feedback to the end user who created it
 - **`workload_hashid`** 🔗 *Workload Association* - Associate feedback with a specific workload
 

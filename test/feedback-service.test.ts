@@ -456,7 +456,7 @@ describe('FeedbackService', () => {
 
       const logCalls = consoleSpy.mock.calls.flat().join(' ');
       expect(logCalls).toContain('📝 CREATING FEEDBACK');
-      expect(logCalls).toContain('👍/👎 Sentiment: like');
+      expect(logCalls).toContain('🎭 Sentiment: like');
       expect(logCalls).toContain('💭 Explanation:');
       expect(logCalls).toContain('📤 Sending to:');
       expect(logCalls).toContain('✅ Successfully created feedback');
