@@ -1,5 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
+import * as zlib from 'zlib';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
@@ -203,14 +204,22 @@ export class RequestMonitoringService {
     const req = originalRequest(options as any, (res: http.IncomingMessage) => {
       this.log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-      let responseBody = '';
+      const responseChunks: Buffer[] = [];
 
       res.on('data', (chunk: any) => {
-        responseBody += chunk.toString();
+        responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
 
-      res.on('end', () => {
-        callData.response_body = parseBody(responseBody);
+      res.on('end', async () => {
+        try {
+          const rawBuffer = Buffer.concat(responseChunks);
+          const contentEncoding = res.headers?.['content-encoding'];
+          const responseBody = await this.decompressBuffer(rawBuffer, contentEncoding);
+          callData.response_body = parseBody(responseBody);
+        } catch (err: any) {
+          this.log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
+          callData.response_body = null;
+        }
         callData.response_headers = this.patternMatchingService.sanitizeHeaders(res.headers, matchedPattern?.pattern);
         callData.status_code = res.statusCode || null;
 
@@ -294,6 +303,58 @@ export class RequestMonitoringService {
       this.log(`❌ Fetch error for call #${callData.id}:`, (error as Error).message);
       throw error;
     }
+  }
+
+  private decompressBuffer(buffer: Buffer, encoding: string | string[] | undefined): Promise<string> {
+    return new Promise((resolve) => {
+      const rawEncoding = Array.isArray(encoding) ? encoding[0] : encoding;
+      if (!rawEncoding) {
+        resolve(buffer.toString('utf-8'));
+        return;
+      }
+
+      const enc = rawEncoding.trim().toLowerCase();
+
+      if (enc === 'gzip' || enc === 'x-gzip') {
+        zlib.gunzip(buffer, (err, result) => {
+          if (err) {
+            this.log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
+            resolve(buffer.toString('utf-8'));
+          } else {
+            resolve(result.toString('utf-8'));
+          }
+        });
+      } else if (enc === 'deflate') {
+        // RFC 1950 (zlib-wrapped) first; fall back to RFC 1951 (raw deflate)
+        // as some servers (older IIS, some load balancers) send raw deflate despite
+        // the content-encoding header implying the zlib wrapper.
+        zlib.inflate(buffer, (err, result) => {
+          if (!err) {
+            resolve(result.toString('utf-8'));
+            return;
+          }
+          zlib.inflateRaw(buffer, (rawErr, rawResult) => {
+            if (rawErr) {
+              this.log(`⚠️ Decompression failed for encoding 'deflate': ${rawErr.message}`);
+              resolve(buffer.toString('utf-8'));
+            } else {
+              resolve(rawResult.toString('utf-8'));
+            }
+          });
+        });
+      } else if (enc === 'br') {
+        zlib.brotliDecompress(buffer, (err, result) => {
+          if (err) {
+            this.log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
+            resolve(buffer.toString('utf-8'));
+          } else {
+            resolve(result.toString('utf-8'));
+          }
+        });
+      } else {
+        resolve(buffer.toString('utf-8'));
+      }
+    });
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {

@@ -400,29 +400,46 @@ function decompressBuffer(buffer: Buffer, encoding: string | undefined): Promise
     }
 
     const enc = encoding.trim().toLowerCase();
-    let decompressFn: ((buf: Buffer, cb: (err: Error | null, result: Buffer) => void) => void) | null = null;
 
     if (enc === 'gzip' || enc === 'x-gzip') {
-      decompressFn = zlib.gunzip;
+      zlib.gunzip(buffer, (err: Error | null, result: Buffer) => {
+        if (err) {
+          log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
+          resolve(buffer.toString('utf-8'));
+        } else {
+          resolve(result.toString('utf-8'));
+        }
+      });
     } else if (enc === 'deflate') {
-      decompressFn = zlib.inflate;
+      // RFC 1950 (zlib-wrapped) first; fall back to RFC 1951 (raw deflate)
+      // as some servers (older IIS, some load balancers) send raw deflate despite
+      // the content-encoding header implying the zlib wrapper.
+      zlib.inflate(buffer, (err: Error | null, result: Buffer) => {
+        if (!err) {
+          resolve(result.toString('utf-8'));
+          return;
+        }
+        zlib.inflateRaw(buffer, (rawErr: Error | null, rawResult: Buffer) => {
+          if (rawErr) {
+            log(`⚠️ Decompression failed for encoding 'deflate': ${rawErr.message}`);
+            resolve(buffer.toString('utf-8'));
+          } else {
+            resolve(rawResult.toString('utf-8'));
+          }
+        });
+      });
     } else if (enc === 'br') {
-      decompressFn = zlib.brotliDecompress;
-    }
-
-    if (!decompressFn) {
+      zlib.brotliDecompress(buffer, (err: Error | null, result: Buffer) => {
+        if (err) {
+          log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
+          resolve(buffer.toString('utf-8'));
+        } else {
+          resolve(result.toString('utf-8'));
+        }
+      });
+    } else {
       resolve(buffer.toString('utf-8'));
-      return;
     }
-
-    decompressFn(buffer, (err: Error | null, result: Buffer) => {
-      if (err) {
-        log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
-        resolve(buffer.toString('utf-8'));
-      } else {
-        resolve(result.toString('utf-8'));
-      }
-    });
   });
 }
 
