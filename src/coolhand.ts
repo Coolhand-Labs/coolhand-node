@@ -27,7 +27,8 @@ export class Coolhand {
     const serviceConfig = {
       apiKey,
       silent: this.silent,
-      debug: options.debug
+      debug: options.debug,
+      baseUrl: options.baseUrl
     };
 
     this.loggingService = new LoggingService(serviceConfig);
