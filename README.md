@@ -175,7 +175,8 @@ const feedback = await coolhand.createFeedback({
   original_output: 'Here is the original LLM response!',
   revised_output: 'Here is the human edit of the original LLM response.',
   explanation: 'Tone of the original response read like AI-generated open source README docs',
-  like: true,
+  sentiment: 'dislike', // preferred over `like`
+  // like: true,        // deprecated — use `sentiment` instead
 });
 ```
 
@@ -190,8 +191,10 @@ const feedback = await coolhand.createFeedback({
 ### Quality Data
 - **`revised_output`** ⭐ *Best Signal* - End user revision of the LLM response. The highest value data for improving quality scores.
 - **`explanation`** 💬 *Medium Signal* - End user explanation of why the response was good or bad. Valuable qualitative data.
-- **`like`** 👍 *Low Signal* - Boolean like/dislike. Lower quality signal but easy for users to provide.
+- **`sentiment`** 👍 *Low Signal* - `"like"`, `"dislike"`, or `"neutral"`. Preferred over `like`. Lower quality signal but easy for users to provide.
+- **`like`** *(deprecated)* - Boolean like/dislike. Use `sentiment` instead.
 - **`creator_unique_id`** 👤 *User Tracking* - Unique ID to match feedback to the end user who created it
+- **`workload_hashid`** 🔗 *Workload Association* - Associate feedback with a specific workload
 
 ## Framework Integration
 

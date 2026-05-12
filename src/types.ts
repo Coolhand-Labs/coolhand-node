@@ -64,7 +64,11 @@ export interface CoolhandMatchedPattern {
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {
   llm_request_log_id?: number;
-  like: boolean;
+  /** @deprecated Use `sentiment` instead */
+  like?: boolean;
+  sentiment?: "like" | "dislike" | "neutral";
+  creator_unique_id?: string;
+  workload_hashid?: string;
   explanation?: string;
   revised_output?: string;
   llm_provider_unique_id?: string;
@@ -80,7 +84,11 @@ export interface LLMRequestLogFeedbackPayload {
 export interface LLMRequestLogFeedbackResponse {
   id: number;
   llm_request_log_id: number;
-  like: boolean;
+  /** @deprecated Use `sentiment` instead */
+  like?: boolean;
+  sentiment?: "like" | "dislike" | "neutral";
+  creator_unique_id?: string;
+  workload_hashid?: string;
   explanation?: string;
   revised_output?: string;
   llm_provider_unique_id?: string;

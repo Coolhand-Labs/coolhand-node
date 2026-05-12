@@ -30,7 +30,8 @@ export class FeedbackService extends BaseService {
   private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {
     if (!this.silent) {
       console.log(`\n📝 CREATING FEEDBACK for LLM Request Log ID: ${feedback.llm_request_log_id}`);
-      console.log(`👍/👎 Like: ${feedback.like}`);
+      const sentimentDisplay = feedback.sentiment ?? (feedback.like === true ? 'like' : feedback.like === false ? 'dislike' : undefined);
+      console.log(`👍/👎 Sentiment: ${sentimentDisplay ?? 'N/A'}`);
       if (feedback.explanation) {
         console.log(`💭 Explanation: ${feedback.explanation.substring(0, 100)}${feedback.explanation.length > 100 ? '...' : ''}`);
       }
