@@ -26,171 +26,237 @@ jest.mock('../src/services/RequestMonitoringService.js', () => {
   };
 });
 
-describe('Debug Mode', () => {
+describe('Debug/DryRun Mode', () => {
   const mockApiKey = 'test-api-key';
 
   beforeEach(() => {
-    // Clear console mocks
     jest.clearAllMocks();
-
-    // Mock console.log to avoid output during tests
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
+    jest.spyOn(console, 'warn').mockImplementation();
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  describe('Coolhand initialization with debug mode', () => {
-    it('should show debug mode indicator when debug is true', () => {
-      new Coolhand({
-        apiKey: mockApiKey,
-        silent: false,
-        debug: true
-      });
-
-      expect(console.log).toHaveBeenCalledWith('🐛 DEBUG MODE: API calls will be mocked');
+  describe('Coolhand initialization', () => {
+    it('should show dry run indicator when dryRun=true', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: false, dryRun: true });
+      expect(console.log).toHaveBeenCalledWith(
+        '🚫 DRY RUN MODE: API calls will be skipped — no data will be submitted'
+      );
     });
 
-    it('should not show debug mode indicator when debug is false', () => {
-      new Coolhand({
-        apiKey: mockApiKey,
-        silent: false,
-        debug: false
-      });
-
-      expect(console.log).not.toHaveBeenCalledWith('🐛 DEBUG MODE: API calls will be mocked');
+    it('should show debug verbose indicator when debug=true', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: false, debug: true });
+      expect(console.log).toHaveBeenCalledWith('🔬 DEBUG MODE: Verbose logging enabled');
     });
 
-    it('should not show debug mode indicator when debug is undefined', () => {
-      new Coolhand({
-        apiKey: mockApiKey,
-        silent: false
-      });
+    it('should not show dry run indicator when dryRun=false', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: false, dryRun: false });
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('DRY RUN MODE')
+      );
+    });
 
-      expect(console.log).not.toHaveBeenCalledWith('🐛 DEBUG MODE: API calls will be mocked');
+    it('should not show dry run indicator when dryRun is undefined', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: false });
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('DRY RUN MODE')
+      );
+    });
+
+    it('should emit deprecation warning exactly once when debug=true without dryRun', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: true, debug: true });
+      expect(console.warn).toHaveBeenCalledTimes(1);
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('DEPRECATION WARNING')
+      );
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('dryRun')
+      );
+    });
+
+    it('should not emit deprecation warning when debug=true and dryRun=true', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: true, debug: true, dryRun: true });
+      expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('should not emit deprecation warning when debug is not set', () => {
+      new Coolhand({ apiKey: mockApiKey, silent: true });
+      expect(console.warn).not.toHaveBeenCalled();
     });
   });
 
-  describe('FeedbackService debug mode', () => {
-    let feedbackService: FeedbackService;
-
-    beforeEach(() => {
-      feedbackService = new FeedbackService({
+  describe('FeedbackService dryRun mode', () => {
+    it('should return null when in dryRun mode', async () => {
+      const feedbackService = new FeedbackService({
         apiKey: mockApiKey,
         silent: true,
-        debug: true
+        dryRun: true
       });
-    });
 
-    it('should return null when in debug mode', async () => {
-      const feedback = {
-        like: true,
-        explanation: 'Test feedback'
-      };
-
-      const result = await feedbackService.createFeedback(feedback);
+      const result = await feedbackService.createFeedback({ like: true, explanation: 'Test feedback' });
       expect(result).toBeNull();
     });
 
-    it('should log debug messages when debug mode is enabled and not silent', async () => {
+    it('should log dry run messages when dryRun=true and not silent', async () => {
       const feedbackService = new FeedbackService({
         apiKey: mockApiKey,
         silent: false,
-        debug: true
+        dryRun: true
       });
 
-      const feedback = {
-        like: true,
-        explanation: 'Test feedback'
-      };
-
-      await feedbackService.createFeedback(feedback);
+      await feedbackService.createFeedback({ like: true, explanation: 'Test feedback' });
 
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('🐛 DEBUG MODE: Skipping API call')
+        expect.stringContaining('DRY RUN: Skipping API call')
       );
     });
-  });
 
-  describe('LoggingService debug mode', () => {
-    let loggingService: LoggingService;
+    it('should call fetch when debug=true but dryRun is not set', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 1, like: true })
+      });
+      global.fetch = mockFetch;
 
-    beforeEach(() => {
-      loggingService = new LoggingService({
+      const feedbackService = new FeedbackService({
         apiKey: mockApiKey,
         silent: true,
         debug: true
       });
+
+      await feedbackService.createFeedback({ like: true });
+      expect(mockFetch).toHaveBeenCalled();
+    });
+  });
+
+  describe('LoggingService dryRun mode', () => {
+    const sampleCallData = {
+      id: 1,
+      timestamp: '2023-01-01T00:00:00Z',
+      method: 'POST',
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: {},
+      request_body: { model: 'gpt-3.5-turbo' },
+      response_body: { choices: [] },
+      response_headers: {},
+      status_code: 200,
+      protocol: 'https'
+    };
+
+    it('should skip API call when in dryRun mode', async () => {
+      const loggingService = new LoggingService({
+        apiKey: mockApiKey,
+        silent: true,
+        dryRun: true
+      });
+
+      await expect(loggingService.logRequestToAPI(sampleCallData)).resolves.toBeUndefined();
     });
 
-    it('should skip API call when in debug mode', async () => {
-      const callData = {
-        id: 1,
-        timestamp: '2023-01-01T00:00:00Z',
-        method: 'POST',
-        url: 'https://api.openai.com/v1/chat/completions',
-        headers: {},
-        request_body: { model: 'gpt-3.5-turbo' },
-        response_body: { choices: [] },
-        response_headers: {},
-        status_code: 200,
-        protocol: 'https'
-      };
-
-      // This should not throw and should complete without making actual API calls
-      await expect(loggingService.logRequestToAPI(callData)).resolves.toBeUndefined();
-    });
-
-    it('should log debug messages when debug mode is enabled and not silent', async () => {
+    it('should log dry run messages when dryRun=true and not silent', async () => {
       const loggingService = new LoggingService({
         apiKey: mockApiKey,
         silent: false,
-        debug: true
+        dryRun: true
       });
 
-      const callData = {
-        id: 1,
-        timestamp: '2023-01-01T00:00:00Z',
-        method: 'POST',
-        url: 'https://api.openai.com/v1/chat/completions',
-        headers: {},
-        request_body: { model: 'gpt-3.5-turbo' },
-        response_body: { choices: [] },
-        response_headers: {},
-        status_code: 200,
-        protocol: 'https'
-      };
-
-      await loggingService.logRequestToAPI(callData);
+      await loggingService.logRequestToAPI(sampleCallData);
 
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('🐛 DEBUG MODE: Skipping API call')
+        expect.stringContaining('DRY RUN: Skipping API call')
       );
     });
   });
 
-  describe('BaseService debug mode behavior', () => {
-    it('should not make actual HTTP requests when in debug mode', async () => {
+  describe('BaseService dryRun behavioral tests', () => {
+    it('should not call fetch when dryRun=true', async () => {
+      const mockFetch = jest.fn();
+      global.fetch = mockFetch;
+
+      const feedbackService = new FeedbackService({
+        apiKey: mockApiKey,
+        silent: true,
+        dryRun: true
+      });
+
+      await feedbackService.createFeedback({ like: true });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should call fetch when debug=true and dryRun is not set', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 1, like: true })
+      });
+      global.fetch = mockFetch;
+
       const feedbackService = new FeedbackService({
         apiKey: mockApiKey,
         silent: true,
         debug: true
       });
 
-      // Mock fetch to ensure it's not called
-      const mockFetch = jest.fn();
+      await feedbackService.createFeedback({ like: true });
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('should not emit deprecation warn when using services directly with debug=true', () => {
+      // Warning is emitted at the Coolhand / initializeGlobalMonitoring layer, not BaseService
+      new FeedbackService({ apiKey: mockApiKey, silent: true, debug: true });
+      expect(console.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('debug as verbosity-only', () => {
+    it('should emit extra log lines before the call when debug=true and not silent', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 1, like: true })
+      });
       global.fetch = mockFetch;
 
-      const feedback = {
-        like: true,
-        explanation: 'Test feedback'
-      };
+      const feedbackService = new FeedbackService({
+        apiKey: mockApiKey,
+        silent: false,
+        debug: true
+      });
 
-      await feedbackService.createFeedback(feedback);
+      await feedbackService.createFeedback({ like: true });
 
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('DEBUG: Sending to')
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('DEBUG: Payload size')
+      );
+    });
+
+    it('should NOT emit verbose debug logs when silent=true', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 1, like: true })
+      });
+      global.fetch = mockFetch;
+
+      const feedbackService = new FeedbackService({
+        apiKey: mockApiKey,
+        silent: true,
+        debug: true
+      });
+
+      await feedbackService.createFeedback({ like: true });
+
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('DEBUG: Sending to')
+      );
     });
   });
 });

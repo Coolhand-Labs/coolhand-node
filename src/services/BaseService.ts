@@ -6,6 +6,7 @@ export interface BaseServiceConfig {
   apiKey: string;
   silent: boolean;
   debug?: boolean;
+  dryRun?: boolean;
   baseUrl?: string;
 }
 
@@ -37,12 +38,15 @@ export abstract class BaseService {
   protected apiKey: string;
   protected silent: boolean;
   protected debug: boolean;
+  protected dryRun: boolean;
   protected apiEndpoint: string;
 
   constructor(config: BaseServiceConfig, endpointPath: string) {
     this.apiKey = config.apiKey;
     this.silent = config.silent;
     this.debug = config.debug || false;
+    this.dryRun = config.dryRun || false;
+
     const rawBase = config.baseUrl ?? 'https://coolhandlabs.com';
     validateBaseUrl(rawBase);
     this.apiEndpoint = normalizeBaseUrl(rawBase) + endpointPath;
@@ -70,14 +74,18 @@ export abstract class BaseService {
   }
 
   protected async sendRequest<T>(payload: any, successMessage: string): Promise<T | null> {
-    // In debug mode, skip the actual API call and show debug info
-    if (this.debug) {
+    if (this.dryRun) {
       if (!this.silent) {
-        console.log(`🐛 DEBUG MODE: Skipping API call to ${this.apiEndpoint}`);
-        console.log(`🐛 DEBUG MODE: Would send payload:`, JSON.stringify(payload, null, 2));
+        console.log(`🚫 DRY RUN: Skipping API call to ${this.apiEndpoint}`);
+        console.log(`🚫 DRY RUN: Would send payload:`, JSON.stringify(payload, null, 2));
       }
-      this.log(`🐛 DEBUG: ${successMessage.replace('✅', '🐛')}`);
-      return null; // Return null for debug mode as services handle mock responses themselves
+      this.log(`🚫 DRY RUN: ${successMessage.replace('✅', '🚫')}`);
+      return null;
+    }
+
+    if (this.debug && !this.silent) {
+      console.log(`[coolhand-node] DEBUG: Sending to ${this.apiEndpoint}`);
+      console.log(`[coolhand-node] DEBUG: Payload size: ${JSON.stringify(payload).length} bytes`);
     }
 
     const requestOptions = this.createRequestOptions(payload);

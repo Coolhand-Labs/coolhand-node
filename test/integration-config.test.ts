@@ -18,7 +18,7 @@ describe('Coolhand class configuration', () => {
     jest.resetModules();
   });
 
-  it('should initialize with apiKey only (defaults: silent=true, debug=false)', () => {
+  it('should initialize with apiKey only (defaults: silent=true, debug=false, dryRun=false)', () => {
     jest.isolateModules(() => {
       const { Coolhand } = require('../src/coolhand');
       const instance = new Coolhand({ apiKey: 'test-key' });
@@ -80,6 +80,18 @@ describe('Coolhand class configuration', () => {
     expect(msgs.some((m: string) => typeof m === 'string' && m.includes('DEBUG MODE'))).toBe(true);
   });
 
+  it('should show dry run indicator when dryRun=true and silent=false', () => {
+    const logSpy = jest.spyOn(console, 'log');
+
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      new Coolhand({ apiKey: 'test-key', silent: false, dryRun: true });
+    });
+
+    const msgs = logSpy.mock.calls.map(c => c[0]);
+    expect(msgs.some((m: string) => typeof m === 'string' && m.includes('DRY RUN MODE'))).toBe(true);
+  });
+
   it('should accept a custom patternsFile path without crashing', () => {
     jest.isolateModules(() => {
       // Mock fs within isolated module scope so ESM getter-only props are bypassed
@@ -122,11 +134,11 @@ describe('Coolhand feedback helpers', () => {
     });
   });
 
-  it('should return null from createFeedback in debug mode', async () => {
+  it('should return null from createFeedback in dryRun mode', async () => {
     let result: any;
     await jest.isolateModulesAsync(async () => {
       const { Coolhand } = require('../src/coolhand');
-      const instance = new Coolhand({ apiKey: 'test-key', silent: true, debug: true });
+      const instance = new Coolhand({ apiKey: 'test-key', silent: true, dryRun: true });
 
       result = await instance.createFeedback({
         like: true,
@@ -135,6 +147,24 @@ describe('Coolhand feedback helpers', () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  it('should call API from createFeedback when debug=true but dryRun is not set', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 1, like: true }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    await jest.isolateModulesAsync(async () => {
+      const { Coolhand } = require('../src/coolhand');
+      const instance = new Coolhand({ apiKey: 'test-key', silent: true, debug: true });
+
+      await instance.createFeedback({ like: true, explanation: 'Great answer' });
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
   });
 
   it('should send feedback payload when not in debug mode', async () => {
@@ -264,6 +294,13 @@ describe('Global monitoring configuration', () => {
     ).resolves.not.toThrow();
   });
 
+  it('should accept dryRun flag without crashing', async () => {
+    const mod = await import('../src/global-monitor');
+    await expect(
+      mod.initializeGlobalMonitoring({ apiKey: 'k', silent: true, dryRun: true })
+    ).resolves.not.toThrow();
+  });
+
   it('should accept patternsFile without crashing', async () => {
     const mod = await import('../src/global-monitor');
     await expect(
@@ -302,7 +339,7 @@ describe('Auto-monitor environment variable configuration', () => {
     jest.spyOn(console, 'error').mockImplementation();
 
     // Back up env
-    for (const key of ['COOLHAND_API_KEY', 'COOLHAND_SILENT', 'COOLHAND_PATTERNS_FILE', 'COOLHAND_DEBUG', 'NODE_ENV']) {
+    for (const key of ['COOLHAND_API_KEY', 'COOLHAND_SILENT', 'COOLHAND_PATTERNS_FILE', 'COOLHAND_DEBUG', 'COOLHAND_DRY_RUN', 'NODE_ENV']) {
       envBackup[key] = process.env[key];
     }
 
@@ -385,6 +422,19 @@ describe('Auto-monitor environment variable configuration', () => {
 
     const msgs = logSpy.mock.calls.map((c: any[]) => c[0]);
     expect(msgs.some((m: string) => typeof m === 'string' && m.includes('Debug mode'))).toBe(true);
+  });
+
+  it('should respect COOLHAND_DRY_RUN=true', async () => {
+    process.env.COOLHAND_API_KEY = 'auto-test-key';
+    process.env.COOLHAND_SILENT = 'false';
+    process.env.COOLHAND_DRY_RUN = 'true';
+
+    const logSpy = console.log as jest.Mock;
+    await import('../src/auto-monitor');
+    await new Promise(r => setTimeout(r, 50));
+
+    const msgs = logSpy.mock.calls.map((c: any[]) => c[0]);
+    expect(msgs.some((m: string) => typeof m === 'string' && m.includes('Dry run mode'))).toBe(true);
   });
 
   it('should re-export initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive', async () => {
@@ -518,17 +568,73 @@ describe('parseBody utility integration', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. LoggingService: debug mode skips API calls
+// 9. LoggingService: dryRun mode skips API calls
 // ---------------------------------------------------------------------------
 
-describe('LoggingService debug mode integration', () => {
+describe('LoggingService dryRun mode integration', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.resetModules();
   });
 
-  it('should skip API call in debug mode', async () => {
+  it('should skip API call in dryRun mode', async () => {
     const fetchSpy = jest.fn();
+    globalThis.fetch = fetchSpy;
+
+    await jest.isolateModulesAsync(async () => {
+      const { LoggingService } = require('../src/services/LoggingService');
+      const svc = new LoggingService({ apiKey: 'test', silent: true, dryRun: true });
+
+      await svc.logRequestToAPI({
+        id: 1,
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: {},
+        request_body: {},
+        response_body: {},
+        response_headers: null,
+        status_code: 200,
+        protocol: 'https',
+      });
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('should call API when dryRun=false', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    globalThis.fetch = fetchSpy;
+
+    await jest.isolateModulesAsync(async () => {
+      const { LoggingService } = require('../src/services/LoggingService');
+      const svc = new LoggingService({ apiKey: 'test', silent: true, dryRun: false });
+
+      await svc.logRequestToAPI({
+        id: 1,
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: {},
+        request_body: {},
+        response_body: {},
+        response_headers: null,
+        status_code: 200,
+        protocol: 'https',
+      });
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
+  });
+
+  it('should call API when debug=true but dryRun is not set', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
     globalThis.fetch = fetchSpy;
 
     await jest.isolateModulesAsync(async () => {
@@ -549,53 +655,25 @@ describe('LoggingService debug mode integration', () => {
       });
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('should call API when debug=false', async () => {
-    const fetchSpy = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-    });
-    globalThis.fetch = fetchSpy;
-
-    await jest.isolateModulesAsync(async () => {
-      const { LoggingService } = require('../src/services/LoggingService');
-      const svc = new LoggingService({ apiKey: 'test', silent: true, debug: false });
-
-      await svc.logRequestToAPI({
-        id: 1,
-        timestamp: new Date().toISOString(),
-        method: 'POST',
-        url: 'https://api.openai.com/v1/chat/completions',
-        headers: {},
-        request_body: {},
-        response_body: {},
-        response_headers: null,
-        status_code: 200,
-        protocol: 'https',
-      });
-    });
-
     expect(fetchSpy).toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// 10. FeedbackService: debug mode skips API calls
+// 10. FeedbackService: dryRun mode skips API calls
 // ---------------------------------------------------------------------------
 
-describe('FeedbackService debug mode integration', () => {
+describe('FeedbackService dryRun mode integration', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.resetModules();
   });
 
-  it('should return null in debug mode', async () => {
+  it('should return null in dryRun mode', async () => {
     let result: any;
     await jest.isolateModulesAsync(async () => {
       const { FeedbackService } = require('../src/services/FeedbackService');
-      const svc = new FeedbackService({ apiKey: 'test', silent: true, debug: true });
+      const svc = new FeedbackService({ apiKey: 'test', silent: true, dryRun: true });
 
       result = await svc.createFeedback({ like: true, explanation: 'good' });
     });
@@ -603,7 +681,7 @@ describe('FeedbackService debug mode integration', () => {
     expect(result).toBeNull();
   });
 
-  it('should call API when debug=false', async () => {
+  it('should call API when dryRun=false', async () => {
     const fetchSpy = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -613,7 +691,7 @@ describe('FeedbackService debug mode integration', () => {
 
     await jest.isolateModulesAsync(async () => {
       const { FeedbackService } = require('../src/services/FeedbackService');
-      const svc = new FeedbackService({ apiKey: 'test', silent: true, debug: false });
+      const svc = new FeedbackService({ apiKey: 'test', silent: true, dryRun: false });
 
       await svc.createFeedback({ like: false, explanation: 'bad' });
     });
@@ -621,5 +699,23 @@ describe('FeedbackService debug mode integration', () => {
     expect(fetchSpy).toHaveBeenCalled();
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.llm_request_log_feedback.like).toBe(false);
+  });
+
+  it('should call API when debug=true but dryRun is not set', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 42, like: true }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    await jest.isolateModulesAsync(async () => {
+      const { FeedbackService } = require('../src/services/FeedbackService');
+      const svc = new FeedbackService({ apiKey: 'test', silent: true, debug: true });
+
+      await svc.createFeedback({ like: true, explanation: 'test' });
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
   });
 });
