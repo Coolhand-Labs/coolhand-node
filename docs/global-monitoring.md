@@ -23,6 +23,7 @@ Global monitoring operates at the **Node.js runtime level** by intercepting HTTP
 - OpenAI API calls (`api.openai.com`)
 - Anthropic API calls (`api.anthropic.com`)
 - Google AI API calls (`generativelanguage.googleapis.com`)
+- GitHub Models API calls (`models.inference.ai.azure.com`)
 - Cohere API calls (`api.cohere.ai`)
 - Hugging Face API calls (`api-inference.huggingface.co`)
 - Custom AI APIs (configurable)

@@ -112,6 +112,13 @@ export class PatternMatchingService {
         headers: {
           'authorization': 'Bearer [REDACTED]'
         }
+      },
+      {
+        name: 'GitHub Models',
+        domains: ['models.inference.ai.azure.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
+        }
       }
     ];
     if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`); }

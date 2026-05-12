@@ -25,6 +25,14 @@
         "authorization": "[REDACTED]",
         "x-goog-api-key": "[REDACTED]"
       }
+    },
+    {
+      "name": "GitHub Models",
+      "domains": ["models.inference.ai.azure.com"],
+      "paths": ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
     }
   ]
 }

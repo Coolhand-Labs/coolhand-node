@@ -48,10 +48,10 @@ describe('Edge Runtime Detection and Loading', () => {
 
       const service = new PatternMatchingService();
 
-      // Should use Edge runtime patterns (3 default patterns)
-      expect(service.getPatternsCountSync()).toBe(3);
+      // Should use Edge runtime patterns (4 default patterns)
+      expect(service.getPatternsCountSync()).toBe(4);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
 
@@ -62,9 +62,9 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should use Edge runtime patterns
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
 
@@ -75,9 +75,9 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should use Edge runtime patterns
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
 
@@ -90,8 +90,8 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should try to load from filesystem and succeed in test environment
-      // This will load the actual patterns file with 3 patterns
-      expect(service.getPatternsCountSync()).toBe(3);
+      // This will load the actual patterns file with 4 patterns
+      expect(service.getPatternsCountSync()).toBe(4);
     });
   });
 
@@ -105,13 +105,14 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
       const patterns = service.getLoadedPatternsSync();
 
-      expect(patterns).toHaveLength(3);
+      expect(patterns).toHaveLength(4);
 
       // Check for expected default patterns
       const patternNames = patterns.map(p => p.name);
       expect(patternNames).toContain('OpenAI');
       expect(patternNames).toContain('Anthropic');
       expect(patternNames).toContain('Google AI');
+      expect(patternNames).toContain('GitHub Models');
     });
 
     it('should load OpenAI pattern with correct configuration', () => {
@@ -144,14 +145,24 @@ describe('Edge Runtime Detection and Loading', () => {
       expect(googlePattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
     });
 
+    it('should load GitHub Models pattern with correct configuration', () => {
+      const service = new PatternMatchingService();
+      const patterns = service.getLoadedPatternsSync();
+
+      const githubPattern = patterns.find(p => p.name === 'GitHub Models');
+      expect(githubPattern).toBeDefined();
+      expect(githubPattern?.domains).toContain('models.inference.ai.azure.com');
+      expect(githubPattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
+    });
+
     it('should ignore custom patterns file in Edge runtime', () => {
       // Even if we provide a custom patterns file, Edge runtime should ignore it
       const service = new PatternMatchingService('./custom-patterns.json');
 
       // Should still load default Edge patterns, not attempt to read custom file
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
   });
@@ -168,17 +179,17 @@ describe('Edge Runtime Detection and Loading', () => {
       delete (globalThis as any).window;
       delete process.env.NEXT_RUNTIME;
 
-      // Test Node.js runtime (will load from filesystem with 3 patterns)
+      // Test Node.js runtime (will load from filesystem with 4 patterns)
       const nodeService = new PatternMatchingService();
       const nodePatterns = nodeService.getLoadedPatternsSync();
 
-      // Edge runtime uses 3 default patterns, Node.js loads 3 from file
-      expect(edgePatterns).toHaveLength(3);
-      expect(nodePatterns).toHaveLength(3);
+      // Edge runtime uses 4 default patterns, Node.js loads 4 from file
+      expect(edgePatterns).toHaveLength(4);
+      expect(nodePatterns).toHaveLength(4);
 
       // But the loading paths should be different (check console output)
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
 
@@ -191,9 +202,9 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should still work correctly with multiple indicators
-      expect(service.getPatternsCountSync()).toBe(3);
+      expect(service.getPatternsCountSync()).toBe(4);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 4 default API patterns for Edge runtime')
       );
     });
   });
@@ -268,8 +279,8 @@ describe('Edge Runtime Detection and Loading', () => {
       const service = new PatternMatchingService();
 
       // Should be immediately usable
-      expect(service.getPatternsCountSync()).toBe(3);
-      expect(service.getLoadedPatternsSync()).toHaveLength(3);
+      expect(service.getPatternsCountSync()).toBe(4);
+      expect(service.getLoadedPatternsSync()).toHaveLength(4);
     });
 
     it('should handle multiple initialization calls gracefully', () => {
@@ -283,7 +294,7 @@ describe('Edge Runtime Detection and Loading', () => {
       const patterns = service.getLoadedPatternsSync();
 
       expect(secondCount).toBe(initialCount);
-      expect(patterns).toHaveLength(3);
+      expect(patterns).toHaveLength(4);
     });
   });
 });
