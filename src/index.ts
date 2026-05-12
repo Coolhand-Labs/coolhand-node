@@ -7,4 +7,5 @@ export * from './global-monitor.js';
 export * from './utils/collector.js';
 export * from './utils/parse-body.js';
 export * from './version.js';
+export { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 export default Coolhand;
