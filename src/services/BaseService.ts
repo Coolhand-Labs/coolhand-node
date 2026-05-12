@@ -6,6 +6,28 @@ export interface BaseServiceConfig {
   apiKey: string;
   silent: boolean;
   debug?: boolean;
+  baseUrl?: string;
+}
+
+function validateBaseUrl(raw: string): void {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`Invalid baseUrl: "${raw}" is not a valid URL`);
+  }
+  if (url.protocol === 'https:') { return; }
+  if (url.protocol === 'http:') {
+    const h = url.hostname;
+    if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost')) { return; }
+  }
+  throw new Error(
+    `baseUrl must use https:// (got: "${raw}"). For local dev, http://localhost is allowed.`
+  );
+}
+
+function normalizeBaseUrl(raw: string): string {
+  return raw.replace(/\/+$/, '');
 }
 
 export abstract class BaseService {
@@ -14,11 +36,13 @@ export abstract class BaseService {
   protected debug: boolean;
   protected apiEndpoint: string;
 
-  constructor(config: BaseServiceConfig, endpoint: string) {
+  constructor(config: BaseServiceConfig, endpointPath: string) {
     this.apiKey = config.apiKey;
     this.silent = config.silent;
     this.debug = config.debug || false;
-    this.apiEndpoint = endpoint;
+    const rawBase = config.baseUrl ?? 'https://coolhandlabs.com';
+    validateBaseUrl(rawBase);
+    this.apiEndpoint = normalizeBaseUrl(rawBase) + endpointPath;
   }
 
   protected createRequestOptions(payload: any): RequestInit {

@@ -218,6 +218,7 @@ const feedback = await coolhand.createFeedback({
 | `silent` | boolean | `true` | Whether to suppress console output |
 | `debug` | boolean | `false` | Enable debug mode (API calls will be mocked) |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+| `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
 
 ### Environment Variables
 
@@ -227,10 +228,11 @@ const feedback = await coolhand.createFeedback({
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Whether to suppress console output |
 | `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable debug mode |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
+| `COOLHAND_BASE_URL` | string | `undefined` | Override the API host (e.g. `https://feedback.example.com`). Same rules as `baseUrl` option. |
 
 ### Instance-Based Monitoring Options
 
-Same options as global monitoring, passed to the `Coolhand` constructor.
+Same options as global monitoring, passed to the `Coolhand` constructor. Includes `baseUrl`.
 
 ## TypeScript Support
 
