@@ -89,6 +89,7 @@ interface GlobalMonitorConfig {
   silent?: boolean;
   patternsFile?: string;
   debug?: boolean;
+  baseUrl?: string;
 }
 
 /**
@@ -108,7 +109,8 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
     silent,
-    debug: config.debug
+    debug: config.debug,
+    baseUrl: config.baseUrl
   });
 
   // Load Node.js modules if available

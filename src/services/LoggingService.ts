@@ -4,9 +4,13 @@ import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface LoggingServiceConfig extends BaseServiceConfig {}
 
+const LOG_PATH = '/api/v2/llm_request_logs';
+
 export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_logs');
+    const base = config.baseUrl ?? BaseService.DEFAULT_BASE_URL;
+    if (config.baseUrl) BaseService.validateBaseUrl(base);
+    super(config, BaseService.normalizeBaseUrl(base) + LOG_PATH);
   }
 
   public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern, collectionMethod?: CollectionMethod): Promise<void> {

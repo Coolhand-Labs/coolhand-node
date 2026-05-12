@@ -6,13 +6,45 @@ export interface BaseServiceConfig {
   apiKey: string;
   silent: boolean;
   debug?: boolean;
+  baseUrl?: string;
 }
 
 export abstract class BaseService {
+  static readonly DEFAULT_BASE_URL = 'https://coolhandlabs.com';
+
   protected apiKey: string;
   protected silent: boolean;
   protected debug: boolean;
   protected apiEndpoint: string;
+
+  static validateBaseUrl(baseUrl: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      throw new Error(`baseUrl must start with https:// or http://localhost. Got: ${baseUrl}`);
+    }
+    if (!parsed.hostname) {
+      throw new Error(`baseUrl must include a hostname. Got: ${baseUrl}`);
+    }
+    if (parsed.protocol === 'https:') return;
+    if (parsed.protocol === 'http:') {
+      const isLocal = parsed.hostname === 'localhost' ||
+                      parsed.hostname === '127.0.0.1' ||
+                      parsed.hostname === '::1' ||
+                      parsed.hostname === '[::1]';
+      if (isLocal) return;
+      throw new Error(
+        `baseUrl must use https:// for non-local hosts. Got: ${baseUrl}\n` +
+        `  For local development, http://localhost:... is allowed.`
+      );
+    }
+    throw new Error(`baseUrl must start with https:// or http://localhost. Got: ${baseUrl}`);
+  }
+
+  static normalizeBaseUrl(baseUrl: string): string {
+    return baseUrl.replace(/\/$/, '');
+  }
 
   constructor(config: BaseServiceConfig, endpoint: string) {
     this.apiKey = config.apiKey;

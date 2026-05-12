@@ -623,3 +623,109 @@ describe('FeedbackService debug mode integration', () => {
     expect(body.llm_request_log_feedback.like).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 11. baseUrl configuration
+// ---------------------------------------------------------------------------
+
+describe('baseUrl configuration', () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    jest.resetModules();
+  });
+
+  it('Coolhand uses custom baseUrl in logging endpoint', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      const instance = new Coolhand({ apiKey: 'k', baseUrl: 'https://feedback.example.com' });
+      expect(instance.getStats().apiEndpoint).toBe('https://feedback.example.com/api/v2/llm_request_logs');
+    });
+  });
+
+  it('Coolhand uses custom baseUrl in feedback endpoint', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 1, like: true }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    await jest.isolateModulesAsync(async () => {
+      const { Coolhand } = require('../src/coolhand');
+      const instance = new Coolhand({ apiKey: 'k', baseUrl: 'https://feedback.example.com', debug: false });
+      await instance.createFeedback({ like: true });
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://feedback.example.com/api/v2/llm_request_log_feedbacks');
+  });
+
+  it('trailing slash on baseUrl is normalized', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      const instance = new Coolhand({ apiKey: 'k', baseUrl: 'https://feedback.example.com/' });
+      expect(instance.getStats().apiEndpoint).toBe('https://feedback.example.com/api/v2/llm_request_logs');
+    });
+  });
+
+  it('accepts https:// baseUrl', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'https://self-hosted.example.com' })).not.toThrow();
+    });
+  });
+
+  it('accepts http://localhost baseUrl', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'http://localhost:8080' })).not.toThrow();
+    });
+  });
+
+  it('accepts http://127.0.0.1 baseUrl', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'http://127.0.0.1:3000' })).not.toThrow();
+    });
+  });
+
+  it('rejects http:// with non-local host', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'http://example.com' })).toThrow('https://');
+    });
+  });
+
+  it('rejects non-http/https scheme', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'ftp://bad.example.com' })).toThrow('https://');
+    });
+  });
+
+  it('rejects malformed https:// with no hostname', () => {
+    jest.isolateModules(() => {
+      const { Coolhand } = require('../src/coolhand');
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'https://' })).toThrow();
+      expect(() => new Coolhand({ apiKey: 'k', baseUrl: 'https:// ' })).toThrow();
+    });
+  });
+
+  it('initializeGlobalMonitoring accepts baseUrl and uses it', async () => {
+    const mod = await import('../src/global-monitor');
+    await mod.initializeGlobalMonitoring({ apiKey: 'k', silent: true, baseUrl: 'https://self-hosted.example.com' });
+    expect(mod.getGlobalStats().apiEndpoint).toBe('https://self-hosted.example.com/api/v2/llm_request_logs');
+  });
+
+  it('COOLHAND_BASE_URL env var is forwarded by auto-monitor', async () => {
+    process.env.COOLHAND_API_KEY = 'auto-test-key';
+    process.env.COOLHAND_BASE_URL = 'https://self-hosted.example.com';
+
+    const mod = await import('../src/auto-monitor');
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(mod.getGlobalStats().apiEndpoint).toBe('https://self-hosted.example.com/api/v2/llm_request_logs');
+
+    delete process.env.COOLHAND_BASE_URL;
+  });
+});

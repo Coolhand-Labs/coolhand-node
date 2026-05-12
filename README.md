@@ -218,12 +218,14 @@ const feedback = await coolhand.createFeedback({
 | `silent` | boolean | `true` | Whether to suppress console output |
 | `debug` | boolean | `false` | Enable debug mode (API calls will be mocked) |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+| `baseUrl` | string | `undefined` | Override the API host for self-hosted deployments (e.g. `'https://feedback.example.com'`). Must use `https://`; `http://localhost` is also accepted for local dev. Defaults to `https://coolhandlabs.com`. |
 
 ### Environment Variables
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
+| `COOLHAND_BASE_URL` | string | `undefined` | Override the API host for self-hosted deployments (e.g. `'https://feedback.example.com'`). Same rules as the `baseUrl` constructor option. |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Whether to suppress console output |
 | `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable debug mode |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |

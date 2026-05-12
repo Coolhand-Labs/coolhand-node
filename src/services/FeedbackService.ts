@@ -4,9 +4,13 @@ import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface FeedbackServiceConfig extends BaseServiceConfig {}
 
+const FEEDBACK_PATH = '/api/v2/llm_request_log_feedbacks';
+
 export class FeedbackService extends BaseService {
   constructor(config: FeedbackServiceConfig) {
-    super(config, 'https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
+    const base = config.baseUrl ?? BaseService.DEFAULT_BASE_URL;
+    if (config.baseUrl) BaseService.validateBaseUrl(base);
+    super(config, BaseService.normalizeBaseUrl(base) + FEEDBACK_PATH);
   }
 
   public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {
