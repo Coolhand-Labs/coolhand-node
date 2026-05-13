@@ -85,7 +85,7 @@ export interface LLMRequestLogFeedbackResponse {
   id: number;
   llm_request_log_id: number;
   /** @deprecated Use `sentiment` instead */
-  like?: boolean;
+  like: boolean;
   sentiment?: "like" | "dislike" | "neutral";
   creator_unique_id?: string;
   workload_hashid?: string;

@@ -175,8 +175,7 @@ const feedback = await coolhand.createFeedback({
   original_output: 'Here is the original LLM response!',
   revised_output: 'Here is the human edit of the original LLM response.',
   explanation: 'Tone of the original response read like AI-generated open source README docs',
-  sentiment: 'dislike', // preferred over `like`
-  // like: true,        // deprecated — use `sentiment` instead
+  sentiment: 'like', // preferred; replaces `like: true`
 });
 ```
 

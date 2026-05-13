@@ -464,5 +464,43 @@ describe('FeedbackService', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('like → sentiment normalization', () => {
+    let capturedRequestBody: any;
+    let service: FeedbackService;
+
+    beforeEach(() => {
+      (global as any).fetch = jest.fn().mockImplementation(async (_input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 1, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 1, like: true }))
+        };
+      });
+      service = new FeedbackService({ apiKey: 'test-key', silent: true });
+    });
+
+    it('converts like:true to sentiment:"like"', async () => {
+      await service.createFeedback({ like: true });
+      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBe('like');
+    });
+
+    it('converts like:false to sentiment:"dislike"', async () => {
+      await service.createFeedback({ like: false });
+      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBe('dislike');
+    });
+
+    it('does not overwrite an explicit sentiment when like is also provided', async () => {
+      await service.createFeedback({ like: false, sentiment: 'neutral' });
+      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBe('neutral');
+    });
+
+    it('leaves sentiment undefined when neither like nor sentiment is provided', async () => {
+      await service.createFeedback({ llm_request_log_id: 1 });
+      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBeUndefined();
+    });
+  });
 });
 
