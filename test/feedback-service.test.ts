@@ -171,7 +171,8 @@ describe('FeedbackService', () => {
 
       const capturedFeedback = capturedRequestBody.llm_request_log_feedback;
       expect(capturedFeedback.llm_request_log_id).toBe(456);
-      expect(capturedFeedback.like).toBe(true);
+      expect(capturedFeedback.sentiment).toBe('like');
+      expect(capturedFeedback).not.toHaveProperty('like');
       expect(capturedFeedback.explanation).toBe('Test explanation');
       expect(capturedFeedback.revised_output).toBe('Revised output');
     });
@@ -482,14 +483,18 @@ describe('FeedbackService', () => {
       service = new FeedbackService({ apiKey: 'test-key', silent: true });
     });
 
-    it('converts like:true to sentiment:"like"', async () => {
+    it('converts like:true to sentiment:"like" and strips like from payload', async () => {
       await service.createFeedback({ like: true });
-      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBe('like');
+      const sent = capturedRequestBody.llm_request_log_feedback;
+      expect(sent.sentiment).toBe('like');
+      expect(sent).not.toHaveProperty('like');
     });
 
-    it('converts like:false to sentiment:"dislike"', async () => {
+    it('converts like:false to sentiment:"dislike" and strips like from payload', async () => {
       await service.createFeedback({ like: false });
-      expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBe('dislike');
+      const sent = capturedRequestBody.llm_request_log_feedback;
+      expect(sent.sentiment).toBe('dislike');
+      expect(sent).not.toHaveProperty('like');
     });
 
     it('does not overwrite an explicit sentiment when like is also provided', async () => {

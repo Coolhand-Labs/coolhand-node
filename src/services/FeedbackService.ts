@@ -11,7 +11,8 @@ export class FeedbackService extends BaseService {
 
   private normalizeSentiment(feedback: LLMRequestLogFeedback): LLMRequestLogFeedback {
     if (feedback.sentiment !== undefined || feedback.like === undefined) { return feedback; }
-    return { ...feedback, sentiment: feedback.like ? 'like' : 'dislike' };
+    const { like, ...rest } = feedback;
+    return { ...rest, sentiment: like ? 'like' : 'dislike' };
   }
 
   public async createFeedback(feedback: LLMRequestLogFeedback, collectionMethod?: CollectionMethod): Promise<LLMRequestLogFeedbackResponse | null> {
