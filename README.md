@@ -266,7 +266,7 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenAI official SDK
 - Anthropic SDK
 - Google AI SDK
-- GitHub Models (via OpenAI SDK pointed at `models.inference.ai.azure.com`)
+- GitHub Models (via OpenAI SDK pointed at `models.github.ai` or `models.inference.ai.azure.com`)
 - LangChain
 - Direct `fetch()` calls
 - `https`/`http` module usage

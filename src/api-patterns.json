@@ -28,7 +28,7 @@
     },
     {
       "name": "GitHub Models",
-      "domains": ["models.inference.ai.azure.com"],
+      "domains": ["models.github.ai", "models.inference.ai.azure.com"],
       "paths": ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"],
       "headers": {
         "authorization": "[REDACTED]"

@@ -115,7 +115,7 @@ export class PatternMatchingService {
       },
       {
         name: 'GitHub Models',
-        domains: ['models.inference.ai.azure.com'],
+        domains: ['models.github.ai', 'models.inference.ai.azure.com'],
         headers: {
           'authorization': 'Bearer [REDACTED]'
         }

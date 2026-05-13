@@ -151,6 +151,7 @@ describe('Edge Runtime Detection and Loading', () => {
 
       const githubPattern = patterns.find(p => p.name === 'GitHub Models');
       expect(githubPattern).toBeDefined();
+      expect(githubPattern?.domains).toContain('models.github.ai');
       expect(githubPattern?.domains).toContain('models.inference.ai.azure.com');
       expect(githubPattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
     });
