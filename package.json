@@ -57,6 +57,7 @@
     "lint:fix": "eslint src test --ext .ts --fix",
     "dev": "tsc --watch",
     "clean": "rm -rf dist coverage",
+    "test:esm": "node scripts/verify-esm.mjs",
     "test:cjs": "node scripts/verify-cjs.cjs",
     "example": "node examples/basic.js"
   },
