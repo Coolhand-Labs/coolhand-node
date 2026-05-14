@@ -47,7 +47,7 @@
   ],
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
-    "build": "npm run sync-version && tsup && cp src/api-patterns.json dist/",
+    "build": "npm run sync-version && tsup && node scripts/fix-cjs-imports.cjs && cp src/api-patterns.json dist/",
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",

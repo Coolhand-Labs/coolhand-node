@@ -1,13 +1,15 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: {
-    index: 'src/index.ts',
-    'auto-monitor': 'src/auto-monitor.ts',
-  },
+  // Compile every source file individually rather than bundling entry points.
+  // Bundling duplicates global-monitor into both index and auto-monitor, breaking
+  // the singleton: require('coolhand-node/auto-monitor') initialises one copy while
+  // getGlobalStats() from require('coolhand-node') reads a different uninitialised copy.
+  // With bundle:false, Node's module cache keeps a single shared instance.
+  entry: ['src/**/*.ts'],
+  bundle: false,
   format: ['esm', 'cjs'],
   dts: true,
-  splitting: false,
   sourcemap: true,
   clean: true,
   target: 'es2020',
