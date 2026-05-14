@@ -113,8 +113,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.any(String)
       );
-      // Should fallback to default Edge runtime patterns (3 patterns)
-      expect(service.getPatternsCountSync()).toBe(3);
+      // Should fallback to default Edge runtime patterns (4 patterns)
+      expect(service.getPatternsCountSync()).toBe(4);
     });
 
     it('should handle file system errors', () => {
@@ -128,8 +128,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         'File system error'
       );
-      // Should fallback to default Edge runtime patterns (3 patterns)
-      expect(service.getPatternsCountSync()).toBe(3);
+      // Should fallback to default Edge runtime patterns (4 patterns)
+      expect(service.getPatternsCountSync()).toBe(4);
     });
   });
 
