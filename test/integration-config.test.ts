@@ -194,7 +194,8 @@ describe('Coolhand feedback helpers', () => {
 
     // Payload should include collector field
     const body = JSON.parse(opts.body);
-    expect(body.llm_request_log_feedback).toHaveProperty('like', true);
+    expect(body.llm_request_log_feedback).toHaveProperty('sentiment', 'like');
+    expect(body.llm_request_log_feedback).not.toHaveProperty('like');
     expect(body.llm_request_log_feedback).toHaveProperty('collector');
     expect(body.llm_request_log_feedback.collector).toContain('coolhand-node');
   });
@@ -698,7 +699,8 @@ describe('FeedbackService dryRun mode integration', () => {
 
     expect(fetchSpy).toHaveBeenCalled();
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.llm_request_log_feedback.like).toBe(false);
+    expect(body.llm_request_log_feedback.sentiment).toBe('dislike');
+    expect(body.llm_request_log_feedback).not.toHaveProperty('like');
   });
 
   it('should call API when debug=true but dryRun is not set', async () => {
