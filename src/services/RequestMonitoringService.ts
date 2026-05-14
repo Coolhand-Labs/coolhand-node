@@ -10,6 +10,7 @@ export class RequestMonitoringService {
   private silent: boolean;
   private patternMatchingService: PatternMatchingService;
   private static isPatched: boolean = false;
+  public excludeApiPatterns: string[] = [];
 
   constructor(
     patternMatchingService: PatternMatchingService,
@@ -53,6 +54,9 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
+              if (monitor.isExcluded(options, 'https')) {
+                return originalRequest.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
               return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
             }
@@ -77,6 +81,9 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
+              if (monitor.isExcluded(options, 'https')) {
+                return originalGet.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
               return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
             }
@@ -107,6 +114,9 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
+              if (monitor.isExcluded(options, 'http')) {
+                return originalRequest.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
               return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
             }
@@ -131,6 +141,9 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
+              if (monitor.isExcluded(options, 'http')) {
+                return originalGet.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
               return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
             }
@@ -160,6 +173,9 @@ export class RequestMonitoringService {
         const matchedPattern = monitor.patternMatchingService.matchesAPIPatternFromURL(urlStr);
 
         if (matchedPattern) {
+          if (monitor.isExcluded(urlStr, 'https')) {
+            return originalFetch.call(this, url, options);
+          }
           monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} FETCH call`);
           return monitor.interceptFetch(originalFetch, url, options, matchedPattern);
         }
@@ -294,6 +310,12 @@ export class RequestMonitoringService {
       this.log(`❌ Fetch error for call #${callData.id}:`, (error as Error).message);
       throw error;
     }
+  }
+
+  private isExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
+    if (this.excludeApiPatterns.length === 0) { return false; }
+    const url = this.buildURL(options, protocol);
+    return this.excludeApiPatterns.some(p => url.includes(p));
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {

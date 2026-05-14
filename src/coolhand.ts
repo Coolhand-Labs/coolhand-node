@@ -3,6 +3,7 @@ import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
+import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 
 export class Coolhand {
   private patternMatchingService: PatternMatchingService;
@@ -34,6 +35,7 @@ export class Coolhand {
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
+    this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
 
     // Set up the callback for when requests are completed
     this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {
@@ -88,5 +90,13 @@ export class Coolhand {
       interceptedCalls: monitoringStats.interceptedCalls,
       apiEndpoint: this.loggingService.getApiEndpoint()
     };
+  }
+
+  public get excludeApiPatterns(): string[] {
+    return this.requestMonitoringService.excludeApiPatterns;
+  }
+
+  public set excludeApiPatterns(patterns: string[]) {
+    this.requestMonitoringService.excludeApiPatterns = [...patterns];
   }
 }

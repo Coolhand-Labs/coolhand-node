@@ -4,6 +4,7 @@ export interface CoolhandOptions {
   patternsFile?: string;
   debug?: boolean;
   baseUrl?: string;
+  excludeApiPatterns?: string[];
 }
 
 export interface CoolhandCallData {
