@@ -29,6 +29,7 @@ export class Coolhand {
       apiKey,
       silent: this.silent,
       debug: options.debug,
+      dryRun: options.dryRun,
       baseUrl: options.baseUrl
     };
 
@@ -42,10 +43,21 @@ export class Coolhand {
       this.loggingService.logRequestToAPI(callData, matchedPattern, 'manual');
     };
 
+    if (options.debug && !options.dryRun) {
+      console.warn(
+        '[coolhand-node] DEPRECATION WARNING: `debug: true` no longer suppresses API calls. ' +
+        'Use `dryRun: true` to prevent data submission. ' +
+        '`debug` now only enables verbose logging.'
+      );
+    }
+
     if (!this.silent) {
       console.log('🔍 Setting up Coolhand...');
+      if (options.dryRun) {
+        console.log('🚫 DRY RUN MODE: API calls will be skipped — no data will be submitted');
+      }
       if (options.debug) {
-        console.log('🐛 DEBUG MODE: API calls will be mocked');
+        console.log('🔬 DEBUG MODE: Verbose logging enabled');
       }
       console.log(`🎯 API Endpoint: ${this.loggingService.getApiEndpoint()}`);
       console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCount()} API patterns`);
