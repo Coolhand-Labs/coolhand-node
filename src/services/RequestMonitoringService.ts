@@ -3,6 +3,7 @@ import * as http from 'http';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
+import { decompressBuffer } from '../utils/decompress.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -219,14 +220,22 @@ export class RequestMonitoringService {
     const req = originalRequest(options as any, (res: http.IncomingMessage) => {
       this.log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-      let responseBody = '';
+      const responseChunks: Buffer[] = [];
 
       res.on('data', (chunk: any) => {
-        responseBody += chunk.toString();
+        responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
 
-      res.on('end', () => {
-        callData.response_body = parseBody(responseBody);
+      res.on('end', async () => {
+        try {
+          const rawBuffer = Buffer.concat(responseChunks);
+          const contentEncoding = res.headers?.['content-encoding'];
+          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this));
+          callData.response_body = parseBody(responseBody);
+        } catch (err: any) {
+          this.log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
+          callData.response_body = null;
+        }
         callData.response_headers = this.patternMatchingService.sanitizeHeaders(res.headers, matchedPattern?.pattern);
         callData.status_code = res.statusCode || null;
 

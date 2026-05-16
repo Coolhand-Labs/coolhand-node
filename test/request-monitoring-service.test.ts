@@ -1,4 +1,5 @@
 import * as https from 'https';
+import * as zlib from 'zlib';
 import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
@@ -442,6 +443,166 @@ describe('RequestMonitoringService', () => {
         totalRequests: 2,
         interceptedCalls: 1
       });
+    });
+  });
+
+  describe('Gzip response decompression', () => {
+    const jsonPayload = '{"model":"gpt-4","choices":[{"message":{"content":"hello"}}]}';
+
+    function runInterceptWithResponse(
+      headers: Record<string, string>,
+      chunks: Array<Buffer | string>,
+      done: jest.DoneCallback,
+      assertion: () => void
+    ) {
+      const mockReq = new EventEmitter() as any;
+      mockReq.write = jest.fn().mockReturnValue(true);
+      mockReq.end = jest.fn();
+
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = 200;
+      mockRes.headers = headers;
+
+      const originalRequest = jest.fn().mockImplementation((_opts: any, callback: any) => {
+        setTimeout(() => {
+          callback(mockRes);
+          for (const chunk of chunks) { mockRes.emit('data', chunk); }
+          mockRes.emit('end');
+        }, 0);
+        return mockReq;
+      });
+
+      (service as any).interceptRequest(
+        originalRequest,
+        { hostname: 'api.test.com', path: '/test' },
+        jest.fn(),
+        'https',
+        mockMatchedPattern
+      );
+
+      setTimeout(() => { assertion(); done(); }, 50);
+    }
+
+    it('should handle plain text responses', (done) => {
+      runInterceptWithResponse(
+        { 'content-type': 'application/json' },
+        [jsonPayload],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should decompress gzip-encoded responses', (done) => {
+      const compressed = zlib.gzipSync(Buffer.from(jsonPayload));
+      runInterceptWithResponse(
+        { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+        [compressed],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should decompress deflate-encoded responses (RFC 1950 zlib-wrapped)', (done) => {
+      const compressed = zlib.deflateSync(Buffer.from(jsonPayload));
+      runInterceptWithResponse(
+        { 'content-encoding': 'deflate' },
+        [compressed],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should decompress deflate-encoded responses (RFC 1951 raw deflate fallback)', (done) => {
+      // deflateRawSync produces raw deflate without the zlib wrapper — what older IIS/some
+      // load balancers send despite advertising content-encoding: deflate.
+      const compressed = zlib.deflateRawSync(Buffer.from(jsonPayload));
+      runInterceptWithResponse(
+        { 'content-encoding': 'deflate' },
+        [compressed],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should decompress brotli-encoded responses', (done) => {
+      const compressed = zlib.brotliCompressSync(Buffer.from(jsonPayload));
+      runInterceptWithResponse(
+        { 'content-encoding': 'br' },
+        [compressed],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should pass through unrecognized content-encoding as plain text', (done) => {
+      runInterceptWithResponse(
+        { 'content-encoding': 'identity' },
+        [jsonPayload],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should handle multi-chunk gzip responses', (done) => {
+      const compressed = zlib.gzipSync(Buffer.from(jsonPayload));
+      const half = Math.floor(compressed.length / 2);
+      runInterceptWithResponse(
+        { 'content-encoding': 'gzip' },
+        [compressed.slice(0, half), compressed.slice(half)],
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalledWith(
+            expect.objectContaining({ response_body: expect.objectContaining({ model: 'gpt-4' }) }),
+            mockMatchedPattern
+          );
+        }
+      );
+    });
+
+    it('should fall back gracefully when decompression fails', (done) => {
+      const notGzip = Buffer.from('this is not gzip data');
+      runInterceptWithResponse(
+        { 'content-encoding': 'gzip' },
+        [notGzip],
+        done,
+        () => {
+          // Should have called onRequestComplete without throwing
+          expect(onRequestCompleteMock).toHaveBeenCalled();
+          const callData = onRequestCompleteMock.mock.calls[0][0];
+          // Falls back to raw utf-8 string (which won't parse as JSON → string body)
+          expect(callData).toBeDefined();
+        }
+      );
     });
   });
 
