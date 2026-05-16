@@ -6,7 +6,7 @@
  * modified PatternMatchingService and global-monitor code paths.
  */
 
-// No top-level fs/path imports needed — mocking is done within jest.isolateModules
+import { _resetGlobalState } from '../src/global-monitor';
 
 // ---------------------------------------------------------------------------
 // 1. Coolhand class: all configuration options
@@ -256,6 +256,7 @@ describe('Global monitoring configuration', () => {
   });
 
   beforeEach(() => {
+    _resetGlobalState();
     jest.restoreAllMocks();
     jest.resetModules();
 
@@ -332,6 +333,7 @@ describe('Auto-monitor environment variable configuration', () => {
   const envBackup: Record<string, string | undefined> = {};
 
   beforeEach(() => {
+    _resetGlobalState();
     jest.restoreAllMocks();
     jest.resetModules();
 
