@@ -9,6 +9,7 @@ import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { parseBody } from './utils/parse-body.js';
+import { decompressBuffer } from './utils/decompress.js';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
@@ -23,7 +24,6 @@ const isEdgeRuntime = () => {
 // Node.js modules - conditionally imported
 let https: any = null;
 let http: any = null;
-let zlib: any = null;
 
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
@@ -54,13 +54,6 @@ const loadNodeModules = async () => {
 
     https = httpsModule;
     http = httpModule;
-
-    try {
-      const zlibModule = await import('zlib');
-      zlib = zlibModule;
-    } catch {
-      log('zlib not available — response decompression disabled');
-    }
 
     return true;
   } catch {
@@ -405,39 +398,6 @@ function patchFetch(): void {
   }
 }
 
-function decompressBuffer(buffer: Buffer, encoding: string | undefined): Promise<string> {
-  return new Promise((resolve) => {
-    if (!encoding || !zlib) {
-      resolve(buffer.toString('utf-8'));
-      return;
-    }
-
-    const enc = encoding.trim().toLowerCase();
-    let decompressFn: ((buf: Buffer, cb: (err: Error | null, result: Buffer) => void) => void) | null = null;
-
-    if (enc === 'gzip' || enc === 'x-gzip') {
-      decompressFn = zlib.gunzip;
-    } else if (enc === 'deflate') {
-      decompressFn = zlib.inflate;
-    } else if (enc === 'br') {
-      decompressFn = zlib.brotliDecompress;
-    }
-
-    if (!decompressFn) {
-      resolve(buffer.toString('utf-8'));
-      return;
-    }
-
-    decompressFn(buffer, (err: Error | null, result: Buffer) => {
-      if (err) {
-        log(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
-        resolve(buffer.toString('utf-8'));
-      } else {
-        resolve(result.toString('utf-8'));
-      }
-    });
-  });
-}
 
 function interceptRequest(
   originalRequest: any,
@@ -486,7 +446,7 @@ function interceptRequest(
       try {
         const rawBuffer = Buffer.concat(responseChunks);
         const contentEncoding = res.headers?.['content-encoding'];
-        const responseBody = await decompressBuffer(rawBuffer, contentEncoding);
+        const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
         callData.response_body = parseBody(responseBody);
       } catch (err: any) {
         log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
