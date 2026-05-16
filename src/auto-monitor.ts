@@ -8,7 +8,8 @@
  * - COOLHAND_API_KEY (required)
  * - COOLHAND_SILENT (optional: 'true' | 'false', default: 'true')
  * - COOLHAND_PATTERNS_FILE (optional: path to custom patterns file)
- * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false')
+ * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false') — enables verbose logging only
+ * - COOLHAND_DRY_RUN (optional: 'true' | 'false', default: 'false') — suppresses all API submissions
  * - COOLHAND_BASE_URL (optional: self-hosted endpoint, e.g. 'https://feedback.example.com')
  *
  * Usage:
@@ -30,6 +31,7 @@ if (apiKey) {
   const silent = process.env.COOLHAND_SILENT !== 'false'; // Default to true unless explicitly false
   const patternsFile = process.env.COOLHAND_PATTERNS_FILE;
   const debug = process.env.COOLHAND_DEBUG === 'true'; // Default to false unless explicitly true
+  const dryRun = process.env.COOLHAND_DRY_RUN === 'true'; // Default to false unless explicitly true
   const baseUrl = process.env.COOLHAND_BASE_URL;
 
   // Async initialization wrapped in IIFE
@@ -44,6 +46,7 @@ if (apiKey) {
         silent,
         patternsFile,
         debug,
+        dryRun,
         baseUrl
       });
 
@@ -51,8 +54,12 @@ if (apiKey) {
         console.log('✅ Global monitoring initialized successfully');
         console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
 
+        if (dryRun) {
+          console.log('🚫 Dry run mode: ON (API calls will be skipped)');
+        }
+
         if (debug) {
-          console.log('🐛 Debug mode: ON (API calls will be mocked)');
+          console.log('🔬 Debug mode: ON (verbose logging)');
         }
 
         if (patternsFile) {

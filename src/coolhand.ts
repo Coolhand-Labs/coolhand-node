@@ -3,6 +3,7 @@ import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
+import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 
 export class Coolhand {
   private patternMatchingService: PatternMatchingService;
@@ -28,22 +29,35 @@ export class Coolhand {
       apiKey,
       silent: this.silent,
       debug: options.debug,
+      dryRun: options.dryRun,
       baseUrl: options.baseUrl
     };
 
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
+    this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
 
     // Set up the callback for when requests are completed
     this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {
       this.loggingService.logRequestToAPI(callData, matchedPattern, 'manual');
     };
 
+    if (options.debug && !options.dryRun) {
+      console.warn(
+        '[coolhand-node] DEPRECATION WARNING: `debug: true` no longer suppresses API calls. ' +
+        'Use `dryRun: true` to prevent data submission. ' +
+        '`debug` now only enables verbose logging.'
+      );
+    }
+
     if (!this.silent) {
       console.log('🔍 Setting up Coolhand...');
+      if (options.dryRun) {
+        console.log('🚫 DRY RUN MODE: API calls will be skipped — no data will be submitted');
+      }
       if (options.debug) {
-        console.log('🐛 DEBUG MODE: API calls will be mocked');
+        console.log('🔬 DEBUG MODE: Verbose logging enabled');
       }
       console.log(`🎯 API Endpoint: ${this.loggingService.getApiEndpoint()}`);
       console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCount()} API patterns`);
@@ -88,5 +102,13 @@ export class Coolhand {
       interceptedCalls: monitoringStats.interceptedCalls,
       apiEndpoint: this.loggingService.getApiEndpoint()
     };
+  }
+
+  public get excludeApiPatterns(): string[] {
+    return this.requestMonitoringService.excludeApiPatterns;
+  }
+
+  public set excludeApiPatterns(patterns: string[]) {
+    this.requestMonitoringService.excludeApiPatterns = [...patterns];
   }
 }

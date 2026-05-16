@@ -3,7 +3,9 @@ export interface CoolhandOptions {
   silent?: boolean;
   patternsFile?: string;
   debug?: boolean;
+  dryRun?: boolean;
   baseUrl?: string;
+  excludeApiPatterns?: string[];
 }
 
 export interface CoolhandCallData {

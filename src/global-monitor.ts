@@ -89,6 +89,7 @@ interface GlobalMonitorConfig {
   silent?: boolean;
   patternsFile?: string;
   debug?: boolean;
+  dryRun?: boolean;
   baseUrl?: string;
 }
 
@@ -104,12 +105,21 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
 
   silent = config.silent !== false;
 
+  if (config.debug && !config.dryRun) {
+    console.warn(
+      '[coolhand-node] DEPRECATION WARNING: `debug: true` no longer suppresses API calls. ' +
+      'Use `dryRun: true` to prevent data submission. ' +
+      '`debug` now only enables verbose logging.'
+    );
+  }
+
   // Initialize services
   globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent });
   globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
     silent,
     debug: config.debug,
+    dryRun: config.dryRun,
     baseUrl: config.baseUrl
   });
 
@@ -127,8 +137,11 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
 
   if (!silent) {
     console.log('🌐 Global Coolhand monitoring initialized');
+    if (config.dryRun) {
+      console.log('🚫 Dry run mode: ON — API calls will be skipped');
+    }
     if (config.debug) {
-      console.log('🐛 Debug mode: ON (API calls will be mocked)');
+      console.log('🔬 Debug mode: ON — verbose logging enabled');
     }
     console.log(`🎯 API Endpoint: ${globalLoggingService.getApiEndpoint()}`);
     console.log(`📋 Loaded ${await globalPatternService.getPatternsCount()} AI API patterns`);

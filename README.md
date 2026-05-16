@@ -1,6 +1,6 @@
 # Coolhand Node.js Monitor
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
@@ -58,7 +58,8 @@ import 'coolhand-node/auto-monitor';
 ```bash
 # .env
 COOLHAND_API_KEY=your_api_key_here
-COOLHAND_DEBUG=false  # Set to true for debug mode
+COOLHAND_DEBUG=false     # Set to true for verbose logging
+COOLHAND_DRY_RUN=false   # Set to true to skip API submissions (dry-run mode)
 ```
 
 **Or manual initialization:**
@@ -69,7 +70,7 @@ import { initializeGlobalMonitoring } from 'coolhand-node';
 // Initialize once at application startup
 await initializeGlobalMonitoring({
   apiKey: 'your-api-key',
-  debug: false
+  dryRun: false  // Set to true to skip all data submission (dry-run mode)
 });
 
 // Now ALL outbound AI API calls are automatically monitored
@@ -92,7 +93,7 @@ import Coolhand from 'coolhand-node';
 // Initialize the monitor
 const monitor = new Coolhand({
     apiKey: 'your-api-key',
-    debug: false  // Enable debug mode if needed
+    dryRun: false  // Set to true to skip data submission (dry-run mode)
 });
 ```
 
@@ -228,7 +229,8 @@ const feedback = await coolhand.createFeedback({
 |--------|------|---------|-------------|
 | `apiKey` | string | *required* | Your Coolhand API key for authentication |
 | `silent` | boolean | `true` | Whether to suppress console output |
-| `debug` | boolean | `false` | Enable debug mode (API calls will be mocked) |
+| `debug` | boolean | `false` | Enable verbose logging (endpoint URL and payload size logged before each call) |
+| `dryRun` | boolean | `false` | Skip all API submissions — no data is sent to Coolhand |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
 | `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
 
@@ -238,7 +240,8 @@ const feedback = await coolhand.createFeedback({
 |----------|------|---------|-------------|
 | `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Whether to suppress console output |
-| `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable debug mode |
+| `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable verbose logging |
+| `COOLHAND_DRY_RUN` | `'true'` \| `'false'` | `'false'` | Skip all API submissions (dry-run mode) |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
 | `COOLHAND_BASE_URL` | string | `undefined` | Override the API host (e.g. `https://feedback.example.com`). Same rules as `baseUrl` option. |
 
@@ -256,7 +259,7 @@ import { Coolhand, CoolhandOptions, CoolhandCallData, CoolhandStats } from 'cool
 const monitor = new Coolhand({
   apiKey: 'your-api-key',
   silent: true,
-  debug: false
+  dryRun: false
 });
 ```
 
@@ -278,6 +281,7 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenAI official SDK
 - Anthropic SDK
 - Google AI SDK
+- GitHub Models (via OpenAI SDK pointed at `models.github.ai` or `models.inference.ai.azure.com`)
 - LangChain
 - Direct `fetch()` calls
 - `https`/`http` module usage
@@ -327,13 +331,13 @@ setInterval(() => {
 }, 60000);
 ```
 
-## Debug Mode
+## Dry-Run Mode
 
-Enable debug mode for development and testing:
+Use `dryRun: true` (or `COOLHAND_DRY_RUN=true`) to prevent any data from being sent to Coolhand — useful for CI environments or initial integration testing:
 
 ```javascript
 // Via environment variable
-// Set COOLHAND_DEBUG=true in .env, then:
+// Set COOLHAND_DRY_RUN=true in .env, then:
 import 'coolhand-node/auto-monitor';
 
 // Or via manual initialization
@@ -341,14 +345,29 @@ import { initializeGlobalMonitoring } from 'coolhand-node';
 
 await initializeGlobalMonitoring({
   apiKey: 'your-api-key',
-  debug: true
+  dryRun: true
 });
 ```
 
-When debug mode is enabled:
-- API calls to Coolhand will be mocked
-- Debug messages will show what would have been sent
-- No data will be sent to Coolhand servers
+When dry-run mode is enabled:
+- All API calls to Coolhand are skipped
+- Log messages indicate what would have been sent
+- No data reaches Coolhand servers
+
+## Debug Mode (Verbose Logging)
+
+Use `debug: true` (or `COOLHAND_DEBUG=true`) to enable extra logging — the endpoint URL and payload size are printed before each outbound call. Data is still submitted normally.
+
+```javascript
+await initializeGlobalMonitoring({
+  apiKey: 'your-api-key',
+  debug: true  // extra logs, data still sent
+});
+```
+
+### Migrating from v0.4.x
+
+Prior to v0.5.0, `debug: true` suppressed all API submissions. This behavior has been renamed to `dryRun: true`. If you previously used `debug: true` to prevent data from being sent, replace it with `dryRun: true`. Passing `debug: true` without `dryRun: true` will emit a `console.warn` deprecation notice.
 
 ## Advanced Usage
 
@@ -367,7 +386,7 @@ const match = patternService.matchesAPIPattern(requestOptions);
 const loggingService = new LoggingService({
   apiKey: 'your-key',
   silent: false,
-  debug: false
+  dryRun: false
 });
 ```
 

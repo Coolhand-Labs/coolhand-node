@@ -50,8 +50,8 @@ export class LoggingService extends BaseService {
         console.log(`🌡️  Temperature: ${callData.request_body.temperature}`);
       }
 
-      if (this.debug) {
-        console.log(`🐛 DEBUG MODE: Will skip API call`);
+      if (this.dryRun) {
+        console.log(`🚫 DRY RUN: API call will be skipped`);
       } else {
         console.log(`📤 Sending to: ${this.apiEndpoint}`);
       }

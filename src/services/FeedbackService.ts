@@ -41,8 +41,8 @@ export class FeedbackService extends BaseService {
       if (feedback.explanation) {
         console.log(`💭 Explanation: ${feedback.explanation.substring(0, 100)}${feedback.explanation.length > 100 ? '...' : ''}`);
       }
-      if (this.debug) {
-        console.log(`🐛 DEBUG MODE: Will return mock response instead of API call`);
+      if (this.dryRun) {
+        console.log(`🚫 DRY RUN: API call will be skipped`);
       } else {
         console.log(`📤 Sending to: ${this.apiEndpoint}`);
       }
