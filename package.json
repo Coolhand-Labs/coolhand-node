@@ -7,14 +7,24 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./auto-monitor": {
-      "types": "./dist/auto-monitor.d.ts",
-      "import": "./dist/auto-monitor.js",
-      "require": "./dist/auto-monitor.cjs"
+      "import": {
+        "types": "./dist/auto-monitor.d.ts",
+        "default": "./dist/auto-monitor.js"
+      },
+      "require": {
+        "types": "./dist/auto-monitor.d.cts",
+        "default": "./dist/auto-monitor.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
