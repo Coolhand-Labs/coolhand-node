@@ -115,13 +115,18 @@ import 'coolhand-node/auto-monitor';
 
 ### CommonJS Projects
 
-If your project uses CommonJS (no `"type": "module"`, or `.cjs` files), `require()` works directly:
+If your project uses CommonJS (no `"type": "module"`, or `.cjs` files), `require()` works directly.
+
+**Option A — zero-config auto-monitor** (reads `COOLHAND_API_KEY` from the environment):
 
 ```javascript
-// Zero-config auto-monitor
 require('coolhand-node/auto-monitor');
+// That's it — all AI API calls are now monitored
+```
 
-// Or manual initialization
+**Option B — manual initialization** (explicit control over options):
+
+```javascript
 const { initializeGlobalMonitoring } = require('coolhand-node');
 
 async function startServer() {
@@ -138,13 +143,17 @@ startServer();
 
 ### TypeScript Compiling to CommonJS
 
-If your `tsconfig.json` has `"module": "commonjs"`, `require()` works directly — no workarounds needed:
+If your `tsconfig.json` has `"module": "commonjs"`, `require()` works directly — no workarounds needed.
+
+**Option A — zero-config auto-monitor**:
 
 ```typescript
-// Zero-config auto-monitor
 require('coolhand-node/auto-monitor');
+```
 
-// Or manual initialization
+**Option B — manual initialization**:
+
+```typescript
 const { initializeGlobalMonitoring } = require('coolhand-node');
 
 async function startServer() {
