@@ -84,6 +84,8 @@ interface GlobalMonitorConfig {
   debug?: boolean;
   dryRun?: boolean;
   baseUrl?: string;
+  /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; this shim will be removed in a future release. */
+  environment?: 'local' | 'production';
 }
 
 /**
@@ -97,6 +99,19 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   }
 
   silent = config.silent !== false;
+
+  let resolvedBaseUrl = config.baseUrl;
+
+  if (config.environment !== undefined) {
+    console.warn(
+      '[coolhand-node] DEPRECATION WARNING: The `environment` option was removed in v0.4.0. ' +
+      "Use `baseUrl: 'http://localhost:3000'` instead of `environment: 'local'`. " +
+      'Remove `environment: \'production\'` — the default endpoint is unchanged.'
+    );
+    if (config.environment === 'local' && resolvedBaseUrl === undefined) {
+      resolvedBaseUrl = 'http://localhost:3000';
+    }
+  }
 
   if (config.debug && !config.dryRun) {
     console.warn(
@@ -113,7 +128,7 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
     silent,
     debug: config.debug,
     dryRun: config.dryRun,
-    baseUrl: config.baseUrl
+    baseUrl: resolvedBaseUrl
   });
 
   // Load Node.js modules if available

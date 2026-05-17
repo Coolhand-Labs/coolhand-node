@@ -364,6 +364,22 @@ await initializeGlobalMonitoring({
 });
 ```
 
+### Migrating from v0.3.x to v0.4.0
+
+The `environment` option has been removed. Use `baseUrl` instead:
+
+```ts
+// before (≤0.3.x)
+new Coolhand({ apiKey, environment: 'local' });
+initializeGlobalMonitoring({ apiKey, environment: 'local' });
+
+// after (≥0.4.0)
+new Coolhand({ apiKey, baseUrl: 'http://localhost:3000' });
+initializeGlobalMonitoring({ apiKey, baseUrl: 'http://localhost:3000' });
+```
+
+`environment: 'production'` can simply be removed — the default endpoint (`https://coolhandlabs.com`) is unchanged.
+
 ### Migrating from v0.4.x
 
 Prior to v0.5.0, `debug: true` suppressed all API submissions. This behavior has been renamed to `dryRun: true`. If you previously used `debug: true` to prevent data from being sent, replace it with `dryRun: true`. Passing `debug: true` without `dryRun: true` will emit a `console.warn` deprecation notice.

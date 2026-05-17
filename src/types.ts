@@ -6,6 +6,8 @@ export interface CoolhandOptions {
   dryRun?: boolean;
   baseUrl?: string;
   excludeApiPatterns?: string[];
+  /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; this shim will be removed in a future release. */
+  environment?: 'local' | 'production';
 }
 
 export interface CoolhandCallData {

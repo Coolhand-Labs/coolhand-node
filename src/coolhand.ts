@@ -22,6 +22,17 @@ export class Coolhand {
       throw new Error('API key is required');
     }
 
+    if (options.environment !== undefined) {
+      console.warn(
+        '[coolhand-node] DEPRECATION WARNING: The `environment` option was removed in v0.4.0. ' +
+        "Use `baseUrl: 'http://localhost:3000'` instead of `environment: 'local'`. " +
+        'Remove `environment: \'production\'` — the default endpoint is unchanged.'
+      );
+      if (options.environment === 'local' && options.baseUrl === undefined) {
+        options = { ...options, baseUrl: 'http://localhost:3000' };
+      }
+    }
+
     // Initialize services
     this.patternMatchingService = new PatternMatchingService({ customPatternsFile: options.patternsFile, silent: this.silent });
 
