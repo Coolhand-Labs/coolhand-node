@@ -58,7 +58,7 @@
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
     "build": "npm run sync-version && tsup && node scripts/fix-cjs-imports.cjs && cp src/api-patterns.json dist/",
-    "prepublishOnly": "npm run typecheck && npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run test:cjs && npm run test:esm",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
