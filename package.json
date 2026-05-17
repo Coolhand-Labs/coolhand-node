@@ -7,12 +7,24 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./auto-monitor": {
-      "types": "./dist/auto-monitor.d.ts",
-      "import": "./dist/auto-monitor.js"
+      "import": {
+        "types": "./dist/auto-monitor.d.ts",
+        "default": "./dist/auto-monitor.js"
+      },
+      "require": {
+        "types": "./dist/auto-monitor.d.cts",
+        "default": "./dist/auto-monitor.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -45,8 +57,8 @@
   ],
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
-    "build": "npm run sync-version && tsc && cp src/api-patterns.json dist/",
-    "prepublishOnly": "npm run build",
+    "build": "npm run sync-version && tsup && node scripts/fix-cjs-imports.cjs && cp src/api-patterns.json dist/",
+    "prepublishOnly": "npm run typecheck && npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -55,6 +67,8 @@
     "lint:fix": "eslint src test --ext .ts --fix",
     "dev": "tsc --watch",
     "clean": "rm -rf dist coverage",
+    "test:esm": "node scripts/verify-esm.mjs",
+    "test:cjs": "node scripts/verify-cjs.cjs",
     "example": "node examples/basic.js"
   },
   "devDependencies": {
@@ -68,6 +82,7 @@
     "jest": "^30.2.0",
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.0.0"
   }
 }

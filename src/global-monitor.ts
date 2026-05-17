@@ -62,19 +62,43 @@ const loadNodeModules = async () => {
   }
 };
 
-// Global state for the monitoring system
-let globalPatternService: PatternMatchingService | null = null;
-let globalLoggingService: LoggingService | null = null;
-let isGloballyPatched = false;
-let callCounter = 0;
-let interceptedCalls = 0;
-let silent = true;
+// State is stored on globalThis so both the CJS and ESM builds of this module
+// share the same values in a mixed-format Node.js process. A string key (not a
+// Symbol) is required because Symbols are per-realm and would be independent
+// across module formats.
+const COOLHAND_STATE_KEY = '__coolhand_node_v1__';
 
-// Global deduplication registry
-const globalActiveRequests = new Map<string, {
-  timestamp: number;
-  requestIds: Set<string>;
-}>();
+interface CoolhandGlobalState {
+  globalPatternService: PatternMatchingService | null;
+  globalLoggingService: LoggingService | null;
+  isGloballyPatched: boolean;
+  callCounter: number;
+  interceptedCalls: number;
+  silent: boolean;
+  globalActiveRequests: Map<string, { timestamp: number; requestIds: Set<string> }>;
+}
+
+function getState(): CoolhandGlobalState {
+  const g = globalThis as any;
+  if (!g[COOLHAND_STATE_KEY]) {
+    g[COOLHAND_STATE_KEY] = {
+      globalPatternService: null,
+      globalLoggingService: null,
+      isGloballyPatched: false,
+      callCounter: 0,
+      interceptedCalls: 0,
+      silent: true,
+      globalActiveRequests: new Map(),
+    } satisfies CoolhandGlobalState;
+  }
+  return g[COOLHAND_STATE_KEY] as CoolhandGlobalState;
+}
+
+/** Reset all singleton state — for use in tests only. */
+export function _resetGlobalState(): void {
+  delete (globalThis as any)[COOLHAND_STATE_KEY];
+}
+
 const DEDUP_WINDOW_MS = 1000;
 
 interface GlobalMonitorConfig {
@@ -91,12 +115,14 @@ interface GlobalMonitorConfig {
  * This should be called once at the start of your application
  */
 export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): Promise<void> {
-  if (isGloballyPatched) {
+  const state = getState();
+
+  if (state.isGloballyPatched) {
     log('🔄 Global monitoring already initialized, skipping...');
     return;
   }
 
-  silent = config.silent !== false;
+  state.silent = config.silent !== false;
 
   if (config.debug && !config.dryRun) {
     console.warn(
@@ -107,10 +133,10 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   }
 
   // Initialize services
-  globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent });
-  globalLoggingService = new LoggingService({
+  state.globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent: state.silent });
+  state.globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
-    silent,
+    silent: state.silent,
     debug: config.debug,
     dryRun: config.dryRun,
     baseUrl: config.baseUrl
@@ -126,9 +152,9 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
   }
   patchFetch(); // Always available
 
-  isGloballyPatched = true;
+  state.isGloballyPatched = true;
 
-  if (!silent) {
+  if (!state.silent) {
     console.log('🌐 Global Coolhand monitoring initialized');
     if (config.dryRun) {
       console.log('🚫 Dry run mode: ON — API calls will be skipped');
@@ -136,8 +162,8 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
     if (config.debug) {
       console.log('🔬 Debug mode: ON — verbose logging enabled');
     }
-    console.log(`🎯 API Endpoint: ${globalLoggingService.getApiEndpoint()}`);
-    console.log(`📋 Loaded ${await globalPatternService.getPatternsCount()} AI API patterns`);
+    console.log(`🎯 API Endpoint: ${state.globalLoggingService.getApiEndpoint()}`);
+    console.log(`📋 Loaded ${await state.globalPatternService.getPatternsCount()} AI API patterns`);
     console.log(`🔍 Monitoring mode: ${hasNodeModules ? 'Full (HTTP/HTTPS/Fetch)' : 'Fetch only (Edge runtime)'}`);
   }
 }
@@ -146,11 +172,12 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
  * Get global monitoring statistics
  */
 export function getGlobalStats() {
+  const state = getState();
   return {
-    totalRequests: callCounter,
-    interceptedCalls: interceptedCalls,
-    apiEndpoint: globalLoggingService?.getApiEndpoint() || 'Not initialized',
-    isInitialized: isGloballyPatched
+    totalRequests: state.callCounter,
+    interceptedCalls: state.interceptedCalls,
+    apiEndpoint: state.globalLoggingService?.getApiEndpoint() || 'Not initialized',
+    isInitialized: state.isGloballyPatched
   };
 }
 
@@ -158,7 +185,7 @@ export function getGlobalStats() {
  * Check if global monitoring is active
  */
 export function isGlobalMonitoringActive(): boolean {
-  return isGloballyPatched;
+  return getState().isGloballyPatched;
 }
 
 function generateRequestId(options: CoolhandRequestOptions | string | URL, method: string): string {
@@ -167,12 +194,13 @@ function generateRequestId(options: CoolhandRequestOptions | string | URL, metho
 }
 
 function isRequestActive(requestId: string): boolean {
-  const active = globalActiveRequests.get(requestId);
+  const state = getState();
+  const active = state.globalActiveRequests.get(requestId);
   if (!active) {return false;}
 
   const now = Date.now();
   if (now - active.timestamp > DEDUP_WINDOW_MS) {
-    globalActiveRequests.delete(requestId);
+    state.globalActiveRequests.delete(requestId);
     return false;
   }
 
@@ -180,14 +208,15 @@ function isRequestActive(requestId: string): boolean {
 }
 
 function registerActiveRequest(requestId: string): string {
+  const state = getState();
   const uniqueId = `${requestId}-${Date.now()}-${Math.random()}`;
   const now = Date.now();
 
-  const existing = globalActiveRequests.get(requestId);
+  const existing = state.globalActiveRequests.get(requestId);
   if (existing) {
     existing.requestIds.add(uniqueId);
   } else {
-    globalActiveRequests.set(requestId, {
+    state.globalActiveRequests.set(requestId, {
       timestamp: now,
       requestIds: new Set([uniqueId])
     });
@@ -197,11 +226,12 @@ function registerActiveRequest(requestId: string): string {
 }
 
 function unregisterActiveRequest(requestId: string, uniqueId: string): void {
-  const active = globalActiveRequests.get(requestId);
+  const state = getState();
+  const active = state.globalActiveRequests.get(requestId);
   if (active) {
     active.requestIds.delete(uniqueId);
     if (active.requestIds.size === 0) {
-      globalActiveRequests.delete(requestId);
+      state.globalActiveRequests.delete(requestId);
     }
   }
 }
@@ -217,6 +247,7 @@ function patchHTTPS(): void {
         value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS REQUEST', options);
 
+          const { globalPatternService } = getState();
           if (!globalPatternService) {
             return originalRequest.call(this, options as any, callback as any);
           }
@@ -255,6 +286,7 @@ function patchHTTPS(): void {
         value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTPS GET', options);
 
+          const { globalPatternService } = getState();
           if (!globalPatternService) {
             return originalGet.call(this, options as any, callback as any);
           }
@@ -297,6 +329,7 @@ function patchHTTP(): void {
         value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP REQUEST', options);
 
+          const { globalPatternService } = getState();
           if (!globalPatternService) {
             return originalRequest.call(this, options as any, callback as any);
           }
@@ -335,6 +368,7 @@ function patchHTTP(): void {
         value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
           debugRequest('HTTP GET', options);
 
+          const { globalPatternService } = getState();
           if (!globalPatternService) {
             return originalGet.call(this, options as any, callback as any);
           }
@@ -374,6 +408,7 @@ function patchFetch(): void {
       const urlStr = typeof url === 'string' ? url : url.toString();
       debugRequest('FETCH', { url: urlStr, ...options });
 
+      const { globalPatternService } = getState();
       if (!globalPatternService) {
         return originalFetch.call(this, url, options);
       }
@@ -406,7 +441,8 @@ function interceptRequest(
   protocol: 'https' | 'http' = 'https',
   matchedPattern?: CoolhandMatchedPattern
 ): HttpClientRequest {
-  interceptedCalls++;
+  const state = getState();
+  state.interceptedCalls++;
 
   const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
   const url = buildURL(options, protocol);
@@ -414,11 +450,11 @@ function interceptRequest(
   const uniqueId = registerActiveRequest(requestId);
 
   const callData: CoolhandCallData = {
-    id: interceptedCalls,
+    id: state.interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
     url: url,
-    headers: globalPatternService?.sanitizeHeaders(
+    headers: state.globalPatternService?.sanitizeHeaders(
       typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
       matchedPattern?.pattern
     ) || {},
@@ -452,12 +488,13 @@ function interceptRequest(
         log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
         callData.response_body = null;
       }
-      callData.response_headers = globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
+      const s = getState();
+      callData.response_headers = s.globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
       callData.status_code = res.statusCode || null;
 
       // Log to API
-      if (globalLoggingService) {
-        globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+      if (s.globalLoggingService) {
+        s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
       }
 
       // Cleanup
@@ -501,7 +538,8 @@ async function interceptFetch(
   options: RequestInit,
   matchedPattern?: CoolhandMatchedPattern
 ): Promise<Response> {
-  interceptedCalls++;
+  const state = getState();
+  state.interceptedCalls++;
 
   const method = options.method || 'GET';
   const urlStr = url.toString();
@@ -509,11 +547,11 @@ async function interceptFetch(
   const uniqueId = registerActiveRequest(requestId);
 
   const callData: CoolhandCallData = {
-    id: interceptedCalls,
+    id: state.interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
     url: urlStr,
-    headers: globalPatternService?.sanitizeHeaders(
+    headers: state.globalPatternService?.sanitizeHeaders(
       options.headers instanceof Headers
         ? Object.fromEntries(options.headers.entries())
         : (options.headers || {}),
@@ -540,8 +578,9 @@ async function interceptFetch(
     callData.response_body = parseBody(responseText);
 
     // Log to API
-    if (globalLoggingService) {
-      globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+    const s = getState();
+    if (s.globalLoggingService) {
+      s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
     }
 
     // Cleanup
@@ -581,11 +620,11 @@ function debugRequest(type: string, options: CoolhandRequestOptions | string | U
   log(`🌐 ${type} to: ${hostname}`);
 
   // Count all requests
-  callCounter++;
+  getState().callCounter++;
 }
 
 function log(...args: any[]): void {
-  if (!silent) {
+  if (!getState().silent) {
     console.log(...args);
   }
 }

@@ -2,6 +2,7 @@ import { Coolhand } from '../src/index';
 import { LoggingService } from '../src/services/LoggingService';
 import { FeedbackService } from '../src/services/FeedbackService';
 import { CoolhandCallData } from '../src/types';
+import { _resetGlobalState } from '../src/global-monitor';
 
 const fakeCallData: CoolhandCallData = {
   id: 1,
@@ -197,6 +198,7 @@ describe('baseUrl configuration', () => {
     const envBackup: Record<string, string | undefined> = {};
 
     beforeEach(() => {
+      _resetGlobalState();
       jest.resetModules();
       jest.spyOn(console, 'log').mockImplementation();
       jest.spyOn(console, 'warn').mockImplementation();
