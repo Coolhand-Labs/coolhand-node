@@ -60,7 +60,7 @@ export class Coolhand {
         console.log('🔬 DEBUG MODE: Verbose logging enabled');
       }
       console.log(`🎯 API Endpoint: ${this.loggingService.getApiEndpoint()}`);
-      console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCount()} API patterns`);
+      console.log(`📋 Loaded ${this.patternMatchingService.getPatternsCountSync()} API patterns`);
     }
 
     this.requestMonitoringService.setupMonitoring();

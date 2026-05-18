@@ -7,6 +7,7 @@ jest.mock('../src/services/PatternMatchingService.js', () => {
   return {
     PatternMatchingService: jest.fn().mockImplementation(() => ({
       getPatternsCount: jest.fn().mockReturnValue(5),
+      getPatternsCountSync: jest.fn().mockReturnValue(5),
       sanitizeHeaders: jest.fn().mockReturnValue({}),
     }))
   };
