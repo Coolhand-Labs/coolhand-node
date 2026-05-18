@@ -10,6 +10,7 @@
 
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { LoggingService } from '../src/services/LoggingService';
+import { _resetGlobalState } from '../src/global-monitor';
 
 jest.mock('fs');
 jest.mock('../src/services/PatternMatchingService');
@@ -61,6 +62,7 @@ describe('ESM namespace detection and createRequire fallback', () => {
   });
 
   beforeEach(() => {
+    _resetGlobalState();
     jest.resetModules();
     jest.clearAllMocks();
 
@@ -279,6 +281,7 @@ describe('Edge runtime bypass is preserved', () => {
   let consoleWarnSpy: jest.SpyInstance;
 
   beforeEach(() => {
+    _resetGlobalState();
     jest.resetModules();
     jest.clearAllMocks();
     consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
@@ -330,6 +333,7 @@ describe('Edge runtime bypass is preserved', () => {
 
 describe('All four HTTP methods are patched when configurable', () => {
   beforeEach(() => {
+    _resetGlobalState();
     jest.resetModules();
     jest.clearAllMocks();
     jest.spyOn(console, 'log').mockImplementation();

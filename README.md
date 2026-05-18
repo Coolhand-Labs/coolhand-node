@@ -37,7 +37,7 @@ npm install coolhand-node
 
 **Set it and forget it! Monitor ALL AI API calls across your entire application with just one line of code, so you'll never be surprised by new LLM calls added to your production codebase.**
 
-> **Important:** `coolhand-node` is an **ES module** package. See [Module System Compatibility](#module-system-compatibility) for setup in CommonJS environments.
+> **Note:** `coolhand-node` ships both ESM and CommonJS builds. See [Module System Compatibility](#module-system-compatibility) for details.
 
 **ESM projects** (`"type": "module"` in package.json):
 
@@ -101,7 +101,7 @@ const monitor = new Coolhand({
 
 ## Module System Compatibility
 
-`coolhand-node` is published as an **ES module** (`"type": "module"`). How you import it depends on your project's module system.
+`coolhand-node` ships both **ESM** and **CommonJS** builds, so it works in any Node.js project regardless of module system.
 
 ### ESM Projects
 
@@ -115,12 +115,21 @@ import 'coolhand-node/auto-monitor';
 
 ### CommonJS Projects
 
-If your project uses CommonJS (no `"type": "module"`, or `.cjs` files), you cannot use `require()` with this package. Use dynamic `import()` inside an async function:
+If your project uses CommonJS (no `"type": "module"`, or `.cjs` files), `require()` works directly.
+
+**Option A — zero-config auto-monitor** (reads `COOLHAND_API_KEY` from the environment):
 
 ```javascript
+require('coolhand-node/auto-monitor');
+// That's it — all AI API calls are now monitored
+```
+
+**Option B — manual initialization** (explicit control over options):
+
+```javascript
+const { initializeGlobalMonitoring } = require('coolhand-node');
+
 async function startServer() {
-  // Dynamic import works in CJS
-  const { initializeGlobalMonitoring } = await import('coolhand-node');
   await initializeGlobalMonitoring({
     apiKey: process.env.COOLHAND_API_KEY,
     silent: true
@@ -134,25 +143,28 @@ startServer();
 
 ### TypeScript Compiling to CommonJS
 
-If your `tsconfig.json` has `"module": "commonjs"`, TypeScript converts `await import()` into `require()` at compile time, which will fail. Use the `new Function` workaround to emit a native ESM `import()`:
+If your `tsconfig.json` has `"module": "commonjs"`, `require()` works directly — no workarounds needed.
+
+**Option A — zero-config auto-monitor**:
 
 ```typescript
+require('coolhand-node/auto-monitor');
+```
+
+**Option B — manual initialization**:
+
+```typescript
+const { initializeGlobalMonitoring } = require('coolhand-node');
+
 async function startServer() {
-  if (process.env.COOLHAND_API_KEY) {
-    // new Function emits a native import() that survives CJS compilation
-    const _import = new Function('m', 'return import(m)');
-    const { initializeGlobalMonitoring } = await _import('coolhand-node');
-    await initializeGlobalMonitoring({
-      apiKey: process.env.COOLHAND_API_KEY,
-      silent: true
-    });
-  }
+  await initializeGlobalMonitoring({
+    apiKey: process.env.COOLHAND_API_KEY,
+    silent: true
+  });
 
   // ... start your server
 }
 ```
-
-> **Tip:** If your tsconfig uses `"module": "ES2020"`, `"ESNext"`, or `"NodeNext"`, TypeScript preserves the native `import()` and you can use `await import('coolhand-node')` directly without the workaround.
 
 See the [framework guides](#framework-integration) for complete examples.
 
@@ -363,6 +375,22 @@ await initializeGlobalMonitoring({
   debug: true  // extra logs, data still sent
 });
 ```
+
+### Migrating from v0.3.x to v0.4.0
+
+The `environment` option has been removed. Use `baseUrl` instead:
+
+```ts
+// before (≤0.3.x)
+new Coolhand({ apiKey, environment: 'local' });
+initializeGlobalMonitoring({ apiKey, environment: 'local' });
+
+// after (≥0.4.0)
+new Coolhand({ apiKey, baseUrl: 'http://localhost:3000' });
+initializeGlobalMonitoring({ apiKey, baseUrl: 'http://localhost:3000' });
+```
+
+`environment: 'production'` can simply be removed — the default endpoint (`https://coolhandlabs.com`) is unchanged.
 
 ### Migrating from v0.4.x
 
