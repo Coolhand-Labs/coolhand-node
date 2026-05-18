@@ -252,6 +252,70 @@ function unregisterActiveRequest(requestId: string, uniqueId: string): void {
   }
 }
 
+function isIdempotentMethod(method: string): boolean {
+  const normalized = method.toUpperCase();
+  return normalized === 'GET' || normalized === 'HEAD';
+}
+
+function isRequestLike(value: unknown): value is Request {
+  if (!value || typeof value !== 'object') { return false; }
+  const request = value as Partial<Request>;
+  return typeof request.url === 'string' && typeof request.method === 'string';
+}
+
+function headersToRecord(headers: any): Record<string, any> {
+  if (!headers) { return {}; }
+
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+
+  if (typeof headers.entries === 'function') {
+    return Object.fromEntries(headers.entries());
+  }
+
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+
+  return { ...headers };
+}
+
+function getFetchURL(url: string | URL | Request): string {
+  if (typeof url === 'string') { return url; }
+  if (isRequestLike(url)) { return url.url; }
+  return url.toString();
+}
+
+function getFetchMethod(url: string | URL | Request, options: RequestInit): string {
+  return options.method || (isRequestLike(url) ? url.method : 'GET');
+}
+
+function getFetchHeaders(url: string | URL | Request, options: RequestInit): Record<string, any> {
+  // init.headers replaces request headers entirely per the fetch spec —
+  // merging would log headers the caller intentionally dropped.
+  if (options.headers !== undefined) {
+    return headersToRecord(options.headers);
+  }
+  return isRequestLike(url) ? headersToRecord(url.headers) : {};
+}
+
+async function getFetchRequestBody(url: string | URL | Request, options: RequestInit): Promise<string | null> {
+  if (options.body !== undefined) {
+    return options.body !== null ? options.body.toString() : null;
+  }
+
+  if (isRequestLike(url) && typeof url.clone === 'function') {
+    try {
+      return await url.clone().text();
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function patchHTTPS(): void {
   const originalRequest = https.request;
   const originalGet = https.get;
@@ -274,7 +338,7 @@ function patchHTTPS(): void {
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
             const requestId = generateRequestId(options, `https-${method}`);
 
-            if (isRequestActive(requestId)) {
+            if (isIdempotentMethod(method) && isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTPS request: ${method} ${buildURL(options, 'https')}`);
               return originalRequest.call(this, options as any, callback as any);
             }
@@ -356,7 +420,7 @@ function patchHTTP(): void {
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
             const requestId = generateRequestId(options, `http-${method}`);
 
-            if (isRequestActive(requestId)) {
+            if (isIdempotentMethod(method) && isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTP request: ${method} ${buildURL(options, 'http')}`);
               return originalRequest.call(this, options as any, callback as any);
             }
@@ -421,7 +485,7 @@ function patchFetch(): void {
     const originalFetch = globalThis.fetch;
 
     globalThis.fetch = async function(url: string | URL | Request, options: RequestInit = {}) {
-      const urlStr = typeof url === 'string' ? url : url.toString();
+      const urlStr = getFetchURL(url);
       debugRequest('FETCH', { url: urlStr, ...options });
 
       const { globalPatternService } = getState();
@@ -432,10 +496,10 @@ function patchFetch(): void {
       const matchedPattern = globalPatternService.matchesAPIPatternFromURL(urlStr);
 
       if (matchedPattern) {
-        const method = options.method || 'GET';
+        const method = getFetchMethod(url, options);
         const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
 
-        if (isRequestActive(requestId)) {
+        if (isIdempotentMethod(method) && isRequestActive(requestId)) {
           log(`🔄 Skipping duplicate FETCH: ${method} ${urlStr}`);
           return originalFetch.call(this, url, options);
         }
@@ -557,8 +621,8 @@ async function interceptFetch(
   const state = getState();
   state.interceptedCalls++;
 
-  const method = options.method || 'GET';
-  const urlStr = url.toString();
+  const method = getFetchMethod(url, options);
+  const urlStr = getFetchURL(url);
   const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
@@ -566,14 +630,12 @@ async function interceptFetch(
     id: state.interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
-    url: urlStr,
+    url: state.globalPatternService?.sanitizeURL(urlStr) ?? urlStr,
     headers: state.globalPatternService?.sanitizeHeaders(
-      options.headers instanceof Headers
-        ? Object.fromEntries(options.headers.entries())
-        : (options.headers || {}),
+      getFetchHeaders(url, options),
       matchedPattern?.pattern
     ) || {},
-    request_body: options.body ? parseBody(options.body as string) : null,
+    request_body: null,
     response_body: null,
     response_headers: null,
     status_code: null,
@@ -583,8 +645,16 @@ async function interceptFetch(
   log(`📞 Starting FETCH call #${callData.id} to ${url}`);
 
   try {
-    const response = await originalFetch.call(globalThis, url, options);
+    // Body capture and the outbound request run concurrently. Using Promise.all
+    // keeps the fetch rejection inside this try/catch from the moment it is
+    // created, closing the unhandledRejection window that would exist if
+    // fetchPromise were started outside the guarded block.
+    const [requestBody, response] = await Promise.all([
+      getFetchRequestBody(url, options),
+      originalFetch.call(globalThis, url, options)
+    ]);
 
+    callData.request_body = parseBody(requestBody);
     callData.status_code = response.status;
     callData.response_headers = Object.fromEntries(response.headers.entries());
 
@@ -599,7 +669,6 @@ async function interceptFetch(
       s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
     }
 
-    // Cleanup
     unregisterActiveRequest(requestId, uniqueId);
 
     return response;

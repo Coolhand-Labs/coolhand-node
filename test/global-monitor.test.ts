@@ -10,6 +10,7 @@ jest.mock('../src/services/LoggingService');
 
 describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
+  let underlyingFetchMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -29,6 +30,7 @@ describe('Global Monitor', () => {
       matchesAPIPatternSync: jest.fn(),
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn(),
+      sanitizeURL: jest.fn(),
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(5),
@@ -44,8 +46,9 @@ describe('Global Monitor', () => {
     (PatternMatchingService as jest.MockedClass<typeof PatternMatchingService>).mockImplementation(() => mockPatternMatchingService);
     (LoggingService as jest.MockedClass<typeof LoggingService>).mockImplementation(() => mockLoggingService);
 
-    // Mock sanitizeHeaders to return headers as-is
+    // Mock sanitizeHeaders and sanitizeURL to pass through as-is
     mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers) => ({ ...headers }));
+    mockPatternMatchingService.sanitizeURL.mockImplementation((url: string) => url);
 
     // Mock Object property descriptors for patching
     jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({
@@ -68,6 +71,9 @@ describe('Global Monitor', () => {
         text: () => Promise.resolve('{"result": "success"}')
       })
     });
+
+    // Capture reference before patching so tests can spy on originalFetch calls
+    underlyingFetchMock = globalThis.fetch as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -371,6 +377,194 @@ describe('Global Monitor', () => {
 
       // Verify the configuration was accepted
       expect(config.patternsFile).toBe('./custom-patterns.json');
+    });
+  });
+
+  describe('Deduplication', () => {
+    const mockPattern = {
+      pattern: { name: 'OpenAI', domains: ['api.openai.com'] },
+      matchType: 'domain' as const,
+      matchValue: 'api.openai.com'
+    };
+
+    beforeEach(async () => {
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockPattern);
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => ({ ...headers }));
+    });
+
+    it('should intercept all concurrent POST requests to the same URL', async () => {
+      await Promise.all([
+        globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{"prompt":"a"}' }),
+        globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{"prompt":"b"}' }),
+        globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{"prompt":"c"}' }),
+      ]);
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(3);
+    });
+
+    it('should deduplicate concurrent GET requests to the same URL', async () => {
+      await Promise.all([
+        globalThis.fetch('https://api.openai.com/v1/models'),
+        globalThis.fetch('https://api.openai.com/v1/models'),
+      ]);
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+
+    it('should intercept all concurrent PUT requests to the same URL', async () => {
+      await Promise.all([
+        globalThis.fetch('https://api.openai.com/v1/thread', { method: 'PUT', body: '{"a":1}' }),
+        globalThis.fetch('https://api.openai.com/v1/thread', { method: 'PUT', body: '{"b":2}' }),
+      ]);
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(2);
+    });
+
+    it('should intercept all concurrent POST calls when url is a Request object', async () => {
+      const url = 'https://api.openai.com/v1/chat/completions';
+      await Promise.all([
+        globalThis.fetch(new Request(url, { method: 'POST', body: '{"prompt":"a"}' })),
+        globalThis.fetch(new Request(url, { method: 'POST', body: '{"prompt":"b"}' })),
+      ]);
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(2);
+    });
+
+    it('should log Request object URL, method, headers, and body', async () => {
+      const url = 'https://api.openai.com/v1/chat/completions';
+
+      await globalThis.fetch(new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer token' },
+        body: '{"prompt":"a"}'
+      }));
+
+      expect(mockPatternMatchingService.matchesAPIPatternFromURL).toHaveBeenCalledWith(url);
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          url,
+          headers: expect.objectContaining({ authorization: 'Bearer token' }),
+          request_body: { prompt: 'a' }
+        }),
+        mockPattern,
+        'global-monitoring'
+      );
+    });
+
+    it('logs only init headers when fetch(Request, { headers }) is called', async () => {
+      const request = new Request('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'x-stale': 'drop-me', authorization: 'Bearer old' },
+        body: '{}'
+      });
+
+      await globalThis.fetch(request, { headers: { authorization: 'Bearer new' } });
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.headers).toMatchObject({ authorization: 'Bearer new' });
+      expect(callData.headers).not.toHaveProperty('x-stale');
+    });
+
+    it('falls back to Request headers when no init.headers is provided', async () => {
+      const request = new Request('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'x-custom': 'keep-me' },
+        body: '{}'
+      });
+
+      await globalThis.fetch(request);
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.headers).toHaveProperty('x-custom', 'keep-me');
+    });
+
+    it('sanitizes query-param secrets from the logged URL', async () => {
+      const rawUrl = 'https://api.openai.com/v1/chat/completions?key=secret123';
+      const cleanUrl = 'https://api.openai.com/v1/chat/completions?key=REDACTED';
+      mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
+
+      await globalThis.fetch(rawUrl, { method: 'POST', body: '{}' });
+
+      expect(mockPatternMatchingService.sanitizeURL).toHaveBeenCalledWith(rawUrl);
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.url).toBe(cleanUrl);
+    });
+
+    it('logs the empty init body when fetch(Request, { body: "" }) is called, not the original Request body', async () => {
+      const request = new Request('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        body: '{"original":"body"}',
+      });
+
+      await globalThis.fetch(request, { body: '' });
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.request_body).toBeNull();
+    });
+
+    it('propagates a fetch rejection that occurs while body capture is still pending', async () => {
+      const fetchError = new Error('network failure');
+      underlyingFetchMock.mockRejectedValueOnce(fetchError);
+
+      const slowReq = {
+        url: 'https://api.openai.com/v1/chat/completions',
+        method: 'POST',
+        headers: new Headers(),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockImplementation(async () => {
+            await Promise.resolve(); // yield so the fetch rejection fires first
+            return '{"prompt":"test"}';
+          })
+        })
+      };
+
+      await expect(globalThis.fetch(slowReq as any)).rejects.toThrow('network failure');
+      expect(mockLoggingService.logRequestToAPI).not.toHaveBeenCalled();
+    });
+
+    it('fires originalFetch before awaiting a slow Request body', async () => {
+      const events: string[] = [];
+
+      underlyingFetchMock.mockImplementationOnce(async () => {
+        events.push('fetch-called');
+        return {
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          clone: () => ({ text: () => Promise.resolve('{}') })
+        };
+      });
+
+      const slowReq = {
+        url: 'https://api.openai.com/v1/chat/completions',
+        method: 'POST',
+        headers: new Headers(),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockImplementation(async () => {
+            await Promise.resolve(); // one microtask — yields after getFetchRequestBody suspends
+            events.push('body-resolved');
+            return '{"prompt":"slow"}';
+          })
+        })
+      };
+
+      await globalThis.fetch(slowReq as any);
+
+      expect(events).toEqual(['fetch-called', 'body-resolved']);
+    });
+
+    it('should handle fetch calls when Request is not globally defined', async () => {
+      const originalRequest = (globalThis as any).Request;
+      delete (globalThis as any).Request;
+
+      try {
+        await globalThis.fetch('https://api.openai.com/v1/models');
+      } finally {
+        (globalThis as any).Request = originalRequest;
+      }
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
     });
   });
 });
