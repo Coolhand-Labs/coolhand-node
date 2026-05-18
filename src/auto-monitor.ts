@@ -37,6 +37,10 @@ if (apiKey) {
   // Async initialization wrapped in IIFE
   (async () => {
     try {
+      if (isGlobalMonitoringActive()) {
+        return;
+      }
+
       if (!silent) {
         console.log('🔧 Auto-initializing global monitoring...');
       }
