@@ -243,6 +243,7 @@ const feedback = await coolhand.createFeedback({
 | `debug` | boolean | `false` | Enable verbose logging (endpoint URL and payload size logged before each call) |
 | `dryRun` | boolean | `false` | Skip all API submissions — no data is sent to Coolhand |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+| `excludeApiPatterns` | string[] | `[]` | Glob patterns for endpoints to exclude from monitoring (e.g. health checks). |
 | `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
 
 ### Environment Variables
@@ -439,7 +440,7 @@ The monitor handles errors gracefully:
 
 - API keys in request headers are automatically redacted
 - No sensitive data is exposed in logs
-- Debug mode prevents data from being sent to external servers
+- Dry-run mode (`dryRun: true`) prevents any data from being sent to external servers
 
 ## Documentation
 
