@@ -2,7 +2,7 @@ import { Coolhand } from '../src/index';
 import { LoggingService } from '../src/services/LoggingService';
 import { FeedbackService } from '../src/services/FeedbackService';
 import { CoolhandCallData } from '../src/types';
-import { _resetGlobalState } from '../src/global-monitor';
+import { _resetGlobalState, initializeGlobalMonitoring } from '../src/global-monitor';
 
 const fakeCallData: CoolhandCallData = {
   id: 1,
@@ -122,6 +122,51 @@ describe('baseUrl configuration', () => {
         silent: true,
         baseUrl: 'http://127.0.0.1.evil.com'
       })).toThrow('baseUrl must use https://');
+    });
+  });
+
+  describe('deprecated environment option', () => {
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      _resetGlobalState();
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    describe('Coolhand constructor', () => {
+      it("emits only the 'local' sentence when environment: 'local' is passed", () => {
+        new Coolhand({ apiKey: 'test-key', silent: true, environment: 'local' });
+        const msg = warnSpy.mock.calls[0][0] as string;
+        expect(msg).toContain("environment: 'local'");
+        expect(msg).not.toContain("environment: 'production'");
+      });
+
+      it("emits only the 'production' sentence when environment: 'production' is passed", () => {
+        new Coolhand({ apiKey: 'test-key', silent: true, environment: 'production' });
+        const msg = warnSpy.mock.calls[0][0] as string;
+        expect(msg).toContain("environment: 'production'");
+        expect(msg).not.toContain("environment: 'local'");
+      });
+    });
+
+    describe('initializeGlobalMonitoring', () => {
+      it("emits only the 'local' sentence when environment: 'local' is passed", async () => {
+        await initializeGlobalMonitoring({ apiKey: 'test-key', silent: true, environment: 'local' });
+        const msg = warnSpy.mock.calls[0][0] as string;
+        expect(msg).toContain("environment: 'local'");
+        expect(msg).not.toContain("environment: 'production'");
+      });
+
+      it("emits only the 'production' sentence when environment: 'production' is passed", async () => {
+        await initializeGlobalMonitoring({ apiKey: 'test-key', silent: true, environment: 'production' });
+        const msg = warnSpy.mock.calls[0][0] as string;
+        expect(msg).toContain("environment: 'production'");
+        expect(msg).not.toContain("environment: 'local'");
+      });
     });
   });
 

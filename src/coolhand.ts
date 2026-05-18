@@ -23,15 +23,19 @@ export class Coolhand {
     }
 
     // TODO: remove after v1.x.x — backward-compat shim for deprecated `environment` option
-    if (options.environment !== undefined) {
+    if (options.environment === 'local') {
       console.warn(
-        '[coolhand-node] DEPRECATION WARNING: The `environment` option was removed in v0.4.0. ' +
-        "Use `baseUrl: 'http://localhost:3000'` instead of `environment: 'local'`. " +
-        'Remove `environment: \'production\'` — the default endpoint is unchanged.'
+        "[coolhand-node] DEPRECATION WARNING: The `environment` option was removed in v0.4.0. " +
+        "Use `baseUrl: 'http://localhost:3000'` instead of `environment: 'local'`."
       );
-      if (options.environment === 'local' && options.baseUrl === undefined) {
+      if (options.baseUrl === undefined) {
         options = { ...options, baseUrl: 'http://localhost:3000' };
       }
+    } else if (options.environment === 'production') {
+      console.warn(
+        "[coolhand-node] DEPRECATION WARNING: The `environment` option was removed in v0.4.0. " +
+        "Remove `environment: 'production'` — the default endpoint is unchanged."
+      );
     }
 
     // Initialize services
