@@ -1,6 +1,6 @@
 # Coolhand Node.js Monitor
 
-[![npm version](https://badge.fury.io/js/coolhand.svg)](https://badge.fury.io/js/coolhand)
+[![npm version](https://badge.fury.io/js/coolhand-node.svg)](https://badge.fury.io/js/coolhand-node)
 
 Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, and more) to the Coolhand analytics platform.
 
