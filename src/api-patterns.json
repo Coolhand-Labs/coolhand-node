@@ -4,35 +4,31 @@
       "name": "OpenAI",
       "domains": ["openai.com", "api.openai.com"],
       "paths": ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"],
-      "headers": {
-        "authorization": "[REDACTED]",
-        "openai-api-key": "[REDACTED]"
-      }
+      "headers": { "authorization": "[REDACTED]", "openai-api-key": "[REDACTED]" }
     },
     {
       "name": "Anthropic",
       "domains": ["api.anthropic.com"],
       "paths": ["/v1/messages", "/v1/complete"],
-      "headers": {
-        "x-api-key": "[REDACTED]"
-      }
+      "headers": { "x-api-key": "[REDACTED]" }
     },
     {
       "name": "Google AI",
       "domains": ["generativelanguage.googleapis.com"],
       "paths": ["/v1/models", "/v1beta/models", ":generateContent", ":streamGenerateContent", ":countTokens", ":embedContent"],
-      "headers": {
-        "authorization": "[REDACTED]",
-        "x-goog-api-key": "[REDACTED]"
-      }
+      "headers": { "authorization": "[REDACTED]", "x-goog-api-key": "[REDACTED]" }
     },
     {
       "name": "GitHub Models",
       "domains": ["models.github.ai", "models.inference.ai.azure.com"],
       "paths": ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"],
-      "headers": {
-        "authorization": "[REDACTED]"
-      }
+      "headers": { "authorization": "[REDACTED]" }
+    },
+    {
+      "name": "OpenRouter",
+      "domains": ["openrouter.ai"],
+      "paths": ["/api/v1/chat/completions", "/api/v1/completions", "/api/v1/embeddings"],
+      "headers": { "authorization": "[REDACTED]" }
     }
   ]
 }
