@@ -177,6 +177,32 @@ describe('FeedbackService', () => {
       expect(capturedFeedback.revised_output).toBe('Revised output');
     });
 
+    it('sends is_from when provided', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, like: true }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, like: true }))
+        };
+      });
+
+      const service = new FeedbackService({ apiKey: 'test-api-key', silent: true });
+
+      const feedback: LLMRequestLogFeedback = {
+        llm_request_log_id: 456,
+        explanation: 'Capability missing',
+        is_from: 'agent'
+      };
+
+      await service.createFeedback(feedback);
+
+      expect(capturedRequestBody.llm_request_log_feedback.is_from).toBe('agent');
+    });
+
     it('should set correct headers', async () => {
       let capturedHeaders: any;
 
