@@ -177,7 +177,7 @@ describe('FeedbackService', () => {
       expect(capturedFeedback.revised_output).toBe('Revised output');
     });
 
-    it('sends is_from when provided', async () => {
+    it('sends creator_type when provided', async () => {
       let capturedRequestBody: any;
 
       (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
@@ -195,12 +195,12 @@ describe('FeedbackService', () => {
       const feedback: LLMRequestLogFeedback = {
         llm_request_log_id: 456,
         explanation: 'Capability missing',
-        is_from: 'agent'
+        creator_type: 'agent'
       };
 
       await service.createFeedback(feedback);
 
-      expect(capturedRequestBody.llm_request_log_feedback.is_from).toBe('agent');
+      expect(capturedRequestBody.llm_request_log_feedback.creator_type).toBe('agent');
     });
 
     it('should set correct headers', async () => {
