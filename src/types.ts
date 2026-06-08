@@ -71,6 +71,8 @@ export interface LLMRequestLogFeedback {
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
+  /** What kind of creator supplied the feedback. Defaults to "unknown" server-side when omitted. */
+  creator_type?: "human" | "agent" | "unknown";
   creator_unique_id?: string;
   workload_hashid?: string;
   explanation?: string;
@@ -91,6 +93,8 @@ export interface LLMRequestLogFeedbackResponse {
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
+  /** What kind of creator submitted the feedback: "human", "agent", or "unknown". */
+  creator_type?: "human" | "agent" | "unknown";
   creator_unique_id?: string;
   workload_hashid?: string;
   explanation?: string;
