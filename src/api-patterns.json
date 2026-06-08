@@ -33,6 +33,27 @@
       "headers": {
         "authorization": "[REDACTED]"
       }
+    },
+    {
+      "name": "Vertex AI",
+      "domains": ["aiplatform.googleapis.com"],
+      "paths": [":generateContent", ":streamGenerateContent", ":embedContent", ":predict", "/endpoints/openapi/"],
+      "headers": {
+        "authorization": "[REDACTED]",
+        "x-goog-api-key": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Cloudflare AI Gateway",
+      "domains": ["gateway.ai.cloudflare.com"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]",
+        "cf-aig-authorization": "[REDACTED]",
+        "x-api-key": "[REDACTED]",
+        "openai-api-key": "[REDACTED]",
+        "x-goog-api-key": "[REDACTED]"
+      }
     }
   ]
 }

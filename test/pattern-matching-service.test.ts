@@ -113,8 +113,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.any(String)
       );
-      // Should fallback to default Edge runtime patterns (4 patterns)
-      expect(service.getPatternsCountSync()).toBe(4);
+      // Should fallback to default Edge runtime patterns (6 patterns)
+      expect(service.getPatternsCountSync()).toBe(6);
     });
 
     it('should handle file system errors', () => {
@@ -128,8 +128,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         'File system error'
       );
-      // Should fallback to default Edge runtime patterns (4 patterns)
-      expect(service.getPatternsCountSync()).toBe(4);
+      // Should fallback to default Edge runtime patterns (6 patterns)
+      expect(service.getPatternsCountSync()).toBe(6);
     });
   });
 
@@ -1039,6 +1039,150 @@ describe('PatternMatchingService', () => {
       };
 
       const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+  });
+
+  describe('Vertex AI Pattern Matching', () => {
+    const mockPatternsWithVertex = {
+      patterns: [
+        ...mockPatterns.patterns,
+        {
+          name: 'Vertex AI',
+          domains: ['aiplatform.googleapis.com'],
+          paths: [':generateContent', ':streamGenerateContent', ':embedContent', ':predict', '/endpoints/openapi/'],
+          headers: { authorization: '[REDACTED]' }
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithVertex));
+      service = new PatternMatchingService();
+    });
+
+    it('should match Vertex AI generateContent URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-pro:generateContent'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Vertex AI' }),
+        matchType: 'domain',
+        matchValue: 'aiplatform.googleapis.com'
+      });
+    });
+
+    it('should match Vertex AI OpenAI-compatible endpoint by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/endpoints/openapi/chat/completions'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Vertex AI' }),
+        matchType: 'domain',
+        matchValue: 'aiplatform.googleapis.com'
+      });
+    });
+
+    it('should redact x-goog-api-key header for Vertex AI Express Mode', () => {
+      const pattern: CoolhandAPIPattern = {
+        name: 'Vertex AI',
+        domains: ['aiplatform.googleapis.com'],
+        headers: {
+          'authorization': '[REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
+        }
+      };
+      const headers = {
+        'x-goog-api-key': 'AIzaSyVertexSecret',
+        'content-type': 'application/json'
+      };
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+
+    it('should not confuse Vertex AI with Google AI (generativelanguage domain)', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Google AI' }),
+      });
+    });
+  });
+
+  describe('Cloudflare AI Gateway Pattern Matching', () => {
+    const mockPatternsWithCloudflare = {
+      patterns: [
+        ...mockPatterns.patterns,
+        {
+          name: 'Cloudflare AI Gateway',
+          domains: ['gateway.ai.cloudflare.com'],
+          paths: [],
+          headers: {
+            authorization: '[REDACTED]',
+            'cf-aig-authorization': '[REDACTED]',
+            'x-api-key': '[REDACTED]',
+            'openai-api-key': '[REDACTED]',
+            'x-goog-api-key': '[REDACTED]'
+          }
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithCloudflare));
+      service = new PatternMatchingService();
+    });
+
+    it('should match Cloudflare AI Gateway URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://gateway.ai.cloudflare.com/v1/acct123/gw1/openai/chat/completions'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Cloudflare AI Gateway' }),
+        matchType: 'domain',
+        matchValue: 'gateway.ai.cloudflare.com'
+      });
+    });
+
+    it('should match Cloudflare AI Gateway proxying Anthropic', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://gateway.ai.cloudflare.com/v1/acct123/gw1/anthropic/v1/messages'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Cloudflare AI Gateway' }),
+        matchType: 'domain',
+        matchValue: 'gateway.ai.cloudflare.com'
+      });
+    });
+
+    it('should redact proxied-provider auth headers via Cloudflare pattern', () => {
+      const pattern: CoolhandAPIPattern = {
+        name: 'Cloudflare AI Gateway',
+        domains: ['gateway.ai.cloudflare.com'],
+        headers: {
+          authorization: '[REDACTED]',
+          'cf-aig-authorization': '[REDACTED]',
+          'x-api-key': '[REDACTED]',
+          'openai-api-key': '[REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
+        }
+      };
+      const headers = {
+        'cf-aig-authorization': 'Bearer gateway-secret',
+        'x-api-key': 'sk-ant-secret',
+        'openai-api-key': 'sk-openai-secret',
+        'x-goog-api-key': 'AIzaSySecret',
+        'content-type': 'application/json'
+      };
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['cf-aig-authorization']).toBe('[REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['openai-api-key']).toBe('[REDACTED]');
       expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
       expect(sanitized['content-type']).toBe('application/json');
     });
