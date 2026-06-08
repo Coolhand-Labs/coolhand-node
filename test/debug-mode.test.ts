@@ -156,7 +156,7 @@ describe('Debug/DryRun Mode', () => {
         dryRun: true
       });
 
-      await expect(loggingService.logRequestToAPI(sampleCallData)).resolves.toBeUndefined();
+      await expect(loggingService.logRequestToAPI(sampleCallData)).resolves.toBeNull();
     });
 
     it('should log dry run messages when dryRun=true and not silent', async () => {
