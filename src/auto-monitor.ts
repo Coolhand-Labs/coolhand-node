@@ -43,30 +43,34 @@ if (apiKey) {
     // during module evaluation, before any sibling static imports can cache the original.
     // In native ESM builds only fetch is patched here; loadAndPatchNodeModulesIfNeeded
     // completes the http/https patching asynchronously below.
-    initGlobalMonitoringCore({
-      apiKey,
-      silent,
-      patternsFile,
-      debug,
-      dryRun,
-      baseUrl
-    });
+    try {
+      initGlobalMonitoringCore({
+        apiKey,
+        silent,
+        patternsFile,
+        debug,
+        dryRun,
+        baseUrl
+      });
 
-    if (!silent) {
-      console.log('✅ Global monitoring initialized successfully');
-      console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
+      if (!silent) {
+        console.log('✅ Global monitoring initialized successfully');
+        console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
 
-      if (dryRun) {
-        console.log('🚫 Dry run mode: ON (API calls will be skipped)');
+        if (dryRun) {
+          console.log('🚫 Dry run mode: ON (API calls will be skipped)');
+        }
+
+        if (debug) {
+          console.log('🔬 Debug mode: ON (verbose logging)');
+        }
+
+        if (patternsFile) {
+          console.log(`📁 Custom patterns file: ${patternsFile}`);
+        }
       }
-
-      if (debug) {
-        console.log('🔬 Debug mode: ON (verbose logging)');
-      }
-
-      if (patternsFile) {
-        console.log(`📁 Custom patterns file: ${patternsFile}`);
-      }
+    } catch (error) {
+      console.error('❌ Failed to initialize global monitoring:', (error as Error).message);
     }
   }
 
