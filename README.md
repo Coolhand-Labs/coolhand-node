@@ -56,6 +56,33 @@ import 'coolhand-node/auto-monitor';
 // NO code changes needed in your existing services!
 ```
 
+> **ESM + LangChain / OpenAI static imports:** `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module load time. In **CJS projects** (TypeScript compiling to CommonJS) `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously and everything works automatically. In **native ESM projects** (`"type": "module"`) the patch cannot be applied synchronously from a sibling import — use one of the approaches below.
+>
+> **Recommended — `--import` flag (Node ≥ 20.6, no code changes):**
+> ```bash
+> # CLI
+> node --import 'coolhand-node/auto-monitor' app.mjs
+>
+> # Via environment variable (Docker, CI, process managers)
+> NODE_OPTIONS="--import 'coolhand-node/auto-monitor'" node app.mjs
+> ```
+> ```json
+> { "scripts": { "start": "node --import 'coolhand-node/auto-monitor' dist/app.mjs" } }
+> ```
+> `--import` loads `auto-monitor` before the application's module graph is evaluated, so `https.request` is patched before any library can cache it — no refactoring needed.
+>
+> **Fallback — dynamic import (Node < 20.6):**
+> ```js
+> import { initializeGlobalMonitoring } from 'coolhand-node';
+>
+> await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY });
+>
+> // Dynamic import runs after https.request is patched
+> const { ChatOpenAI } = await import('@langchain/openai');
+> const model = new ChatOpenAI({ model: 'gpt-4o' });
+> await model.invoke('hello'); // ✅ intercepted
+> ```
+
 **Environment Variables:**
 ```bash
 # .env
@@ -112,6 +139,8 @@ import { initializeGlobalMonitoring } from 'coolhand-node';
 // or
 import 'coolhand-node/auto-monitor';
 ```
+
+> **LangChain / OpenAI users:** See the [ESM static import caveat](#option-1-universal-global-monitoring-recommended) above — use `await initializeGlobalMonitoring(...)` followed by a dynamic `await import('@langchain/openai')` to ensure the patch is applied before the library loads.
 
 ### CommonJS Projects
 

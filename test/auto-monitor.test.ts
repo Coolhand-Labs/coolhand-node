@@ -11,7 +11,7 @@ describe('auto-monitor', () => {
   });
 
   function loadIsolated(isActive: boolean, apiKey?: string): { initMock: jest.Mock; isActiveMock: jest.Mock } {
-    const initMock = jest.fn().mockResolvedValue(undefined);
+    const initMock = jest.fn(); // initGlobalMonitoringCore is synchronous
     const isActiveMock = jest.fn().mockReturnValue(isActive);
 
     if (apiKey !== undefined) {
@@ -23,7 +23,9 @@ describe('auto-monitor', () => {
     jest.isolateModules(() => {
       jest.doMock('../src/global-monitor.js', () => ({
         isGlobalMonitoringActive: isActiveMock,
-        initializeGlobalMonitoring: initMock,
+        initializeGlobalMonitoring: jest.fn().mockResolvedValue(undefined),
+        initGlobalMonitoringCore: initMock,
+        loadAndPatchNodeModulesIfNeeded: jest.fn().mockResolvedValue(undefined),
         getGlobalStats: jest.fn(),
       }));
       require('../src/auto-monitor');
