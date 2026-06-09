@@ -119,6 +119,25 @@ export class PatternMatchingService {
         headers: {
           'authorization': 'Bearer [REDACTED]'
         }
+      },
+      {
+        name: 'Vertex AI',
+        domains: ['aiplatform.googleapis.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Cloudflare AI Gateway',
+        domains: ['gateway.ai.cloudflare.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]',
+          'cf-aig-authorization': '[REDACTED]',
+          'x-api-key': '[REDACTED]',
+          'openai-api-key': '[REDACTED]',
+          'x-goog-api-key': '[REDACTED]'
+        }
       }
     ];
     if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`); }

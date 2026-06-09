@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-08
+
+### ✨ New Features
+- **Vertex AI support** — `aiplatform.googleapis.com` is now included in the default monitored endpoints. Covers native Gemini surfaces (`:generateContent`, `:streamGenerateContent`, `:embedContent`, `:predict`) and the OpenAI-compatible endpoint (`/endpoints/openapi/`). Redacts both `authorization` and `x-goog-api-key` (Express Mode / API-key auth).
+- **Cloudflare AI Gateway support** — `gateway.ai.cloudflare.com` is now monitored by default. Redacts `authorization`, `cf-aig-authorization` (Authenticated Gateway), `x-api-key`, `openai-api-key`, and `x-goog-api-key` so proxied-provider credentials are not logged regardless of upstream provider.
+- **`logRequest()` public method** — `coolhand.logRequest(callData, { collector? })` manually submits a captured LLM request/response to the Coolhand API. Intended for offline tools (e.g. `coolhand-cli capture-sessions`) that save session turns locally and submit them outside of automatic monitoring. Returns `CoolhandLogResponse | null`.
+- **`CoolhandLogResponse` type** — exported from `coolhand-node`; describes the API response from a log submission (`id`, `source_api`, `llm_provider_unique_id`, `warnings`, etc.).
+- **`creator_type` field in feedback** — `createFeedback()` now accepts `creator_type: 'human' | 'agent' | 'unknown'` to indicate who or what submitted the feedback. Defaults to `"unknown"` server-side when omitted.
+
+### ⚠️ Upgrade Notes
+- **`debug: true` no longer suppresses API calls** — `debug: true` is verbose-logging only; it does not prevent data submission. Use `dryRun: true` to suppress all submissions. If you had `debug: true` in production as an accidental "don't submit" flag, **you will start seeing submissions after upgrading**. A runtime deprecation warning fires at construction time when `debug: true` is passed without `dryRun: true` to help catch this.
+
+### 🐛 Bug Fixes
+- **npm badge link** — README badge now correctly links to the `coolhand-node` package on npm.
+
+### 🔧 Internal
+- Removed stale v0.2.0 release artifacts (`RELEASE_NOTES_v0.2.0.md`, `RELEASING.md`).
+
 ## [0.6.0] - 2026-05-18
 
 ### ✨ New Features
