@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -82,6 +82,27 @@ export class Coolhand {
   }
 
   // Public API methods
+
+  /**
+   * Manually submit a single captured LLM request/response to Coolhand.
+   *
+   * Use this for logs that did not flow through automatic monitoring — for example the
+   * coolhand-cli `capture-sessions` tool submitting locally-saved Claude Code / Codex
+   * session turns.
+   *
+   * @param rawRequest The captured request/response payload.
+   * @param options Optional settings. `collector` identifies the submission source and
+   *   overrides the default SDK collector string.
+   * @returns Promise resolving to the created log response, or null if submission failed
+   *   or if the request was sent via the HTTPS fallback (Node.js < 18, where the response
+   *   body is not parsed).
+   */
+  public async logRequest(
+    rawRequest: CoolhandCallData,
+    options?: { collector?: string }
+  ): Promise<CoolhandLogResponse | null> {
+    return this.loggingService.logRequestToAPI(rawRequest, undefined, 'manual', options?.collector);
+  }
 
   /**
    * Create feedback for an LLM request log
