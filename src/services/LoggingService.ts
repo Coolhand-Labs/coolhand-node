@@ -16,7 +16,7 @@ export class LoggingService extends BaseService {
     collector?: string
   ): Promise<CoolhandLogResponse | null> {
     // An explicit collector string (e.g. from coolhand-cli) overrides the SDK-derived one.
-    const logData = collector
+    const logData = collector !== undefined
       ? { raw_request: callData, collector }
       : this.addCollectorToData({ raw_request: callData }, collectionMethod);
 

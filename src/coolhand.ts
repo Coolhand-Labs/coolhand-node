@@ -93,7 +93,9 @@ export class Coolhand {
    * @param rawRequest The captured request/response payload.
    * @param options Optional settings. `collector` identifies the submission source and
    *   overrides the default SDK collector string.
-   * @returns Promise resolving to the created log response, or null if submission failed.
+   * @returns Promise resolving to the created log response, or null if submission failed
+   *   or if the request was sent via the HTTPS fallback (Node.js < 18, where the response
+   *   body is not parsed).
    */
   public async logRequest(
     rawRequest: CoolhandCallData,
