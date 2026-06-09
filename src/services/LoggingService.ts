@@ -1,4 +1,4 @@
-import { CoolhandCallData, CoolhandLogPayload, CoolhandMatchedPattern } from '../types';
+import { CoolhandCallData, CoolhandLogPayload, CoolhandLogResponse, CoolhandMatchedPattern } from '../types';
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
@@ -9,8 +9,16 @@ export class LoggingService extends BaseService {
     super(config, '/api/v2/llm_request_logs');
   }
 
-  public async logRequestToAPI(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern, collectionMethod?: CollectionMethod): Promise<void> {
-    const logData = this.addCollectorToData({ raw_request: callData }, collectionMethod);
+  public async logRequestToAPI(
+    callData: CoolhandCallData,
+    matchedPattern?: CoolhandMatchedPattern,
+    collectionMethod?: CollectionMethod,
+    collector?: string
+  ): Promise<CoolhandLogResponse | null> {
+    // An explicit collector string (e.g. from coolhand-cli) overrides the SDK-derived one.
+    const logData = collector !== undefined
+      ? { raw_request: callData, collector }
+      : this.addCollectorToData({ raw_request: callData }, collectionMethod);
 
     const payload: CoolhandLogPayload = {
       llm_request_log: logData
@@ -18,12 +26,14 @@ export class LoggingService extends BaseService {
 
     this.logRequestInfo(callData, matchedPattern);
 
-    await this.sendRequest(
+    const result = await this.sendRequest<CoolhandLogResponse>(
       payload,
       `✅ Successfully logged to API with ID for call #${callData.id}`
     );
 
     this.logSeparator();
+
+    return result;
   }
 
   private logRequestInfo(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): void {

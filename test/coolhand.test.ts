@@ -97,4 +97,76 @@ describe('Coolhand Node Monitor', () => {
       expect(typeof monitor.createFeedback).toBe('function');
     });
   });
+
+  describe('logRequest', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    function buildRawRequest() {
+      return {
+        id: 1,
+        timestamp: '2026-06-02T00:00:00Z',
+        method: 'POST',
+        url: 'claudecode://session/abc/req_123',
+        headers: {},
+        request_body: { model: 'claude-opus-4-8', messages: [{ role: 'user', content: 'Hi' }] },
+        response_body: {
+          id: 'req_123',
+          model: 'claude-opus-4-8',
+          content: [{ type: 'text', text: 'Hello' }],
+          usage: { input_tokens: 5, output_tokens: 2 }
+        },
+        response_headers: null,
+        status_code: 200,
+        protocol: 'claudecode'
+      };
+    }
+
+    function mockFetch(capture: { body?: any }, response: any) {
+      (global as any).fetch = jest.fn().mockImplementation(async (_input: any, options: any) => {
+        capture.body = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue(response),
+          text: jest.fn().mockResolvedValue('')
+        };
+      });
+    }
+
+    it('submits the raw request and returns the API response', async () => {
+      const capture: { body?: any } = {};
+      mockFetch(capture, { id: 42, source_api: 'claude_code', warnings: [] });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      const result = await monitor.logRequest(buildRawRequest() as any);
+
+      expect(capture.body.llm_request_log.raw_request.url).toBe('claudecode://session/abc/req_123');
+      expect(result).toEqual({ id: 42, source_api: 'claude_code', warnings: [] });
+    });
+
+    it('uses an explicit collector when provided', async () => {
+      const capture: { body?: any } = {};
+      mockFetch(capture, { id: 1 });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      await monitor.logRequest(buildRawRequest() as any, { collector: 'coolhand-cli/claude-code' });
+
+      expect(capture.body.llm_request_log.collector).toBe('coolhand-cli/claude-code');
+    });
+
+    it('defaults the collector to the SDK string when none is given', async () => {
+      const capture: { body?: any } = {};
+      mockFetch(capture, { id: 1 });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      await monitor.logRequest(buildRawRequest() as any);
+
+      expect(capture.body.llm_request_log.collector).toContain('coolhand-node');
+      expect(capture.body.llm_request_log.collector).toContain('manual');
+    });
+  });
 });

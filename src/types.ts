@@ -47,6 +47,15 @@ export interface CoolhandLogPayload {
   };
 }
 
+export interface CoolhandLogResponse {
+  id?: number;
+  source_api?: string | null;
+  source_api_result?: string | null;
+  llm_provider_unique_id?: string | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
 export interface CoolhandAPIPattern {
   id?: string;
   name: string;
