@@ -198,13 +198,11 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
 export async function loadAndPatchNodeModulesIfNeeded(): Promise<void> {
   if (https !== null) { return; } // already loaded synchronously
   if (isEdgeRuntime()) { return; }
-  try {
-    const hasNodeModules = await loadNodeModules();
-    if (hasNodeModules) {
-      patchHTTPS();
-      patchHTTP();
-    }
-  } catch { /* module loading unavailable in this environment */ }
+  const hasNodeModules = await loadNodeModules();
+  if (hasNodeModules) {
+    patchHTTPS();
+    patchHTTP();
+  }
 }
 
 /**
