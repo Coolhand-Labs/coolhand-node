@@ -168,29 +168,6 @@ async function startServer() {
 
 See the [framework guides](#framework-integration) for complete examples.
 
-## Manual Submission API
-
-Submit a captured LLM request/response that did not flow through automatic monitoring — for example, a CLI tool replaying locally-saved session turns.
-
-```typescript
-import { Coolhand } from 'coolhand-node';
-
-const coolhand = new Coolhand({
-  apiKey: 'your-api-key'
-});
-
-const result = await coolhand.logRequest(rawRequest, {
-  collector: 'my-cli/1.0.0' // optional: overrides the default SDK collector string
-});
-
-// result is CoolhandLogResponse | null
-// null is returned on submission failure, in dry-run mode, or when using
-// the HTTPS fallback path (Node.js < 18, where the response body is not parsed)
-console.log(result?.id); // Coolhand log ID assigned by the API
-```
-
-`rawRequest` must be a `CoolhandCallData` object — the same shape that automatic monitoring captures internally (fields: `id`, `timestamp`, `method`, `url`, `headers`, `request_body`, `response_body`, `response_headers`, `status_code`, `protocol`).
-
 ## Feedback API
 
 Collect feedback on LLM responses to improve model performance.
@@ -470,6 +447,7 @@ The monitor handles errors gracefully:
 - **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks. (Well, some are more complete than others.)
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
+- **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
 
 ## Related Packages
 
