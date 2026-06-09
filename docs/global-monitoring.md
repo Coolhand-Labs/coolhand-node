@@ -452,32 +452,43 @@ initializeGlobalMonitoring({...});
 
 `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module evaluation time. Whether this is an issue depends on your module system:
 
-**CJS projects** (TypeScript compiling to CommonJS, or plain `require()` style): `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously during module evaluation — calls are intercepted correctly with no extra steps required.
+**CJS projects** (TypeScript compiling to CommonJS): `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously — calls are intercepted with no extra steps.
 
-**Native ESM projects** (`"type": "module"`, static `import` syntax): all static `import` statements are hoisted and evaluated before any module body runs. Because the synchronous `createRequire` accessor is unavailable in native ESM, `auto-monitor` cannot patch `https.request` synchronously — libraries that cache `https.request` at import time will not be intercepted.
+**Native ESM projects** (`"type": "module"`): static imports are hoisted and evaluated before any module body runs, so a sibling `import 'coolhand-node/auto-monitor'` cannot patch `https.request` in time.
 
 ```javascript
-// ❌ Broken in native ESM — @langchain/openai captures https.request before the patch
+// ❌ Broken in native ESM
 import 'coolhand-node/auto-monitor';
-import { ChatOpenAI } from '@langchain/openai';
-
-const model = new ChatOpenAI({ model: 'gpt-4o' });
-await model.invoke('hello'); // NOT intercepted
+import { ChatOpenAI } from '@langchain/openai'; // captures original https.request first
 ```
 
+**Recommended fix — `--import` flag (Node ≥ 20.6, no code changes):**
+
+`--import` runs `auto-monitor` outside the application module graph, before any library is loaded:
+
+```bash
+node --import 'coolhand-node/auto-monitor' app.mjs
+# or
+NODE_OPTIONS="--import 'coolhand-node/auto-monitor'" node app.mjs
+```
+
+```json
+{ "scripts": { "start": "node --import 'coolhand-node/auto-monitor' dist/app.mjs" } }
+```
+
+**Fallback — dynamic import (Node < 20.6):**
+
 ```javascript
-// ✅ Working in native ESM — await the patch first, then dynamically import the library
 import { initializeGlobalMonitoring } from 'coolhand-node';
 
 await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY });
 
-// Dynamic import runs after https.request is patched
-const { ChatOpenAI } = await import('@langchain/openai');
+const { ChatOpenAI } = await import('@langchain/openai'); // loads after patch
 const model = new ChatOpenAI({ model: 'gpt-4o' });
 await model.invoke('hello'); // ✅ intercepted
 ```
 
-This only affects libraries that cache `https.request` at import time (LangChain, direct `openai` SDK) in native ESM projects. All other interception (including `fetch`) works correctly in both module systems.
+This only affects libraries that cache `https.request` at import time in native ESM projects. All other interception (including `fetch`) works in both module systems.
 
 ### Debug Mode
 

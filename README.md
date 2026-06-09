@@ -56,8 +56,22 @@ import 'coolhand-node/auto-monitor';
 // NO code changes needed in your existing services!
 ```
 
-> **ESM + LangChain / OpenAI static imports:** `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module load time. In **CJS projects** (TypeScript compiling to CommonJS, `require()` style) `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously and everything works automatically. In **native ESM projects** (`"type": "module"`, static `import` syntax) the patch cannot be applied synchronously, so libraries that cache `https.request` at import time will not be intercepted. The workaround is to await the patch and then dynamically import the library:
+> **ESM + LangChain / OpenAI static imports:** `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module load time. In **CJS projects** (TypeScript compiling to CommonJS) `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously and everything works automatically. In **native ESM projects** (`"type": "module"`) the patch cannot be applied synchronously from a sibling import — use one of the approaches below.
 >
+> **Recommended — `--import` flag (Node ≥ 20.6, no code changes):**
+> ```bash
+> # CLI
+> node --import 'coolhand-node/auto-monitor' app.mjs
+>
+> # Via environment variable (Docker, CI, process managers)
+> NODE_OPTIONS="--import 'coolhand-node/auto-monitor'" node app.mjs
+> ```
+> ```json
+> { "scripts": { "start": "node --import 'coolhand-node/auto-monitor' dist/app.mjs" } }
+> ```
+> `--import` loads `auto-monitor` before the application's module graph is evaluated, so `https.request` is patched before any library can cache it — no refactoring needed.
+>
+> **Fallback — dynamic import (Node < 20.6):**
 > ```js
 > import { initializeGlobalMonitoring } from 'coolhand-node';
 >
