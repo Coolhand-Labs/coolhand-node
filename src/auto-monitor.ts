@@ -22,7 +22,7 @@
  * That's it! All AI API calls will now be automatically logged.
  */
 
-import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive } from './global-monitor.js';
+import { initializeGlobalMonitoring, getGlobalStats, isGlobalMonitoringActive, initGlobalMonitoringCore, loadAndPatchNodeModulesIfNeeded } from './global-monitor.js';
 
 // Auto-initialize if environment variables are present
 const apiKey = process.env.COOLHAND_API_KEY;
@@ -34,46 +34,47 @@ if (apiKey) {
   const dryRun = process.env.COOLHAND_DRY_RUN === 'true'; // Default to false unless explicitly true
   const baseUrl = process.env.COOLHAND_BASE_URL;
 
-  // Async initialization wrapped in IIFE
-  (async () => {
-    try {
-      if (isGlobalMonitoringActive()) {
-        return;
-      }
-
-      if (!silent) {
-        console.log('🔧 Auto-initializing global monitoring...');
-      }
-
-      await initializeGlobalMonitoring({
-        apiKey,
-        silent,
-        patternsFile,
-        debug,
-        dryRun,
-        baseUrl
-      });
-
-      if (!silent) {
-        console.log('✅ Global monitoring initialized successfully');
-        console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
-
-        if (dryRun) {
-          console.log('🚫 Dry run mode: ON (API calls will be skipped)');
-        }
-
-        if (debug) {
-          console.log('🔬 Debug mode: ON (verbose logging)');
-        }
-
-        if (patternsFile) {
-          console.log(`📁 Custom patterns file: ${patternsFile}`);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Failed to initialize global monitoring:', (error as Error).message);
+  if (!isGlobalMonitoringActive()) {
+    if (!silent) {
+      console.log('🔧 Auto-initializing global monitoring...');
     }
-  })();
+
+    // Synchronous initialization — in CJS builds this patches https.request immediately
+    // during module evaluation, before any sibling static imports can cache the original.
+    // In native ESM builds only fetch is patched here; loadAndPatchNodeModulesIfNeeded
+    // completes the http/https patching asynchronously below.
+    initGlobalMonitoringCore({
+      apiKey,
+      silent,
+      patternsFile,
+      debug,
+      dryRun,
+      baseUrl
+    });
+
+    if (!silent) {
+      console.log('✅ Global monitoring initialized successfully');
+      console.log(`📊 Silent mode: ${silent ? 'ON' : 'OFF'}`);
+
+      if (dryRun) {
+        console.log('🚫 Dry run mode: ON (API calls will be skipped)');
+      }
+
+      if (debug) {
+        console.log('🔬 Debug mode: ON (verbose logging)');
+      }
+
+      if (patternsFile) {
+        console.log(`📁 Custom patterns file: ${patternsFile}`);
+      }
+    }
+  }
+
+  // Async tail: loads http/https modules in native ESM builds where the synchronous
+  // createRequire path is unavailable. No-op in CJS (modules loaded synchronously above).
+  loadAndPatchNodeModulesIfNeeded().catch((error: Error) => {
+    console.error('❌ Failed to complete global monitoring initialization:', error.message);
+  });
 } else {
   // Only warn if not in production to avoid noise
   if (process.env.NODE_ENV !== 'production') {

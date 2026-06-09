@@ -25,6 +25,32 @@ const isEdgeRuntime = () => {
 let https: any = null;
 let http: any = null;
 
+// Available in CJS builds (and tsup's CJS shim); null in native ESM and Edge runtimes.
+// Using try/catch avoids a static top-level import of 'module' that would throw at
+// evaluation time in edge runtimes before isEdgeRuntime() can guard against it.
+let _createRequire: ((id: string) => any) | null = null;
+try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM or Edge */ }
+
+// Synchronous module loader — used by initGlobalMonitoringCore so patching happens
+// immediately when auto-monitor is imported in CJS builds.
+const loadNodeModulesSync = (): boolean => {
+  if (isEdgeRuntime()) {
+    console.warn('⚠️  Edge runtime detected - HTTP/HTTPS patching will be limited to fetch() only');
+    return false;
+  }
+  if (!_createRequire) { return false; } // native ESM — fall through to async path
+  try {
+    let baseUrl: string;
+    try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
+    const req = _createRequire(baseUrl);
+    https = req('https');
+    http = req('http');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Lazy load Node.js modules only when not in Edge runtime
 const loadNodeModules = async () => {
   if (isEdgeRuntime()) {
@@ -113,19 +139,17 @@ interface GlobalMonitorConfig {
 }
 
 /**
- * Initialize global monitoring - patches HTTP modules to monitor ALL outbound requests
- * This should be called once at the start of your application
+ * Synchronous core initialization — sets up services and applies patches immediately.
+ * In CJS builds (and TypeScript projects compiled to CJS) this patches https.request
+ * at module evaluation time, so static imports of libraries like @langchain/openai
+ * are intercepted correctly. In native ESM builds _createRequire is unavailable, so
+ * only fetch is patched here; call loadAndPatchNodeModulesIfNeeded() to finish.
  */
-export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): Promise<void> {
+export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
   const state = getState();
-
-  if (state.isGloballyPatched) {
-    log('🔄 Global monitoring already initialized, skipping...');
-    return;
-  }
+  if (state.isGloballyPatched) { return; }
 
   state.silent = config.silent !== false;
-
   let resolvedBaseUrl = config.baseUrl;
 
   // TODO: remove after v1.x.x — backward-compat shim for deprecated `environment` option
@@ -148,7 +172,6 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
     );
   }
 
-  // Initialize services
   state.globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent: state.silent });
   state.globalLoggingService = new LoggingService({
     apiKey: config.apiKey,
@@ -158,17 +181,46 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
     baseUrl: resolvedBaseUrl
   });
 
-  // Load Node.js modules if available
-  const hasNodeModules = await loadNodeModules();
-
-  // Patch modules based on runtime capabilities
+  const hasNodeModules = loadNodeModulesSync();
   if (hasNodeModules) {
     patchHTTPS();
     patchHTTP();
   }
-  patchFetch(); // Always available
-
+  patchFetch();
   state.isGloballyPatched = true;
+}
+
+/**
+ * Async completion step for native ESM builds where loadNodeModulesSync() cannot
+ * obtain createRequire. Loads http/https via dynamic import and applies patches.
+ * No-op if modules were already loaded by the synchronous path (CJS builds).
+ */
+export async function loadAndPatchNodeModulesIfNeeded(): Promise<void> {
+  if (https !== null) { return; } // already loaded synchronously
+  if (isEdgeRuntime()) { return; }
+  try {
+    const hasNodeModules = await loadNodeModules();
+    if (hasNodeModules) {
+      patchHTTPS();
+      patchHTTP();
+    }
+  } catch { /* module loading unavailable in this environment */ }
+}
+
+/**
+ * Initialize global monitoring - patches HTTP modules to monitor ALL outbound requests
+ * This should be called once at the start of your application
+ */
+export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): Promise<void> {
+  const state = getState();
+
+  if (state.isGloballyPatched) {
+    log('🔄 Global monitoring already initialized, skipping...');
+    return;
+  }
+
+  initGlobalMonitoringCore(config);
+  await loadAndPatchNodeModulesIfNeeded();
 
   if (!state.silent) {
     console.log('🌐 Global Coolhand monitoring initialized');
@@ -178,9 +230,9 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
     if (config.debug) {
       console.log('🔬 Debug mode: ON — verbose logging enabled');
     }
-    console.log(`🎯 API Endpoint: ${state.globalLoggingService.getApiEndpoint()}`);
-    console.log(`📋 Loaded ${await state.globalPatternService.getPatternsCount()} AI API patterns`);
-    console.log(`🔍 Monitoring mode: ${hasNodeModules ? 'Full (HTTP/HTTPS/Fetch)' : 'Fetch only (Edge runtime)'}`);
+    console.log(`🎯 API Endpoint: ${state.globalLoggingService!.getApiEndpoint()}`);
+    console.log(`📋 Loaded ${await state.globalPatternService!.getPatternsCount()} AI API patterns`);
+    console.log(`🔍 Monitoring mode: ${https !== null ? 'Full (HTTP/HTTPS/Fetch)' : 'Fetch only (Edge runtime)'}`);
   }
 }
 

@@ -56,7 +56,7 @@ import 'coolhand-node/auto-monitor';
 // NO code changes needed in your existing services!
 ```
 
-> **ESM + LangChain / OpenAI static imports:** `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module load time. Because ESM hoists all static `import` statements, these libraries capture the original, unpatched function before `auto-monitor`'s async initializer runs — so calls are silently not intercepted. The fix is to await the patch and then dynamically import the library:
+> **ESM + LangChain / OpenAI static imports:** `@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module load time. In **CJS projects** (TypeScript compiling to CommonJS, `require()` style) `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously and everything works automatically. In **native ESM projects** (`"type": "module"`, static `import` syntax) the patch cannot be applied synchronously, so libraries that cache `https.request` at import time will not be intercepted. The workaround is to await the patch and then dynamically import the library:
 >
 > ```js
 > import { initializeGlobalMonitoring } from 'coolhand-node';
@@ -68,8 +68,6 @@ import 'coolhand-node/auto-monitor';
 > const model = new ChatOpenAI({ model: 'gpt-4o' });
 > await model.invoke('hello'); // ✅ intercepted
 > ```
->
-> This applies to any library that captures `https.request` at import time. CommonJS users are unaffected — `require()` is synchronous and call-ordered.
 
 **Environment Variables:**
 ```bash

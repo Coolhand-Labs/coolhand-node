@@ -450,11 +450,14 @@ initializeGlobalMonitoring({...});
 
 **4. "LangChain / OpenAI calls not intercepted with ESM static imports"**
 
-`@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module evaluation time. In ESM, all static `import` statements are hoisted and executed before any module body code runs, so `auto-monitor`'s async IIFE completes *after* LangChain has already captured the original, unpatched function — calls are silently not intercepted.
+`@langchain/openai` (and the `openai` SDK) cache a reference to `https.request` at module evaluation time. Whether this is an issue depends on your module system:
+
+**CJS projects** (TypeScript compiling to CommonJS, or plain `require()` style): `import 'coolhand-node/auto-monitor'` patches `https.request` synchronously during module evaluation — calls are intercepted correctly with no extra steps required.
+
+**Native ESM projects** (`"type": "module"`, static `import` syntax): all static `import` statements are hoisted and evaluated before any module body runs. Because the synchronous `createRequire` accessor is unavailable in native ESM, `auto-monitor` cannot patch `https.request` synchronously — libraries that cache `https.request` at import time will not be intercepted.
 
 ```javascript
-// ❌ Broken — @langchain/openai is hoisted alongside auto-monitor;
-//    its https.request reference is captured before the async patch applies
+// ❌ Broken in native ESM — @langchain/openai captures https.request before the patch
 import 'coolhand-node/auto-monitor';
 import { ChatOpenAI } from '@langchain/openai';
 
@@ -463,7 +466,7 @@ await model.invoke('hello'); // NOT intercepted
 ```
 
 ```javascript
-// ✅ Working — await the patch first, then dynamically import the library
+// ✅ Working in native ESM — await the patch first, then dynamically import the library
 import { initializeGlobalMonitoring } from 'coolhand-node';
 
 await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY });
@@ -474,7 +477,7 @@ const model = new ChatOpenAI({ model: 'gpt-4o' });
 await model.invoke('hello'); // ✅ intercepted
 ```
 
-This affects any library that caches `https.request` at import time. CommonJS users are unaffected because `require()` is synchronous and call-ordered.
+This only affects libraries that cache `https.request` at import time (LangChain, direct `openai` SDK) in native ESM projects. All other interception (including `fetch`) works correctly in both module systems.
 
 ### Debug Mode
 
