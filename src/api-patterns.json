@@ -44,6 +44,15 @@
       }
     },
     {
+      "name": "OpenRouter",
+      "domains": ["openrouter.ai"],
+      "paths": ["/api/v1/chat/completions", "/api/v1/completions", "/api/v1/embeddings"],
+      "headers": {
+        "authorization": "[REDACTED]",
+        "x-api-key": "[REDACTED]"
+      }
+    },
+    {
       "name": "Cloudflare AI Gateway",
       "domains": ["gateway.ai.cloudflare.com"],
       "paths": [],

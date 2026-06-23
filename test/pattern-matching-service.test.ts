@@ -1188,6 +1188,71 @@ describe('PatternMatchingService', () => {
     });
   });
 
+  describe('OpenRouter Pattern Matching', () => {
+    const mockPatternsWithOpenRouter = {
+      patterns: [
+        ...mockPatterns.patterns,
+        {
+          name: 'OpenRouter',
+          domains: ['openrouter.ai'],
+          paths: ['/api/v1/chat/completions', '/api/v1/completions', '/api/v1/embeddings'],
+          headers: {
+            authorization: '[REDACTED]',
+            'x-api-key': '[REDACTED]'
+          }
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithOpenRouter));
+      service = new PatternMatchingService();
+    });
+
+    it('should match OpenRouter chat completions URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://openrouter.ai/api/v1/chat/completions'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenRouter' }),
+        matchType: 'domain',
+        matchValue: 'openrouter.ai'
+      });
+    });
+
+    it('should match OpenRouter embeddings URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://openrouter.ai/api/v1/embeddings'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenRouter' }),
+        matchType: 'domain',
+        matchValue: 'openrouter.ai'
+      });
+    });
+
+    it('should redact authorization and x-api-key headers for OpenRouter', () => {
+      const pattern: CoolhandAPIPattern = {
+        name: 'OpenRouter',
+        domains: ['openrouter.ai'],
+        headers: {
+          authorization: '[REDACTED]',
+          'x-api-key': '[REDACTED]'
+        }
+      };
+      const headers = {
+        authorization: 'Bearer sk-or-secret',
+        'x-api-key': 'sk-or-key',
+        'content-type': 'application/json'
+      };
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['authorization']).toBe('[REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+  });
+
   describe('URL Sanitization', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
