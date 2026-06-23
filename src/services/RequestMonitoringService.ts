@@ -4,6 +4,7 @@ import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
 import { decompressBuffer } from '../utils/decompress.js';
+import { isNonInferenceURL } from '../non-inference-filter.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -58,6 +59,10 @@ export class RequestMonitoringService {
               if (monitor.isExcluded(options, 'https')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
+              const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
+              if (isNonInferenceURL(monitor.buildURL(options, 'https'), method)) {
+                return originalRequest.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
               return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
             }
@@ -83,6 +88,9 @@ export class RequestMonitoringService {
 
             if (matchedPattern) {
               if (monitor.isExcluded(options, 'https')) {
+                return originalGet.call(this, options as any, callback as any);
+              }
+              if (isNonInferenceURL(monitor.buildURL(options, 'https'), 'GET')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
@@ -118,6 +126,10 @@ export class RequestMonitoringService {
               if (monitor.isExcluded(options, 'http')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
+              const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
+              if (isNonInferenceURL(monitor.buildURL(options, 'http'), method)) {
+                return originalRequest.call(this, options as any, callback as any);
+              }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
               return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
             }
@@ -143,6 +155,9 @@ export class RequestMonitoringService {
 
             if (matchedPattern) {
               if (monitor.isExcluded(options, 'http')) {
+                return originalGet.call(this, options as any, callback as any);
+              }
+              if (isNonInferenceURL(monitor.buildURL(options, 'http'), 'GET')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
@@ -175,6 +190,10 @@ export class RequestMonitoringService {
 
         if (matchedPattern) {
           if (monitor.isExcluded(urlStr, 'https')) {
+            return originalFetch.call(this, url, options);
+          }
+          const method = (options as RequestInit)?.method || 'GET';
+          if (isNonInferenceURL(urlStr, method)) {
             return originalFetch.call(this, url, options);
           }
           monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} FETCH call`);

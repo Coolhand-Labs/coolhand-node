@@ -10,6 +10,7 @@ import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { parseBody } from './utils/parse-body.js';
 import { decompressBuffer } from './utils/decompress.js';
+import { isNonInferenceURL } from './non-inference-filter.js';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
@@ -393,6 +394,10 @@ function patchHTTPS(): void {
               return originalRequest.call(this, options as any, callback as any);
             }
 
+            if (isNonInferenceURL(buildURL(options, 'https'), method)) {
+              return originalRequest.call(this, options as any, callback as any);
+            }
+
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
             return interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
           }
@@ -428,6 +433,10 @@ function patchHTTPS(): void {
 
             if (isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTPS GET: ${buildURL(options, 'https')}`);
+              return originalGet.call(this, options as any, callback as any);
+            }
+
+            if (isNonInferenceURL(buildURL(options, 'https'), 'GET')) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -475,6 +484,10 @@ function patchHTTP(): void {
               return originalRequest.call(this, options as any, callback as any);
             }
 
+            if (isNonInferenceURL(buildURL(options, 'http'), method)) {
+              return originalRequest.call(this, options as any, callback as any);
+            }
+
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
             return interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
           }
@@ -510,6 +523,10 @@ function patchHTTP(): void {
 
             if (isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTP GET: ${buildURL(options, 'http')}`);
+              return originalGet.call(this, options as any, callback as any);
+            }
+
+            if (isNonInferenceURL(buildURL(options, 'http'), 'GET')) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -551,6 +568,10 @@ function patchFetch(): void {
 
         if (isIdempotentMethod(method) && isRequestActive(requestId)) {
           log(`🔄 Skipping duplicate FETCH: ${method} ${urlStr}`);
+          return originalFetch.call(this, url, options);
+        }
+
+        if (isNonInferenceURL(urlStr, method)) {
           return originalFetch.call(this, url, options);
         }
 
