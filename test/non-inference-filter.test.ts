@@ -1,4 +1,4 @@
-import { IGNORED_GET_PATH_PATTERNS, isNonInferenceURL } from '../src/non-inference-filter';
+import { IGNORED_GET_PATH_PATTERNS, IGNORED_ANY_METHOD_PATH_PATTERNS, isNonInferenceURL } from '../src/non-inference-filter';
 
 describe('IGNORED_GET_PATH_PATTERNS', () => {
   it('is frozen', () => {
@@ -38,7 +38,47 @@ describe('IGNORED_GET_PATH_PATTERNS', () => {
   });
 });
 
+describe('IGNORED_ANY_METHOD_PATH_PATTERNS', () => {
+  it('is frozen', () => {
+    expect(Object.isFrozen(IGNORED_ANY_METHOD_PATH_PATTERNS)).toBe(true);
+  });
+
+  it('contains exactly one pattern', () => {
+    expect(IGNORED_ANY_METHOD_PATH_PATTERNS).toHaveLength(1);
+  });
+
+  it('matches /api/event_logging/v2/batch', () => {
+    expect(IGNORED_ANY_METHOD_PATH_PATTERNS[0].test('/api/event_logging/v2/batch')).toBe(true);
+  });
+
+  it('matches any path under /api/event_logging/', () => {
+    expect(IGNORED_ANY_METHOD_PATH_PATTERNS[0].test('/api/event_logging/v3/other')).toBe(true);
+  });
+
+  it('does not match /api/event_logging (missing trailing slash)', () => {
+    expect(IGNORED_ANY_METHOD_PATH_PATTERNS[0].test('/api/event_logging')).toBe(false);
+  });
+});
+
 describe('isNonInferenceURL', () => {
+  describe('drops event_logging paths regardless of method', () => {
+    it('drops POST to /api/event_logging/v2/batch', () => {
+      expect(isNonInferenceURL('https://api.anthropic.com/api/event_logging/v2/batch', 'POST')).toBe(true);
+    });
+
+    it('drops GET to /api/event_logging/v2/batch', () => {
+      expect(isNonInferenceURL('https://api.anthropic.com/api/event_logging/v2/batch', 'GET')).toBe(true);
+    });
+
+    it('does not drop POST to a different host with event_logging path', () => {
+      expect(isNonInferenceURL('https://api.openai.com/api/event_logging/v2/batch', 'POST')).toBe(false);
+    });
+
+    it('does not drop POST to a different Anthropic path', () => {
+      expect(isNonInferenceURL('https://api.anthropic.com/v1/messages', 'POST')).toBe(false);
+    });
+  });
+
   describe('drops ignored Anthropic GET paths', () => {
     it('drops GET /api/directory/servers', () => {
       expect(isNonInferenceURL('https://api.anthropic.com/api/directory/servers', 'GET')).toBe(true);
