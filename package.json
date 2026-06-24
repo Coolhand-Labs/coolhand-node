@@ -72,8 +72,7 @@
     "example": "node examples/basic.js"
   },
   "overrides": {
-    "esbuild": "^0.28.1",
-    "js-yaml": ">=4.2.0"
+    "esbuild": "^0.28.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
