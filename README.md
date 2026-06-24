@@ -486,6 +486,10 @@ The monitor handles errors gracefully:
 - **Ruby**: [coolhand gem](https://github.com/Coolhand-Labs/coolhand-ruby) - Coolhand monitoring for Ruby applications
 - **Python**: [coolhand package](https://github.com/Coolhand-Labs/coolhand-python) - Coolhand monitoring for Python applications
 
+## About Coolhand Labs
+
+[Coolhand Labs](https://coolhandlabs.com) builds observability and feedback tooling for AI-powered applications. Our platform helps teams monitor LLM usage, collect structured human feedback, and improve output quality over time — across every provider and framework.
+
 ## Community
 
 - **Questions?** [Create a discussion](https://github.com/coolhand-io/coolhand-node/discussions)
