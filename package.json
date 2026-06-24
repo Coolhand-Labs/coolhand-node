@@ -72,7 +72,10 @@
     "example": "node examples/basic.js"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "@babel/core": ">=7.29.6",
+    "@istanbuljs/load-nyc-config": ">=2.0.0",
+    "js-yaml": ">=4.2.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
