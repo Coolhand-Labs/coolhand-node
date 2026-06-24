@@ -3,7 +3,7 @@
  * Run `npm run sync-version` or `npm run build` to regenerate.
  */
 
-export const PACKAGE_VERSION = '0.7.0';
+export const PACKAGE_VERSION = '0.8.1';
 export const PACKAGE_NAME = 'coolhand-node';
 
 /**
