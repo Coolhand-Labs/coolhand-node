@@ -472,6 +472,18 @@ describe('RequestMonitoringService', () => {
         return mockReq;
       });
 
+      // Hook into onRequestComplete rather than using a fixed-delay timer.
+      // A hardcoded 50 ms was flaky on Node 22 where libuv schedules
+      // zlib.gunzip callbacks differently, causing done() to never fire.
+      onRequestCompleteMock.mockImplementationOnce(() => {
+        try {
+          assertion();
+          done();
+        } catch (e: any) {
+          done(e);
+        }
+      });
+
       (service as any).interceptRequest(
         originalRequest,
         { hostname: 'api.test.com', path: '/test' },
@@ -479,8 +491,6 @@ describe('RequestMonitoringService', () => {
         'https',
         mockMatchedPattern
       );
-
-      setTimeout(() => { assertion(); done(); }, 50);
     }
 
     it('should handle plain text responses', (done) => {
