@@ -1,6 +1,6 @@
 {
   "name": "coolhand-node",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Monitor and LLM API calls for analysis",
   "type": "module",
   "main": "dist/index.js",
@@ -72,7 +72,8 @@
     "example": "node examples/basic.js"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "@babel/core": "^7.29.6"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
