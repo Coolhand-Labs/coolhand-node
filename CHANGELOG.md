@@ -8,9 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.1] - 2026-06-24
 
 ### 🔒 Security
-- **js-yaml bumped to ≥4.2.0** — Adds `npm overrides` to resolve a medium-severity Dependabot alert (alert #41). All affected packages are devDependencies; the published bundle has no production dependencies.
-- **@babel/core bumped to ≥7.29.6** — Adds `npm overrides` to resolve a low-severity Dependabot alert (alert #40). Same scope: devDependencies only.
-- **@istanbuljs/load-nyc-config bumped to ≥2.0.0** — Prerequisite override; v1.x uses `yaml.safeLoad()` removed in js-yaml 4.x, which would have broken jest coverage toolchain without this.
+- **@babel/core bumped to ^7.29.6** — Adds `npm overrides` to force the transitive `@babel/core` dependency (pulled in by `ts-jest`) to `7.29.7`, resolving Dependabot alert #40 (low severity). Scope: devDependencies only; the published bundle has no production dependencies.
+- **js-yaml (alert #41) not resolved** — `@istanbuljs/load-nyc-config` (jest coverage toolchain) has no release supporting js-yaml 4.x, so the vulnerable 3.14.2 transitive copy cannot be upgraded without removing jest coverage support. Alert remains open pending an upstream release.
 
 ## [0.8.0] - 2026-06-24
 
