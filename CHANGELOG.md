@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ New Features
 - **OpenRouter support** — `openrouter.ai` is now a built-in monitored provider. Covers `/api/v1/chat/completions`, `/api/v1/completions`, and `/api/v1/embeddings`. Redacts `authorization` and `x-api-key` headers. Works in both Node.js (file-loaded patterns) and Edge runtimes (Cloudflare Workers, Vercel Edge).
-- **Non-inference Anthropic GET filter** — Two noisy Anthropic operational endpoints are now silently dropped before reaching Coolhand's ingestion: `GET /api/directory/servers` (MCP server directory listing from claude.ai browser sessions) and `GET /v1/environments/:id/work/poll` (managed-agents environment work polling). Applied at all six interception sites (https.request/get, http.request/get, fetch). POST requests and all other Anthropic paths are unaffected.
+- **Non-inference Anthropic request filter** — Noisy Anthropic operational endpoints are silently dropped before reaching Coolhand's ingestion. Applied at all six interception sites (https.request/get, http.request/get, fetch):
+  - `GET /api/directory/servers` — MCP server directory listing from claude.ai browser sessions
+  - `GET /v1/environments/:id/work/poll` — managed-agents environment work polling
+  - `POST /api/event_logging/…` (any sub-path) — Claude Code internal telemetry batches; dropped regardless of HTTP method
 
 ### 🔒 Security
 - **esbuild bumped to ≥0.28.1** — Adds `npm overrides` to resolve GHSA-g7r4-m6w7-qqqr (path traversal via esbuild dev server on Windows). Not exploitable in this project's usage but addressed proactively.
