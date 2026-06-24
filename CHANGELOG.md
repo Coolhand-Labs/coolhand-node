@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-06-24
+
+### 🔒 Security
+- **js-yaml bumped to ≥4.2.0** — Adds `npm overrides` to resolve a medium-severity Dependabot alert (alert #41). All affected packages are devDependencies; the published bundle has no production dependencies.
+- **@babel/core bumped to ≥7.29.6** — Adds `npm overrides` to resolve a low-severity Dependabot alert (alert #40). Same scope: devDependencies only.
+- **@istanbuljs/load-nyc-config bumped to ≥2.0.0** — Prerequisite override; v1.x uses `yaml.safeLoad()` removed in js-yaml 4.x, which would have broken jest coverage toolchain without this.
+
 ## [0.8.0] - 2026-06-24
 
 ### ✨ New Features
