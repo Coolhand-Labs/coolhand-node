@@ -47,11 +47,11 @@ export class LoggingService extends BaseService {
         headers: { Accept: 'application/json', 'X-API-Key': this.apiKey },
       });
     } catch {
-      // Network failure — degrade to local state.
+      // Network failure: degrade to local state.
       return null;
     }
     if (!res.ok) {
-      // 404 (endpoint not built yet) or any other non-2xx — degrade to local state.
+      // 404 (endpoint not built yet) or any other non-2xx: degrade to local state.
       return null;
     }
 

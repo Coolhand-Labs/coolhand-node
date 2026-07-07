@@ -4,6 +4,20 @@ import { BaseService, BaseServiceConfig } from './BaseService.js';
 export interface McpServiceConfig extends BaseServiceConfig {}
 
 /**
+ * Thrown on a non-2xx `/mcp` response. Carries the HTTP `status` so callers can react to it
+ * (e.g. the CLI adds a re-authentication hint on 401) without parsing the message string.
+ */
+class McpHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
+    super(message);
+    this.name = 'McpHttpError';
+  }
+}
+
+/**
  * Calls the Coolhand server's `/mcp` endpoint, which speaks JSON-RPC 2.0. Used by coolhand-cli's
  * optimization commands (list-workloads, search/get/close/update-optimization) to invoke server-side
  * MCP tools.
@@ -23,7 +37,8 @@ export class McpService extends BaseService {
    * @param toolName The MCP tool to call (e.g. `"list_workloads"`).
    * @param args The tool arguments object, forwarded verbatim as JSON-RPC `params.arguments`.
    * @returns The JSON-RPC `result` field on success.
-   * @throws Error on network failure, a non-2xx response, a non-JSON body, or a JSON-RPC `error`.
+   * @throws Error on network failure, a non-JSON body, or a JSON-RPC `error`. A non-2xx response
+   *   throws an error whose `status` property holds the HTTP status code.
    */
   public async mcpCall(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     const body = {
@@ -54,7 +69,7 @@ export class McpService extends BaseService {
     const text = await res.text().catch(() => '');
     const snippet = text.slice(0, 2000);
     if (!res.ok) {
-      throw new Error(`MCP request failed (${res.status}): ${snippet}`);
+      throw new McpHttpError(`MCP request failed (${res.status}): ${snippet}`, res.status);
     }
 
     let json: McpToolCallResponse;
@@ -69,7 +84,7 @@ export class McpService extends BaseService {
     }
 
     // A tool can reject at the execution level (e.g. "Cannot rename system workloads") while the
-    // JSON-RPC envelope still reports success — the backend returns that as a `{ error }` result hash.
+    // JSON-RPC envelope still reports success. The backend returns that as a `{ error }` result hash.
     if (json.result !== null && typeof json.result === 'object' && !Array.isArray(json.result)) {
       const result = json.result as { error?: unknown };
       if (typeof result.error === 'string' && result.error.length > 0) {

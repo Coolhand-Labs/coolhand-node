@@ -62,6 +62,16 @@ describe('McpService', () => {
     await expect(service.mcpCall('list_workloads', {})).rejects.toThrow('MCP request failed (500): Server boom');
   });
 
+  it('carries the HTTP status on a non-ok response so callers can react to a 401', async () => {
+    (global as any).fetch = mockFetch('Key rejected', { ok: false, status: 401 });
+
+    const service = new McpService(config);
+    await expect(service.mcpCall('list_workloads', {})).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringContaining('MCP request failed (401)'),
+    });
+  });
+
   it('throws when the body is not valid JSON', async () => {
     (global as any).fetch = mockFetch('<html>not json</html>');
 
