@@ -24,7 +24,9 @@ class McpHttpError extends Error {
  *
  * Unlike logging/feedback, this endpoint authenticates with the client's PRIVATE key (passed as the
  * `apiKey` config field and sent as `X-API-Key`), and it surfaces failures by THROWING rather than
- * returning `null`, so callers can show the error to the user.
+ * returning `null`, so callers can show the error to the user. `dryRun: true` still applies here —
+ * it skips the request and returns `null`, since some MCP tools (e.g. `close_optimization`) mutate
+ * server state.
  */
 export class McpService extends BaseService {
   constructor(config: McpServiceConfig) {
@@ -36,7 +38,7 @@ export class McpService extends BaseService {
    *
    * @param toolName The MCP tool to call (e.g. `"list_workloads"`).
    * @param args The tool arguments object, forwarded verbatim as JSON-RPC `params.arguments`.
-   * @returns The JSON-RPC `result` field on success.
+   * @returns The JSON-RPC `result` field on success, or `null` in dry-run mode.
    * @throws Error on network failure, a non-JSON body, or a JSON-RPC `error`. A non-2xx response
    *   throws an error whose `status` property holds the HTTP status code.
    */
@@ -47,6 +49,14 @@ export class McpService extends BaseService {
       method: 'tools/call',
       params: { name: toolName, arguments: args },
     };
+
+    if (this.dryRun) {
+      if (!this.silent) {
+        console.log(`🚫 DRY RUN: Skipping MCP call to ${this.apiEndpoint}`);
+        console.log(`🚫 DRY RUN: Would send:`, JSON.stringify(body, null, 2));
+      }
+      return null;
+    }
 
     if (typeof fetch === 'undefined') {
       throw new Error('MCP request failed: global fetch is unavailable (requires Node.js 18+)');

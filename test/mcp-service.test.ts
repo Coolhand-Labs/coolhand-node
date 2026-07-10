@@ -113,4 +113,14 @@ describe('McpService', () => {
     const service = new McpService(config);
     await expect(service.mcpCall('update_workload', {})).resolves.toEqual({ workload: { id: 'wl-1', name: 'Renamed' } });
   });
+
+  it('skips the network call and returns null in dry-run mode', async () => {
+    const fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+
+    const service = new McpService({ ...config, dryRun: true });
+    await expect(service.mcpCall('close_optimization', { id: 'opt_42' })).resolves.toBeNull();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
