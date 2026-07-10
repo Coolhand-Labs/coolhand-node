@@ -1,4 +1,4 @@
-import { CoolhandCallData, CoolhandLogPayload, CoolhandLogResponse, CoolhandMatchedPattern } from '../types';
+import { CoolhandCallData, CoolhandLogPayload, CoolhandLogResponse, CoolhandMatchedPattern, LastSyncResponse } from '../types';
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
@@ -7,6 +7,66 @@ export interface LoggingServiceConfig extends BaseServiceConfig {}
 export class LoggingService extends BaseService {
   constructor(config: LoggingServiceConfig) {
     super(config, '/api/v2/llm_request_logs');
+  }
+
+  /**
+   * Ask the server for the timestamp of the most recent log it already holds for a given collector,
+   * so a caller (e.g. coolhand-cli `capture-sessions`) only re-scans files newer than that. This is a
+   * server-authoritative cutoff that survives local state-file loss or a reinstall.
+   *
+   * It NEVER throws: any problem (bad url, 404, network failure, non-JSON body, or a missing/invalid
+   * `last_created_at`) returns `null` so the caller can fall back to local state. The companion server
+   * endpoint may not exist on every deployment; a 404 is therefore an expected, non-fatal outcome.
+   *
+   * Auth mirrors the ingest path: the public `apiKey` sent as `X-API-Key`, since the endpoint lives on
+   * the same `/api/v2/llm_request_logs` path.
+   *
+   * @param collector Identifies the submission source in the server's `collector` field. The caller
+   *   owns this value (e.g. coolhand-cli passes `"coolhand-cli/claude-code"`).
+   * @returns The cutoff `Date`, or `null` when no usable value is available.
+   */
+  public async fetchLastSync(collector: string): Promise<Date | null> {
+    let url: string;
+    try {
+      const endpoint = new URL(`${this.apiEndpoint}/last_sync`);
+      endpoint.searchParams.set('collector', collector);
+      url = endpoint.toString();
+    } catch {
+      return null;
+    }
+
+    if (typeof fetch === 'undefined') {
+      // No global fetch (Node.js < 18): degrade to local state rather than throw.
+      return null;
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json', 'X-API-Key': this.apiKey },
+      });
+    } catch {
+      // Network failure: degrade to local state.
+      return null;
+    }
+    if (!res.ok) {
+      // 404 (endpoint not built yet) or any other non-2xx: degrade to local state.
+      return null;
+    }
+
+    let body: LastSyncResponse;
+    try {
+      body = (await res.json()) as LastSyncResponse;
+    } catch {
+      return null;
+    }
+
+    if (typeof body.last_created_at !== 'string') {
+      return null;
+    }
+    const date = new Date(body.last_created_at);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   public async logRequestToAPI(
