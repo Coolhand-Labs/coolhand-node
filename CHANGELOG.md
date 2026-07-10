@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-10
+
+### ✨ New Features
+- **`McpService`** — new exported service (`McpService.mcpCall(toolName, args)`) that calls the Coolhand server's `/mcp` endpoint, which speaks JSON-RPC 2.0. Built for `coolhand-cli`'s optimization commands (`list-workloads`, and search/get/close/update-optimization) to invoke server-side MCP tools instead of using raw `fetch`. Authenticates with the private API key (`X-API-Key`) and throws on failure — including a status-carrying error for non-2xx responses (e.g. so callers can detect a `401` without parsing response text) — since these callers need to surface errors to the user rather than silently degrade.
+- **`LoggingService.fetchLastSync(collector)`** — new method that asks the server for the timestamp of the most recent log it already holds for a given `collector`, so a caller (e.g. `coolhand-cli`'s `capture-sessions`) only re-scans data newer than that cutoff. This is a server-authoritative cutoff that survives local state-file loss or a reinstall. Unlike `McpService.mcpCall`, it never throws — any failure (network error, 404, malformed response) resolves to `null` so the caller can fall back to local state.
+- Adds `McpToolCallResponse` and `LastSyncResponse` exported types supporting the above.
+
 ## [0.8.1] - 2026-06-24
 
 ### 🔒 Security
