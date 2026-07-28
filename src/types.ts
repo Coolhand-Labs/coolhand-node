@@ -96,12 +96,6 @@ export interface LLMRequestLogFeedbackPayload {
   llm_request_log_feedback: LLMRequestLogFeedback;
 }
 
-// Response shape from the `/api/v2/llm_request_logs/last_sync` endpoint: the timestamp of the most
-// recent log the server already holds for a given collector, used to skip re-sending old data.
-export interface LastSyncResponse {
-  last_created_at?: string | null;
-}
-
 // JSON-RPC 2.0 response shape from the `/mcp` endpoint's `tools/call` method.
 export interface McpToolCallResponse {
   result?: unknown;
