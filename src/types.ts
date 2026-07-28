@@ -133,12 +133,12 @@ export interface LLMRequestLogFeedbackResponse {
   original_output?: string;
   client_unique_id?: string;
   /**
-   * Raw integer ID of the client that owns this feedback entry (a plain Blueprinter field
-   * passthrough of the AR primary key, not a hashid). The published API docs' model reference
-   * incorrectly describes this as a hashid `string` — confirmed against the actual
-   * `V2::LlmRequestLogFeedbackBlueprint` output that it's an integer.
+   * Hashid of the client that owns this feedback entry, per the published API docs' model
+   * description. If a live response ever renders this as a raw integer instead, that's a
+   * server-side bug (this API otherwise never exposes raw internal IDs for external-facing
+   * fields like this one) — fix it in pattaya rather than relying on the integer here.
    */
-  client_id?: number;
+  client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
   /** Validation issues encountered while creating this feedback record. */
@@ -189,12 +189,12 @@ export interface LLMRequestLogFeedbackSummary {
   llm_provider_unique_id?: string;
   client_unique_id?: string;
   /**
-   * Raw integer ID of the client that owns this feedback entry (a plain Blueprinter field
-   * passthrough of the AR primary key, not a hashid). The published API docs' model reference
-   * incorrectly describes this as a hashid `string` — confirmed against the actual
-   * `V2::LlmRequestLogFeedbackBlueprint` output that it's an integer.
+   * Hashid of the client that owns this feedback entry, per the published API docs' model
+   * description. If a live response ever renders this as a raw integer instead, that's a
+   * server-side bug (this API otherwise never exposes raw internal IDs for external-facing
+   * fields like this one) — fix it in pattaya rather than relying on the integer here.
    */
-  client_id?: number;
+  client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
   created_at: string;
