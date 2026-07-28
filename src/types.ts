@@ -133,10 +133,9 @@ export interface LLMRequestLogFeedbackResponse {
   original_output?: string;
   client_unique_id?: string;
   /**
-   * Hashid of the client that owns this feedback entry, per the published API docs' model
-   * description. If a live response ever renders this as a raw integer instead, that's a
-   * server-side bug (this API otherwise never exposes raw internal IDs for external-facing
-   * fields like this one) — fix it in pattaya rather than relying on the integer here.
+   * Hashid of the client that owns this feedback entry, matching every other external-facing
+   * identifier on this record. Was a raw integer FK on live responses as of this writing;
+   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
    */
   client_id?: string;
   collector?: string;
@@ -189,10 +188,9 @@ export interface LLMRequestLogFeedbackSummary {
   llm_provider_unique_id?: string;
   client_unique_id?: string;
   /**
-   * Hashid of the client that owns this feedback entry, per the published API docs' model
-   * description. If a live response ever renders this as a raw integer instead, that's a
-   * server-side bug (this API otherwise never exposes raw internal IDs for external-facing
-   * fields like this one) — fix it in pattaya rather than relying on the integer here.
+   * Hashid of the client that owns this feedback entry, matching every other external-facing
+   * identifier on this record. Was a raw integer FK on live responses as of this writing;
+   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
    */
   client_id?: string;
   collector?: string;
@@ -225,7 +223,12 @@ export interface LLMRequestLogFeedbackFocusRange {
 export interface LLMRequestLogFeedbackPartial {
   id: string;
   llm_request_log_feedback_id: string;
-  client_id: number;
+  /**
+   * Hashid of the client that owns the parent feedback record. Was a raw integer FK on live
+   * responses as of this writing; tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes
+   * it to hashid-encode consistently (matches {@link LLMRequestLogFeedbackResponse.client_id}).
+   */
+  client_id: string;
   focus_section?: string | null;
   focus_range?: LLMRequestLogFeedbackFocusRange | null;
   sentiment?: "like" | "dislike" | "neutral" | null;

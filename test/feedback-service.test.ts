@@ -632,7 +632,7 @@ describe('FeedbackService', () => {
         feedback_partials: [{
           id: 'p1',
           llm_request_log_feedback_id: '42',
-          client_id: 7,
+          client_id: 'client_hash_abc',
           sentiment: 'like',
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z'
