@@ -133,12 +133,12 @@ export interface LLMRequestLogFeedbackResponse {
   original_output?: string;
   client_unique_id?: string;
   /**
-   * Hashid of the client that owns this feedback entry, per the API docs' model description.
-   * Note: the docs' example response payloads show `client_id: 0` (an integer), which conflicts
-   * with the documented `string` type — confirm against `llm_request_log_feedback_blueprint.rb`
-   * on pattaya before relying on this field's type.
+   * Raw integer ID of the client that owns this feedback entry (a plain Blueprinter field
+   * passthrough of the AR primary key, not a hashid). The published API docs' model reference
+   * incorrectly describes this as a hashid `string` — confirmed against the actual
+   * `V2::LlmRequestLogFeedbackBlueprint` output that it's an integer.
    */
-  client_id?: string;
+  client_id?: number;
   collector?: string;
   coolhand_fingerprint_id?: string;
   /** Validation issues encountered while creating this feedback record. */
@@ -189,12 +189,12 @@ export interface LLMRequestLogFeedbackSummary {
   llm_provider_unique_id?: string;
   client_unique_id?: string;
   /**
-   * Hashid of the client that owns this feedback entry, per the API docs' model description.
-   * Note: the docs' example response payloads show `client_id: 0` (an integer), which conflicts
-   * with the documented `string` type — confirm against `llm_request_log_feedback_blueprint.rb`
-   * on pattaya before relying on this field's type.
+   * Raw integer ID of the client that owns this feedback entry (a plain Blueprinter field
+   * passthrough of the AR primary key, not a hashid). The published API docs' model reference
+   * incorrectly describes this as a hashid `string` — confirmed against the actual
+   * `V2::LlmRequestLogFeedbackBlueprint` output that it's an integer.
    */
-  client_id?: string;
+  client_id?: number;
   collector?: string;
   coolhand_fingerprint_id?: string;
   created_at: string;
