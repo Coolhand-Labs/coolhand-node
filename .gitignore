@@ -1,4 +1,6 @@
-/.claude
+.claude/settings.local.json
+.claude/settings.json
+.claude/plans/
 node_modules/
 npm-debug.log*
 yarn-debug.log*

@@ -95,6 +95,52 @@ describe('Coolhand Node Monitor', () => {
       });
 
       expect(typeof monitor.createFeedback).toBe('function');
+      expect(typeof monitor.searchFeedback).toBe('function');
+      expect(typeof monitor.getFeedback).toBe('function');
+    });
+  });
+
+  describe('searchFeedback / getFeedback', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates searchFeedback to FeedbackService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ feedback: [], pagination: {} })) };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.searchFeedback({ sentiment_eq: 2, page: 1 });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('q[sentiment_eq]')).toBe('2');
+      expect(url.searchParams.get('page')).toBe('1');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ feedback: [], pagination: {} });
+    });
+
+    it('delegates getFeedback to FeedbackService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: '42' })) };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.getFeedback('42');
+
+      expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks/42');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ id: '42' });
     });
   });
 

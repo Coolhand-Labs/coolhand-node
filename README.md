@@ -246,6 +246,23 @@ const feedback = await coolhand.createFeedback({
 - **`creator_unique_id`** 👤 *User Tracking* - Unique ID to match feedback to the end user who created it
 - **`workload_hashid`** 🔗 *Workload Association* - Associate feedback with a specific workload
 
+### Reading Feedback
+
+`searchFeedback` and `getFeedback` read back feedback that's already been submitted. Unlike
+`createFeedback`, these require your **private** API key (the public key 401s):
+
+```typescript
+const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
+
+// sentiment_eq takes the raw integer code: 0 = dislike, 1 = neutral, 2 = like
+const { feedback, pagination } = await coolhand.searchFeedback({ sentiment_eq: 0, page: 1 });
+
+const record = await coolhand.getFeedback(feedback[0].id);
+```
+
+See [docs/feedback-search.md](./docs/feedback-search.md) for the full search parameter reference
+and error handling.
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -480,6 +497,7 @@ The monitor handles errors gracefully:
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
+- **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 
 ## Related Packages
 

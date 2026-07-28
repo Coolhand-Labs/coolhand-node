@@ -1,3 +1,4 @@
+export { HttpError } from './BaseService.js';
 export { PatternMatchingService } from './PatternMatchingService.js';
 export { RequestMonitoringService } from './RequestMonitoringService.js';
 export { LoggingService, type LoggingServiceConfig } from './LoggingService.js';
