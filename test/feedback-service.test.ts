@@ -42,8 +42,8 @@ describe('FeedbackService', () => {
   describe('Feedback creation', () => {
     it('should successfully create feedback', async () => {
       const mockResponse: LLMRequestLogFeedbackResponse = {
-        id: '123',
-        llm_request_log_id: 456,
+        id: 'xyz789abc123',
+        llm_request_log_id: 'abc123def456',
         like: true,
         explanation: 'Great response!',
         created_at: '2023-01-01T00:00:00Z',
@@ -68,7 +68,7 @@ describe('FeedbackService', () => {
       const result = await service.createFeedback(feedback);
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe('123');
+      expect(result!.id).toBe('xyz789abc123');
       expect(result!.like).toBe(true);
       expect(result!.explanation).toBe('Great response!');
     });
@@ -567,7 +567,7 @@ describe('FeedbackService', () => {
 
     it('returns the parsed feedback list and pagination on success', async () => {
       const mockResponse: SearchFeedbackResponse = {
-        feedback: [{ id: '1', llm_request_log_id: 10, sentiment: 'like', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }],
+        feedback: [{ id: '1', llm_request_log_id: 'abc123def456', sentiment: 'like', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }],
         pagination: { current_page: 1, per_page: 25, total_count: 1, total_pages: 1, has_next_page: false, has_prev_page: false }
       };
       (global as any).fetch = mockGetFetch(mockResponse);
@@ -625,7 +625,7 @@ describe('FeedbackService', () => {
     it('returns the full record including feedback_partials on success', async () => {
       const mockResponse: LLMRequestLogFeedbackDetail = {
         id: '42',
-        llm_request_log_id: 10,
+        llm_request_log_id: 'abc123def456',
         sentiment: 'like',
         original_output: 'original',
         revised_output: 'revised',

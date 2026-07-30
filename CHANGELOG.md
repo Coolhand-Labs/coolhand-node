@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-30
+
+### 💥 Breaking Changes
+- **`LLMRequestLogFeedbackResponse.llm_request_log_id` and `LLMRequestLogFeedbackSummary.llm_request_log_id` are now `string | null`, not `number`** — the Coolhand API now returns this as a hashid, matching every other external-facing identifier on the record (it previously leaked the raw integer foreign key). If your code reads `llm_request_log_id` off a feedback response and treats it as a number (arithmetic, numeric comparison, storage in a numeric column), update it to treat the value as an opaque string identifier instead. Nothing in this SDK's own logic depended on its numeric type (only ever logged/passed through), so no runtime behavior changes here beyond the types.
+- **`LLMRequestLogFeedback.llm_request_log_id`** (the `createFeedback`/`updateFeedback` request field) is now typed `number | string` — existing callers passing a raw integer are unaffected; the server still accepts either format on write.
+- **`LLMRequestLogFeedbackResponse.workload_id` and `LLMRequestLogFeedbackSummary.workload_id` are now `string | null`, not `number`** — the same hashid change as `llm_request_log_id` above, applied to the workload identifier. Also only ever logged/passed through, so no runtime behavior changes beyond the types.
+- **Removed `llm_request_log_hashid` from `LLMRequestLogFeedbackResponse` and `LLMRequestLogFeedbackSummary`** — now redundant, since `llm_request_log_id` above is itself the hashid.
+
 ## [0.9.0] - 2026-07-10
 
 ### ✨ New Features

@@ -76,7 +76,8 @@ export interface CoolhandMatchedPattern {
 
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {
-  llm_request_log_id?: number;
+  /** Either the raw integer FK or a hashid string (e.g. from a prior response's llm_request_log_id) — the server accepts both on write. */
+  llm_request_log_id?: number | string;
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
@@ -103,34 +104,25 @@ export interface McpToolCallResponse {
 }
 
 export interface LLMRequestLogFeedbackResponse {
-  /** Hashid identifier for the feedback record (not a raw integer). */
+  /** Hashid, not the raw integer FK. */
   id: string;
-  /** Null when this feedback isn't linked to a specific logged request. */
-  llm_request_log_id: number | null;
-  /** Hashid of the associated LLM request log. */
-  llm_request_log_hashid?: string;
+  /** Hashid, not the raw integer FK — null when this feedback isn't linked to a specific logged request. */
+  llm_request_log_id: string | null;
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
   /** What kind of creator submitted the feedback: "human", "agent", or "unknown". */
   creator_type?: "human" | "agent" | "unknown";
   creator_unique_id?: string;
-  /**
-   * ID of the workload this feedback is associated with, set server-side when a valid
-   * `workload_hashid` was provided in the create request. This is a raw integer on responses
-   * (unlike the `workload_hashid` string accepted on write).
-   */
-  workload_id?: number | null;
+  /** Hashid of the workload this feedback is associated with, set server-side from workload_hashid on create.
+   *  (There is no separate workload_hashid field on responses — workload_hashid is write-only, on LLMRequestLogFeedback.) */
+  workload_id?: string | null;
   explanation?: string;
   revised_output?: string;
   llm_provider_unique_id?: string;
   original_output?: string;
   client_unique_id?: string;
-  /**
-   * Hashid of the client that owns this feedback entry, matching every other external-facing
-   * identifier on this record. Was a raw integer FK on live responses as of this writing;
-   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
-   */
+  /** Hashid of the client that owns this feedback entry, matching every other external-facing identifier on this record. */
   client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
@@ -167,25 +159,19 @@ export interface SearchFeedbackParams {
 export interface LLMRequestLogFeedbackSummary {
   /** Hashid identifier for the feedback record (not a raw integer). */
   id: string;
-  /** Null when this feedback isn't linked to a specific logged request. */
-  llm_request_log_id: number | null;
-  /** Hashid of the associated LLM request log. */
-  llm_request_log_hashid?: string;
+  /** Hashid, not the raw integer FK — null when this feedback isn't linked to a specific logged request. */
+  llm_request_log_id: string | null;
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
   creator_type?: "human" | "agent" | "unknown";
   creator_unique_id?: string;
-  /** Raw integer ID of the associated workload (see {@link LLMRequestLogFeedbackResponse.workload_id}). */
-  workload_id?: number | null;
+  /** Hashid of the associated workload (see {@link LLMRequestLogFeedbackResponse.workload_id}). */
+  workload_id?: string | null;
   explanation?: string;
   llm_provider_unique_id?: string;
   client_unique_id?: string;
-  /**
-   * Hashid of the client that owns this feedback entry, matching every other external-facing
-   * identifier on this record. Was a raw integer FK on live responses as of this writing;
-   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
-   */
+  /** Hashid of the client that owns this feedback entry, matching every other external-facing identifier on this record. */
   client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
@@ -217,11 +203,7 @@ export interface LLMRequestLogFeedbackFocusRange {
 export interface LLMRequestLogFeedbackPartial {
   id: string;
   llm_request_log_feedback_id: string;
-  /**
-   * Hashid of the client that owns the parent feedback record. Was a raw integer FK on live
-   * responses as of this writing; tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes
-   * it to hashid-encode consistently (matches {@link LLMRequestLogFeedbackResponse.client_id}).
-   */
+  /** Hashid of the client that owns the parent feedback record (matches {@link LLMRequestLogFeedbackResponse.client_id}). */
   client_id: string;
   focus_section?: string | null;
   focus_range?: LLMRequestLogFeedbackFocusRange | null;
