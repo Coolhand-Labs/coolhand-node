@@ -1,5 +1,6 @@
 import { FeedbackService, FeedbackServiceConfig } from '../src/services/FeedbackService';
-import { LLMRequestLogFeedback, LLMRequestLogFeedbackResponse } from '../src/types';
+import { HttpError } from '../src/services/BaseService';
+import { LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, SearchFeedbackResponse, LLMRequestLogFeedbackDetail } from '../src/types';
 
 // Mock fetch for testing
 const originalFetch = (global as any).fetch;
@@ -12,6 +13,12 @@ function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = 
     json: jest.fn().mockResolvedValue(mockResponse),
     text: jest.fn().mockResolvedValue(JSON.stringify(mockResponse))
   });
+}
+
+// Helper for GET-based reads (searchFeedback/getFeedback), which only read the `text()` body.
+function mockGetFetch(bodyObj: any, { ok = true, status = 200 }: { ok?: boolean; status?: number } = {}): any {
+  const text = typeof bodyObj === 'string' ? bodyObj : JSON.stringify(bodyObj);
+  return jest.fn().mockResolvedValue({ ok, status, text: jest.fn().mockResolvedValue(text) });
 }
 
 describe('FeedbackService', () => {
@@ -35,7 +42,7 @@ describe('FeedbackService', () => {
   describe('Feedback creation', () => {
     it('should successfully create feedback', async () => {
       const mockResponse: LLMRequestLogFeedbackResponse = {
-        id: 123,
+        id: '123',
         llm_request_log_id: 456,
         like: true,
         explanation: 'Great response!',
@@ -61,7 +68,7 @@ describe('FeedbackService', () => {
       const result = await service.createFeedback(feedback);
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe(123);
+      expect(result!.id).toBe('123');
       expect(result!.like).toBe(true);
       expect(result!.explanation).toBe('Great response!');
     });
@@ -531,6 +538,124 @@ describe('FeedbackService', () => {
     it('leaves sentiment undefined when neither like nor sentiment is provided', async () => {
       await service.createFeedback({ llm_request_log_id: 1 });
       expect(capturedRequestBody.llm_request_log_feedback.sentiment).toBeUndefined();
+    });
+  });
+
+  describe('searchFeedback', () => {
+    it('builds q[...] predicates, sort, and pagination as query params', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ feedback: [], pagination: {} })) };
+      });
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      await service.searchFeedback({ sentiment_eq: 2, explanation_cont: 'tone', s: 'created_at desc', page: 2, per: 10 });
+
+      const url = new URL(capturedUrl!);
+      expect(url.origin + url.pathname).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks');
+      expect(url.searchParams.get('q[sentiment_eq]')).toBe('2');
+      expect(url.searchParams.get('q[explanation_cont]')).toBe('tone');
+      expect(url.searchParams.get('q[s]')).toBe('created_at desc');
+      expect(url.searchParams.get('page')).toBe('2');
+      expect(url.searchParams.get('per')).toBe('10');
+      expect(capturedOptions.method).toBe('GET');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+    });
+
+    it('returns the parsed feedback list and pagination on success', async () => {
+      const mockResponse: SearchFeedbackResponse = {
+        feedback: [{ id: '1', llm_request_log_id: 10, sentiment: 'like', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }],
+        pagination: { current_page: 1, per_page: 25, total_count: 1, total_pages: 1, has_next_page: false, has_prev_page: false }
+      };
+      (global as any).fetch = mockGetFetch(mockResponse);
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchFeedback({ page: 1 });
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('throws with the HTTP status on a non-ok response', async () => {
+      (global as any).fetch = mockGetFetch('Key rejected', { ok: false, status: 401 });
+
+      const service = new FeedbackService({ apiKey: 'public-key-used-by-mistake', silent: true });
+      await expect(service.searchFeedback()).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining('Feedback request failed (401)')
+      });
+      await expect(service.searchFeedback()).rejects.toBeInstanceOf(HttpError);
+    });
+
+    it('throws a plain error on network failure', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchFeedback()).rejects.toThrow('Feedback request failed: ECONNREFUSED');
+    });
+
+    it('throws when the body is not valid JSON', async () => {
+      (global as any).fetch = mockGetFetch('<html>not json</html>');
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchFeedback()).rejects.toThrow('Feedback response was not valid JSON');
+    });
+  });
+
+  describe('getFeedback', () => {
+    it('GETs the record by id with the private key as X-API-Key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 42 })) };
+      });
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      await service.getFeedback('42');
+
+      expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/llm_request_log_feedbacks/42');
+      expect(capturedOptions.method).toBe('GET');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+    });
+
+    it('returns the full record including feedback_partials on success', async () => {
+      const mockResponse: LLMRequestLogFeedbackDetail = {
+        id: '42',
+        llm_request_log_id: 10,
+        sentiment: 'like',
+        original_output: 'original',
+        revised_output: 'revised',
+        feedback_partials: [{
+          id: 'p1',
+          llm_request_log_feedback_id: '42',
+          client_id: 'client_hash_abc',
+          sentiment: 'like',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z'
+        }],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z'
+      };
+      (global as any).fetch = mockGetFetch(mockResponse);
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.getFeedback('42');
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('throws with a 404 status when the record is not found', async () => {
+      (global as any).fetch = mockGetFetch('Not found', { ok: false, status: 404 });
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.getFeedback('missing')).rejects.toMatchObject({
+        status: 404,
+        message: expect.stringContaining('Feedback request failed (404)')
+      });
     });
   });
 });

@@ -4,20 +4,6 @@ import { BaseService, BaseServiceConfig } from './BaseService.js';
 export interface McpServiceConfig extends BaseServiceConfig {}
 
 /**
- * Thrown on a non-2xx `/mcp` response. Carries the HTTP `status` so callers can react to it
- * (e.g. the CLI adds a re-authentication hint on 401) without parsing the message string.
- */
-class McpHttpError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number
-  ) {
-    super(message);
-    this.name = 'McpHttpError';
-  }
-}
-
-/**
  * Calls the Coolhand server's `/mcp` endpoint, which speaks JSON-RPC 2.0. Used by coolhand-cli's
  * optimization commands (list-workloads, search/get/close/update-optimization) to invoke server-side
  * MCP tools.
@@ -58,35 +44,24 @@ export class McpService extends BaseService {
       return null;
     }
 
-    if (typeof fetch === 'undefined') {
-      throw new Error('MCP request failed: global fetch is unavailable (requires Node.js 18+)');
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(this.apiEndpoint, {
+    const text = await this.fetchOrThrow(
+      this.apiEndpoint,
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': this.apiKey,
         },
         body: JSON.stringify(body),
-      });
-    } catch (err) {
-      throw new Error(`MCP request failed: ${(err as Error).message}`);
-    }
-
-    const text = await res.text().catch(() => '');
-    const snippet = text.slice(0, 2000);
-    if (!res.ok) {
-      throw new McpHttpError(`MCP request failed (${res.status}): ${snippet}`, res.status);
-    }
+      },
+      'MCP request failed'
+    );
 
     let json: McpToolCallResponse;
     try {
       json = JSON.parse(text) as McpToolCallResponse;
     } catch {
-      throw new Error(`MCP response was not valid JSON: ${snippet}`);
+      throw new Error(`MCP response was not valid JSON: ${text.slice(0, 2000)}`);
     }
 
     if (json.error) {

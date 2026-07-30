@@ -34,6 +34,20 @@ function normalizeBaseUrl(raw: string): string {
   return raw.replace(/\/+$/, '');
 }
 
+/**
+ * Thrown by {@link BaseService.fetchOrThrow} on a non-2xx response. Carries the HTTP `status` so
+ * callers (e.g. the CLI) can react to it — a 401 vs. a 404 — without parsing the message string.
+ */
+export class HttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
 export abstract class BaseService {
   protected apiKey: string;
   protected silent: boolean;
@@ -149,6 +163,36 @@ export abstract class BaseService {
       req.write(postData);
       req.end();
     });
+  }
+
+  /**
+   * Fetch `url` and return the raw response body text, throwing on failure. Used by services that
+   * throw-on-error (as opposed to {@link sendRequest}'s POST/null-on-error convention) — e.g.
+   * `McpService.mcpCall` and `FeedbackService`'s read methods — so the fetch/error/status-throwing
+   * logic isn't duplicated in each service.
+   *
+   * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
+   *   `"Feedback request failed"`, so each caller keeps its own established message wording.
+   * @throws Error if global `fetch` is unavailable (Node.js < 18) or on a network failure.
+   *   {@link HttpError} (with `.status`) on a non-2xx response.
+   */
+  protected async fetchOrThrow(url: string, init: RequestInit, errorPrefix: string): Promise<string> {
+    if (typeof fetch === 'undefined') {
+      throw new Error(`${errorPrefix}: global fetch is unavailable (requires Node.js 18+)`);
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      throw new Error(`${errorPrefix}: ${(err as Error).message}`);
+    }
+
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
+    }
+    return text;
   }
 
   protected log(...args: any[]): void {

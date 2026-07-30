@@ -38,6 +38,18 @@ npm run test:esm          # Smoke test ESM build
 | `npm run build` | Build dist/ (sync-version + tsup + CJS import fix + copy patterns) |
 | `npm run clean` | Remove dist/ and coverage/ |
 
+## Code conventions
+
+**TypeScript best practices:**
+- Prefer precise, named interfaces (`BaseServiceConfig`, `LLMRequestLogFeedbackResponse`, etc.) over `any`. Use `any`/loose index signatures only where the wire format is genuinely open-ended (e.g. `SearchFeedbackParams`'s Ransack predicate bag), and say why in a comment.
+- Avoid non-null assertions (`!`) and unnecessary type casts — narrow with a real check instead. `tsc --noEmit` (part of the verify gate) catches type errors but not sloppy typing; don't rely on it as the only signal.
+- Let inference do its job for local variables; reserve explicit annotations for function signatures and exported types, where callers need the contract spelled out.
+
+**DRY:**
+- Before writing a new service method, check `BaseService` and the sibling services (`FeedbackService`, `LoggingService`, `McpService`) for an existing helper (request building, error shape, URL/query construction) rather than re-implementing it.
+- When the same logic is needed twice within a class (e.g. two read methods both doing fetch + error handling), factor it into a private helper in that class rather than duplicating it — see `FeedbackService`'s `getJson` helper shared by `searchFeedback`/`getFeedback`.
+- Don't extract a shared abstraction across services for something that's only ever needed once — duplication of a few lines beats a premature abstraction.
+
 ## README and docs philosophy
 
 The README is a landing page — install, quick start, what it supports, where to go next. Keep it scannable. When in doubt, link rather than expand.
