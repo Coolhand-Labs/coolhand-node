@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -111,6 +111,33 @@ export class Coolhand {
    */
   public async createFeedback(feedback: LLMRequestLogFeedback): Promise<LLMRequestLogFeedbackResponse | null> {
     return this.feedbackService.createFeedback(feedback, 'manual');
+  }
+
+  /**
+   * Search feedback records using raw Ransack predicates (`q[...]` keys) plus `page`/`per`.
+   *
+   * Requires the **private** API key — construct this `Coolhand` instance with `apiKey` set to
+   * your private key, not the public key used for `createFeedback`/`logRequest`, which 401s here.
+   *
+   * @param params Ransack predicates (e.g. `sentiment_eq`, `explanation_cont`), `s` (sort), and
+   *   `page`/`per` (pagination).
+   * @returns The matching feedback records (`:summary` view) plus pagination metadata.
+   */
+  public async searchFeedback(params?: SearchFeedbackParams): Promise<SearchFeedbackResponse> {
+    return this.feedbackService.searchFeedback(params);
+  }
+
+  /**
+   * Get a single feedback record by ID, including `original_output`/`revised_output`/
+   * `feedback_partials`.
+   *
+   * Requires the **private** API key, same as {@link searchFeedback}.
+   *
+   * @param id The feedback record ID.
+   * @returns The full feedback record (`:with_partials` view).
+   */
+  public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
+    return this.feedbackService.getFeedback(id);
   }
 
   /**

@@ -1,4 +1,11 @@
-import { LLMRequestLogFeedback, LLMRequestLogFeedbackPayload, LLMRequestLogFeedbackResponse } from '../types';
+import {
+  LLMRequestLogFeedback,
+  LLMRequestLogFeedbackPayload,
+  LLMRequestLogFeedbackResponse,
+  SearchFeedbackParams,
+  SearchFeedbackResponse,
+  LLMRequestLogFeedbackDetail
+} from '../types';
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
@@ -32,6 +39,61 @@ export class FeedbackService extends BaseService {
 
     this.logSeparator();
     return result;
+  }
+
+  /**
+   * Search feedback records. Requires the client's **private** API key — the public key used
+   * by `createFeedback` will 401 here.
+   *
+   * @param params Raw Ransack predicates (e.g. `sentiment_eq`, `explanation_cont`) plus `s`
+   *   (sort) and `page`/`per` (pagination). Wrapped as `q[<key>]` query params on the wire.
+   * @returns The `:summary` view of matching feedback records plus pagination metadata.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
+   */
+  public async searchFeedback(params: SearchFeedbackParams = {}): Promise<SearchFeedbackResponse> {
+    const { page, per, ...predicates } = params;
+    const url = new URL(this.apiEndpoint);
+    for (const [key, value] of Object.entries(predicates)) {
+      if (value !== undefined) {
+        url.searchParams.set(`q[${key}]`, String(value));
+      }
+    }
+    if (page !== undefined) {
+      url.searchParams.set('page', String(page));
+    }
+    if (per !== undefined) {
+      url.searchParams.set('per', String(per));
+    }
+    return this.getJson<SearchFeedbackResponse>(url.toString());
+  }
+
+  /**
+   * Get a single feedback record by ID. Requires the client's **private** API key, same as
+   * {@link searchFeedback}.
+   *
+   * @param id The feedback record ID.
+   * @returns The `:with_partials` view: the full record, including `original_output`/
+   *   `revised_output`/`feedback_partials`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code (e.g. 404 for an unknown ID).
+   */
+  public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
+    return this.getJson<LLMRequestLogFeedbackDetail>(`${this.apiEndpoint}/${encodeURIComponent(id)}`);
+  }
+
+  private async getJson<T>(url: string): Promise<T> {
+    const text = await this.fetchOrThrow(
+      url,
+      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
+      'Feedback request failed'
+    );
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`Feedback response was not valid JSON: ${text.slice(0, 2000)}`);
+    }
   }
 
   private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {
