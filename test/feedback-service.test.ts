@@ -35,8 +35,8 @@ describe('FeedbackService', () => {
   describe('Feedback creation', () => {
     it('should successfully create feedback', async () => {
       const mockResponse: LLMRequestLogFeedbackResponse = {
-        id: 123,
-        llm_request_log_id: 456,
+        id: 'xyz789abc123',
+        llm_request_log_id: 'abc123def456',
         like: true,
         explanation: 'Great response!',
         created_at: '2023-01-01T00:00:00Z',
@@ -61,7 +61,7 @@ describe('FeedbackService', () => {
       const result = await service.createFeedback(feedback);
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe(123);
+      expect(result!.id).toBe('xyz789abc123');
       expect(result!.like).toBe(true);
       expect(result!.explanation).toBe('Great response!');
     });

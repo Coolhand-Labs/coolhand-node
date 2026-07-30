@@ -212,7 +212,7 @@ const coolhand = new Coolhand({
 
 // Create feedback for an LLM response
 const feedback = await coolhand.createFeedback({
-  llm_request_log_id: 123,
+  llm_request_log_id: 'abc123def456', // hashid from a prior response; a raw integer FK also still works
   llm_provider_unique_id: 'req_xxxxxxx',
   client_unique_id: 'workorder-chat-456',
   creator_unique_id: 'user-789'
@@ -226,7 +226,7 @@ const feedback = await coolhand.createFeedback({
 **Field Guide:** All fields are optional, but here's how to get the best results:
 
 ### Matching Fields
-- **`llm_request_log_id`** 🎯 *Exact Match* - ID from the Coolhand API response when the original LLM request was logged. Provides exact matching.
+- **`llm_request_log_id`** 🎯 *Exact Match* - Hashid from the Coolhand API response when the original LLM request was logged (a raw integer FK is also still accepted on write, for backward compatibility). Provides exact matching.
 - **`llm_provider_unique_id`** 🎯 *Exact Match* - The x-request-id from the LLM API response (e.g., "req_xxxxxxx")
 - **`original_output`** 🔍 *Fuzzy Match* - The original LLM response text. Provides fuzzy matching but isn't 100% reliable.
 - **`client_unique_id`** 🔗 *Your Internal Matcher* - Connect to an identifier from your system for internal matching

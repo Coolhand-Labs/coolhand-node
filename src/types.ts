@@ -76,7 +76,8 @@ export interface CoolhandMatchedPattern {
 
 // Types for LLM Request Log Feedback endpoint
 export interface LLMRequestLogFeedback {
-  llm_request_log_id?: number;
+  /** Either the raw integer FK or a hashid string (e.g. from a prior response's llm_request_log_id) — the server accepts both on write. */
+  llm_request_log_id?: number | string;
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
@@ -103,15 +104,19 @@ export interface McpToolCallResponse {
 }
 
 export interface LLMRequestLogFeedbackResponse {
-  id: number;
-  llm_request_log_id: number;
+  /** Hashid, not the raw integer FK. */
+  id: string;
+  /** Hashid, not the raw integer FK — null when this feedback isn't linked to a specific logged request. */
+  llm_request_log_id: string | null;
   /** @deprecated Use `sentiment` instead */
   like?: boolean;
   sentiment?: "like" | "dislike" | "neutral";
   /** What kind of creator submitted the feedback: "human", "agent", or "unknown". */
   creator_type?: "human" | "agent" | "unknown";
   creator_unique_id?: string;
-  workload_hashid?: string;
+  /** Hashid of the workload this feedback is associated with, set server-side from workload_hashid on create.
+   *  (There is no separate workload_hashid field on responses — workload_hashid is write-only, on LLMRequestLogFeedback.) */
+  workload_id?: string | null;
   explanation?: string;
   revised_output?: string;
   llm_provider_unique_id?: string;
