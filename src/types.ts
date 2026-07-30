@@ -122,11 +122,7 @@ export interface LLMRequestLogFeedbackResponse {
   llm_provider_unique_id?: string;
   original_output?: string;
   client_unique_id?: string;
-  /**
-   * Hashid of the client that owns this feedback entry, matching every other external-facing
-   * identifier on this record. Was a raw integer FK on live responses as of this writing;
-   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
-   */
+  /** Hashid of the client that owns this feedback entry, matching every other external-facing identifier on this record. */
   client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
@@ -175,11 +171,7 @@ export interface LLMRequestLogFeedbackSummary {
   explanation?: string;
   llm_provider_unique_id?: string;
   client_unique_id?: string;
-  /**
-   * Hashid of the client that owns this feedback entry, matching every other external-facing
-   * identifier on this record. Was a raw integer FK on live responses as of this writing;
-   * tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes it to hashid-encode consistently.
-   */
+  /** Hashid of the client that owns this feedback entry, matching every other external-facing identifier on this record. */
   client_id?: string;
   collector?: string;
   coolhand_fingerprint_id?: string;
@@ -211,11 +203,7 @@ export interface LLMRequestLogFeedbackFocusRange {
 export interface LLMRequestLogFeedbackPartial {
   id: string;
   llm_request_log_feedback_id: string;
-  /**
-   * Hashid of the client that owns the parent feedback record. Was a raw integer FK on live
-   * responses as of this writing; tracking pattaya PR Coolhand-Labs/coolhand#1081, which fixes
-   * it to hashid-encode consistently (matches {@link LLMRequestLogFeedbackResponse.client_id}).
-   */
+  /** Hashid of the client that owns the parent feedback record (matches {@link LLMRequestLogFeedbackResponse.client_id}). */
   client_id: string;
   focus_section?: string | null;
   focus_range?: LLMRequestLogFeedbackFocusRange | null;

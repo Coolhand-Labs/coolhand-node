@@ -7,15 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.0] - 2026-07-30
 
-### ⚠️ Breaking Changes
-- **`LLMRequestLogFeedbackResponse.llm_request_log_id` is now `string | null`, not `number`** — the Coolhand API now returns this as a hashid, matching every other external-facing identifier on the record (it previously leaked the raw integer foreign key). If your code reads `llm_request_log_id` off a feedback response and treats it as a number (arithmetic, numeric comparison, storage in a numeric column), update it to treat the value as an opaque string identifier instead.
+### 💥 Breaking Changes
+- **`LLMRequestLogFeedbackResponse.llm_request_log_id` and `LLMRequestLogFeedbackSummary.llm_request_log_id` are now `string | null`, not `number`** — the Coolhand API now returns this as a hashid, matching every other external-facing identifier on the record (it previously leaked the raw integer foreign key). If your code reads `llm_request_log_id` off a feedback response and treats it as a number (arithmetic, numeric comparison, storage in a numeric column), update it to treat the value as an opaque string identifier instead. Nothing in this SDK's own logic depended on its numeric type (only ever logged/passed through), so no runtime behavior changes here beyond the types.
 - **`LLMRequestLogFeedback.llm_request_log_id`** (the `createFeedback`/`updateFeedback` request field) is now typed `number | string` — existing callers passing a raw integer are unaffected; the server still accepts either format on write.
-- **`LLMRequestLogFeedbackResponse.id` is now `string`, not `number`** — the Coolhand server has actually returned a hashid for this field for some time; the type was simply wrong. This is a type-only correction (no server behavior change), but is still breaking for code compiled against the old `number` type.
-- **`LLMRequestLogFeedbackResponse.workload_id`** is now a typed `string | null` field (hashid) — previously undocumented on this type; the server has begun including it on responses, encoded as a hashid rather than a raw integer.
-- **Removed `LLMRequestLogFeedbackResponse.workload_hashid`** — this field was speculative and never actually returned by the server (only accepted as a write-side parameter, which remains on `LLMRequestLogFeedback`); `workload_id` above is the real hashid-bearing field on responses. Since the server never populated it, no caller could have received a real value through it.
-
-### 🔍 Note
-Nothing in this SDK's own logic depended on `llm_request_log_id`'s or `id`'s numeric type (both were only ever logged/passed through), so no runtime behavior changes here beyond the types — but this is still a type-level breaking change for any TypeScript code compiled against the previous types.
+- **`LLMRequestLogFeedbackResponse.workload_id` and `LLMRequestLogFeedbackSummary.workload_id` are now `string | null`, not `number`** — the same hashid change as `llm_request_log_id` above, applied to the workload identifier. Also only ever logged/passed through, so no runtime behavior changes beyond the types.
+- **Removed `llm_request_log_hashid` from `LLMRequestLogFeedbackResponse` and `LLMRequestLogFeedbackSummary`** — now redundant, since `llm_request_log_id` above is itself the hashid.
 
 ## [0.9.0] - 2026-07-10
 
