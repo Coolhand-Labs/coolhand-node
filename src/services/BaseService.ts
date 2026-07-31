@@ -185,7 +185,7 @@ export abstract class BaseService {
     try {
       res = await fetch(url, init);
     } catch (err) {
-      throw new Error(`${errorPrefix}: ${(err as Error).message}`);
+      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
     }
 
     const text = await res.text().catch(() => '');

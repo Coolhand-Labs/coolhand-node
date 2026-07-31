@@ -10,7 +10,7 @@ module.exports = {
       tsconfig: {
         module: 'ES2020',
         target: 'ES2020',
-        lib: ['ES2020']
+        lib: ['ES2020', 'ES2022.Error']
       }
     }],
   },
