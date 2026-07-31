@@ -222,3 +222,124 @@ export interface LLMRequestLogFeedbackPartial {
 export interface LLMRequestLogFeedbackDetail extends LLMRequestLogFeedbackResponse {
   feedback_partials?: LLMRequestLogFeedbackPartial[];
 }
+
+// Options for GET /api/v2/llm_request_logs/{id} (getLogContent). `searchQuery` is mutually
+// exclusive with `section`/`maxChars` on the server — it returns matching snippets instead of
+// raw content — so this is modeled as a discriminated union rather than one interface with all
+// four fields optional, enforcing the exclusivity at compile time instead of just documenting it.
+export interface GetLogContentSliceOptions {
+  /** Which part of each content field to return (default: `"full"`). */
+  section?: 'full' | 'beginning' | 'end';
+  /** Max characters per content field — slices from the start, or the requested `section`. */
+  maxChars?: number;
+  searchQuery?: undefined;
+  /** Include `thinking_response` in the result (default: false). */
+  includeThinking?: boolean;
+}
+
+export interface GetLogContentSearchOptions {
+  section?: undefined;
+  maxChars?: undefined;
+  /** Text to search for; returns up to 5 matching snippets per field with surrounding context. */
+  searchQuery: string;
+  /** Include `thinking_response` in the result (default: false). */
+  includeThinking?: boolean;
+}
+
+export type GetLogContentOptions = GetLogContentSliceOptions | GetLogContentSearchOptions;
+
+export interface LlmRequestLogContentFields {
+  system_prompt: string | null;
+  user_prompt: string | null;
+  output: string | null;
+}
+
+export interface LlmRequestLogContentBase {
+  /** Hashid. */
+  id: string;
+  url: string;
+  model: string | null;
+  source_api: string | null;
+  /** Hashid, null when this log isn't matched to a template. */
+  template_id: string | null;
+  template_name: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  latency_ms: number | null;
+  created_at: string;
+  /** Only present when `includeThinking` was set; null when the log has no thinking response. */
+  thinking_response?: string | null;
+}
+
+// Returned when getLogContent was called without `searchQuery` — the (optionally sliced)
+// content fields.
+export interface LlmRequestLogContentFull extends LlmRequestLogContentBase, LlmRequestLogContentFields {
+  /** Set when `section`/`maxChars` produced a partial result. */
+  truncated?: boolean;
+  /** Full length of each field, present alongside `truncated`. */
+  total_chars?: Record<keyof LlmRequestLogContentFields, number>;
+}
+
+// Returned when getLogContent was called with `searchQuery` — snippet matches instead of raw content.
+export interface LlmRequestLogContentSearchResult extends LlmRequestLogContentBase {
+  search_query: string;
+  matches: Record<keyof LlmRequestLogContentFields, string[]>;
+}
+
+export type LlmRequestLogContent = LlmRequestLogContentFull | LlmRequestLogContentSearchResult;
+
+// Params for GET /api/v2/llm_request_logs (searchLogs). `templateId` through `includePrompts`
+// are dedicated named filters rather than raw Ransack `q[...]` predicates — several (workload_id,
+// the *Contains filters) need joins/hashid-decoding/ILIKE that don't fit the Ransack allowlist.
+// They're applied on top of the endpoint's existing Ransack-backed search/sort, not in place of
+// it — `sort` below reaches that directly (as `q[s]`).
+export interface SearchLogsParams {
+  /** Template hashid. */
+  templateId?: string;
+  /** Workload hashid — matches all templates in that workload. */
+  workloadId?: string;
+  /** Case-insensitive substring match against the system prompt. */
+  systemPromptContains?: string;
+  /** Case-insensitive substring match against the user prompt. */
+  userPromptContains?: string;
+  model?: string;
+  sourceApi?: string;
+  sourceApiResult?: string;
+  /** Only return logs with no assigned template. */
+  unmatchedOnly?: boolean;
+  /** Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default. */
+  daysBack?: number;
+  /** Include `system_prompt`/`user_prompt` (truncated to 500 chars) on each result. */
+  includePrompts?: boolean;
+  /** Ransack sort expression, e.g. `"created_at desc"` — sent as `q[s]`. The endpoint defaults to
+   *  newest-first (`id desc`) when omitted, so pagination stays deterministic. */
+  sort?: string;
+  /** Page number. */
+  page?: number;
+  /** Page size (default 25, max 100 — enforced server-side; `per_page` is also accepted on the wire but this SDK only sends `per`). */
+  per?: number;
+}
+
+// Blueprint fields for a log returned by searchLogs — system_prompt/user_prompt only present
+// when `includePrompts` was set.
+export interface LlmRequestLogSummary {
+  /** Hashid. */
+  id: string;
+  collector: string | null;
+  source_api: string | null;
+  source_api_result: string | null;
+  model: string | null;
+  /** Hashid, null when this log isn't matched to a template. */
+  template_id: string | null;
+  template_name: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  latency_ms: number | null;
+  created_at: string;
+  updated_at: string;
+  system_prompt?: string | null;
+  user_prompt?: string | null;
+}
+
+// searchLogs' backing endpoint has no pagination envelope — it renders a bare array of matches.
+export type SearchLogsResponse = LlmRequestLogSummary[];

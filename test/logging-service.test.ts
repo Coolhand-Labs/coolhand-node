@@ -1,5 +1,6 @@
 import { LoggingService, LoggingServiceConfig } from '../src/services/LoggingService';
-import { CoolhandCallData, CoolhandMatchedPattern } from '../src/types';
+import { HttpError } from '../src/services/BaseService';
+import { CoolhandCallData, CoolhandMatchedPattern, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsResponse } from '../src/types';
 
 // Mock fetch for testing
 const originalFetch = (global as any).fetch;
@@ -12,6 +13,12 @@ function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = 
     json: jest.fn().mockResolvedValue(mockResponse),
     text: jest.fn().mockResolvedValue(JSON.stringify(mockResponse))
   });
+}
+
+// Helper for GET-based reads (getLogContent/searchLogs), which only read the `text()` body.
+function mockGetFetch(bodyObj: any, { ok = true, status = 200 }: { ok?: boolean; status?: number } = {}): any {
+  const text = typeof bodyObj === 'string' ? bodyObj : JSON.stringify(bodyObj);
+  return jest.fn().mockResolvedValue({ ok, status, text: jest.fn().mockResolvedValue(text) });
 }
 
 // Helper function to create mock call data
@@ -292,6 +299,247 @@ describe('LoggingService', () => {
       expect(logCalls).not.toContain('🔍 Matched by:');
 
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('getLogContent', () => {
+    it('GETs the log by id with the private key, plus section/maxChars/includeThinking as query params', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 'abc123' })) };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.getLogContent('abc123', {
+        section: 'end',
+        maxChars: 500,
+        includeThinking: true
+      });
+
+      const url = new URL(capturedUrl!);
+      expect(url.origin + url.pathname).toBe('https://coolhandlabs.com/api/v2/llm_request_logs/abc123');
+      expect(url.searchParams.get('section')).toBe('end');
+      expect(url.searchParams.get('max_chars')).toBe('500');
+      expect(url.searchParams.has('search_query')).toBe(false);
+      expect(url.searchParams.get('include_thinking')).toBe('true');
+      expect(capturedOptions.method).toBe('GET');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+    });
+
+    it('GETs the log by id with searchQuery as a query param, omitting section/maxChars', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 'abc123' })) };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.getLogContent('abc123', { searchQuery: 'timeout' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('search_query')).toBe('timeout');
+      expect(url.searchParams.has('section')).toBe(false);
+      expect(url.searchParams.has('max_chars')).toBe(false);
+    });
+
+    it('returns the parsed log content on success', async () => {
+      const mockResponse: LlmRequestLogContentFull = {
+        id: 'abc123',
+        url: '/c/client-hash/llm_request_logs/abc123',
+        model: 'gpt-4',
+        source_api: 'openai',
+        template_id: null,
+        template_name: null,
+        input_tokens: 100,
+        output_tokens: 50,
+        latency_ms: 250,
+        created_at: '2026-01-01T00:00:00Z',
+        system_prompt: 'You are a helpful assistant.',
+        user_prompt: 'What is 2+2?',
+        output: '4'
+      };
+      (global as any).fetch = mockGetFetch(mockResponse);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.getLogContent('abc123');
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('returns snippet matches when searchQuery is used', async () => {
+      const mockResponse: LlmRequestLogContentSearchResult = {
+        id: 'abc123',
+        url: '/c/client-hash/llm_request_logs/abc123',
+        model: 'gpt-4',
+        source_api: 'openai',
+        template_id: null,
+        template_name: null,
+        input_tokens: 100,
+        output_tokens: 50,
+        latency_ms: 250,
+        created_at: '2026-01-01T00:00:00Z',
+        search_query: 'timeout',
+        matches: { system_prompt: [], user_prompt: ['...a timeout occurred...'], output: [] }
+      };
+      (global as any).fetch = mockGetFetch(mockResponse);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.getLogContent('abc123', { searchQuery: 'timeout' });
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('throws with the HTTP status on a non-ok response', async () => {
+      (global as any).fetch = mockGetFetch('Key rejected', { ok: false, status: 401 });
+
+      const service = new LoggingService({ apiKey: 'public-key-used-by-mistake', silent: true });
+      await expect(service.getLogContent('abc123')).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining('Log request failed (401)')
+      });
+      await expect(service.getLogContent('abc123')).rejects.toBeInstanceOf(HttpError);
+    });
+
+    it('throws with a 404 status when the log is not found', async () => {
+      (global as any).fetch = mockGetFetch('Not found', { ok: false, status: 404 });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.getLogContent('missing')).rejects.toMatchObject({
+        status: 404,
+        message: expect.stringContaining('Log request failed (404)')
+      });
+    });
+
+    it('throws a plain error on network failure', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.getLogContent('abc123')).rejects.toThrow('Log request failed: ECONNREFUSED');
+    });
+
+    it('throws when the body is not valid JSON', async () => {
+      (global as any).fetch = mockGetFetch('<html>not json</html>');
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.getLogContent('abc123')).rejects.toThrow('Log response was not valid JSON');
+    });
+  });
+
+  describe('searchLogs', () => {
+    it('builds named filters and pagination as query params', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.searchLogs({
+        templateId: 'tmpl-hash',
+        workloadId: 'workload-hash',
+        systemPromptContains: 'assistant',
+        userPromptContains: 'help',
+        model: 'gpt-4',
+        sourceApi: 'openai',
+        sourceApiResult: 'success',
+        unmatchedOnly: true,
+        daysBack: 7,
+        includePrompts: true,
+        sort: 'created_at desc',
+        page: 2,
+        per: 10
+      });
+
+      const url = new URL(capturedUrl!);
+      expect(url.origin + url.pathname).toBe('https://coolhandlabs.com/api/v2/llm_request_logs');
+      expect(url.searchParams.get('template_id')).toBe('tmpl-hash');
+      expect(url.searchParams.get('workload_id')).toBe('workload-hash');
+      expect(url.searchParams.get('system_prompt_contains')).toBe('assistant');
+      expect(url.searchParams.get('user_prompt_contains')).toBe('help');
+      expect(url.searchParams.get('model')).toBe('gpt-4');
+      expect(url.searchParams.get('source_api')).toBe('openai');
+      expect(url.searchParams.get('source_api_result')).toBe('success');
+      expect(url.searchParams.get('unmatched_only')).toBe('true');
+      expect(url.searchParams.get('days_back')).toBe('7');
+      expect(url.searchParams.get('include_prompts')).toBe('true');
+      expect(url.searchParams.get('q[s]')).toBe('created_at desc');
+      expect(url.searchParams.get('page')).toBe('2');
+      expect(url.searchParams.get('per')).toBe('10');
+      expect(capturedOptions.method).toBe('GET');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+    });
+
+    it('sends explicit false booleans as the literal string "false", not omitting the param', async () => {
+      // The backend casts these via ActiveModel::Type::Boolean, which treats the string "false"
+      // as boolean false — so this must NOT be dropped the way `undefined` values are, or an
+      // explicit `unmatchedOnly: false` couldn't override a truthy default.
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.searchLogs({ unmatchedOnly: false, includePrompts: false });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('unmatched_only')).toBe('false');
+      expect(url.searchParams.get('include_prompts')).toBe('false');
+    });
+
+    it('returns the parsed array of matching logs on success, with no pagination envelope', async () => {
+      const mockResponse: SearchLogsResponse = [
+        {
+          id: 'abc123',
+          collector: 'manual',
+          source_api: 'openai',
+          source_api_result: 'success',
+          model: 'gpt-4',
+          template_id: null,
+          template_name: null,
+          input_tokens: 100,
+          output_tokens: 50,
+          latency_ms: 250,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z'
+        }
+      ];
+      (global as any).fetch = mockGetFetch(mockResponse);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ page: 1 });
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('throws with the HTTP status on a non-ok response', async () => {
+      (global as any).fetch = mockGetFetch('Key rejected', { ok: false, status: 401 });
+
+      const service = new LoggingService({ apiKey: 'public-key-used-by-mistake', silent: true });
+      await expect(service.searchLogs()).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining('Log request failed (401)')
+      });
+      await expect(service.searchLogs()).rejects.toBeInstanceOf(HttpError);
+    });
+
+    it('throws a plain error on network failure', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchLogs()).rejects.toThrow('Log request failed: ECONNREFUSED');
+    });
+
+    it('throws when the body is not valid JSON', async () => {
+      (global as any).fetch = mockGetFetch('<html>not json</html>');
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchLogs()).rejects.toThrow('Log response was not valid JSON');
     });
   });
 });

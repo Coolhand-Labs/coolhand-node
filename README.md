@@ -263,6 +263,22 @@ const record = await coolhand.getFeedback(feedback[0].id);
 See [docs/feedback-search.md](./docs/feedback-search.md) for the full search parameter reference
 and error handling.
 
+## Reading Logs
+
+`searchLogs` and `getLogContent` read back logs that have already been submitted. Like
+`searchFeedback`/`getFeedback`, these require your **private** API key (the public key 401s):
+
+```typescript
+const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
+
+const logs = await coolhand.searchLogs({ model: 'gpt-4', sourceApiResult: 'failed', daysBack: 7 });
+
+const content = await coolhand.getLogContent(logs[0].id);
+```
+
+See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling
+(`section`/`maxChars`/`searchQuery`), and error handling.
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -479,11 +495,14 @@ const loggingService = new LoggingService({
 
 ## Error Handling
 
-The monitor handles errors gracefully:
+Write methods (`logRequest`, `createFeedback`) never throw — a failed API call, invalid key, or
+network issue is logged to console and resolves to `null` instead of interrupting your
+application.
 
-- Failed API logging attempts are logged to console but don't interrupt your application
-- Invalid API keys will be reported but won't crash your app
-- Network issues are handled with appropriate error messages
+Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`) throw instead, since
+callers need to react to the result — a non-2xx response throws an `HttpError` with the status
+code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
+[docs/log-search.md](./docs/log-search.md) for details.
 
 ## Security
 
@@ -498,6 +517,7 @@ The monitor handles errors gracefully:
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
+- **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 
 ## Related Packages
 

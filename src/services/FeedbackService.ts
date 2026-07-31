@@ -65,7 +65,7 @@ export class FeedbackService extends BaseService {
     if (per !== undefined) {
       url.searchParams.set('per', String(per));
     }
-    return this.getJson<SearchFeedbackResponse>(url.toString());
+    return this.getJson<SearchFeedbackResponse>(url.toString(), 'Feedback');
   }
 
   /**
@@ -79,21 +79,7 @@ export class FeedbackService extends BaseService {
    *   whose `status` property holds the HTTP status code (e.g. 404 for an unknown ID).
    */
   public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
-    return this.getJson<LLMRequestLogFeedbackDetail>(`${this.apiEndpoint}/${encodeURIComponent(id)}`);
-  }
-
-  private async getJson<T>(url: string): Promise<T> {
-    const text = await this.fetchOrThrow(
-      url,
-      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
-      'Feedback request failed'
-    );
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(`Feedback response was not valid JSON: ${text.slice(0, 2000)}`);
-    }
+    return this.getJson<LLMRequestLogFeedbackDetail>(`${this.apiEndpoint}/${encodeURIComponent(id)}`, 'Feedback');
   }
 
   private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {

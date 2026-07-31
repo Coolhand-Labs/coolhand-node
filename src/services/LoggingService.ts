@@ -1,4 +1,17 @@
-import { CoolhandCallData, CoolhandLogPayload, CoolhandLogResponse, CoolhandMatchedPattern } from '../types';
+import {
+  CoolhandCallData,
+  CoolhandLogPayload,
+  CoolhandLogResponse,
+  CoolhandMatchedPattern,
+  GetLogContentOptions,
+  GetLogContentSliceOptions,
+  GetLogContentSearchOptions,
+  LlmRequestLogContent,
+  LlmRequestLogContentFull,
+  LlmRequestLogContentSearchResult,
+  SearchLogsParams,
+  SearchLogsResponse
+} from '../types';
 import { CollectionMethod } from '../utils/collector.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
@@ -34,6 +47,74 @@ export class LoggingService extends BaseService {
     this.logSeparator();
 
     return result;
+  }
+
+  /**
+   * Fetch full input/output content for a single log by ID. Requires the client's **private**
+   * API key — the public key used by {@link logRequestToAPI} will 401 here.
+   *
+   * @param logId The log's hashid.
+   * @param opts `section`/`maxChars` for large logs, or `searchQuery` for snippet search
+   *   (mutually exclusive with `section`/`maxChars` — enforced by the overloads below), plus
+   *   `includeThinking`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code (e.g. 404 for an unknown ID).
+   */
+  public async getLogContent(logId: string, opts?: GetLogContentSliceOptions): Promise<LlmRequestLogContentFull>;
+  public async getLogContent(logId: string, opts: GetLogContentSearchOptions): Promise<LlmRequestLogContentSearchResult>;
+  public async getLogContent(logId: string, opts: GetLogContentOptions): Promise<LlmRequestLogContent>;
+  public async getLogContent(logId: string, opts: GetLogContentOptions = {}): Promise<LlmRequestLogContent> {
+    const url = new URL(`${this.apiEndpoint}/${encodeURIComponent(logId)}`);
+    if (opts.section !== undefined) {
+      url.searchParams.set('section', opts.section);
+    }
+    if (opts.maxChars !== undefined) {
+      url.searchParams.set('max_chars', String(opts.maxChars));
+    }
+    if (opts.searchQuery !== undefined) {
+      url.searchParams.set('search_query', opts.searchQuery);
+    }
+    if (opts.includeThinking !== undefined) {
+      url.searchParams.set('include_thinking', String(opts.includeThinking));
+    }
+    return this.getJson<LlmRequestLogContent>(url.toString(), 'Log');
+  }
+
+  /**
+   * Search logs by named filters (`templateId`, `workloadId`, `model`, etc.) — not raw Ransack
+   * predicates, unlike `FeedbackService#searchFeedback` — applied on top of the endpoint's
+   * existing Ransack-backed search/sort; `sort` reaches that directly, sent as `q[s]`. Requires
+   * the client's **private** API key, same as {@link getLogContent}.
+   *
+   * @returns The matching logs. Unlike `searchFeedback`, there is no pagination metadata in the
+   *   response — just the array of matches for the requested page.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
+   */
+  public async searchLogs(params: SearchLogsParams = {}): Promise<SearchLogsResponse> {
+    const url = new URL(this.apiEndpoint);
+
+    const queryParams = {
+      template_id: params.templateId,
+      workload_id: params.workloadId,
+      system_prompt_contains: params.systemPromptContains,
+      user_prompt_contains: params.userPromptContains,
+      model: params.model,
+      source_api: params.sourceApi,
+      source_api_result: params.sourceApiResult,
+      unmatched_only: params.unmatchedOnly,
+      days_back: params.daysBack,
+      include_prompts: params.includePrompts,
+      'q[s]': params.sort,
+      page: params.page,
+      per: params.per
+    };
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (value !== undefined) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    return this.getJson<SearchLogsResponse>(url.toString(), 'Log');
   }
 
   private logRequestInfo(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): void {

@@ -168,8 +168,8 @@ export abstract class BaseService {
   /**
    * Fetch `url` and return the raw response body text, throwing on failure. Used by services that
    * throw-on-error (as opposed to {@link sendRequest}'s POST/null-on-error convention) — e.g.
-   * `McpService.mcpCall` and `FeedbackService`'s read methods — so the fetch/error/status-throwing
-   * logic isn't duplicated in each service.
+   * `McpService.mcpCall` and, via {@link getJson}, the `FeedbackService`/`LoggingService` read
+   * methods — so the fetch/error/status-throwing logic isn't duplicated in each service.
    *
    * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
    *   `"Feedback request failed"`, so each caller keeps its own established message wording.
@@ -193,6 +193,31 @@ export abstract class BaseService {
       throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
     }
     return text;
+  }
+
+  /**
+   * GET `url` and JSON-parse the response body, throwing on failure — the shared read-path used
+   * by `FeedbackService`/`LoggingService`'s search/get methods (as opposed to {@link sendRequest}'s
+   * POST/null-on-error convention).
+   *
+   * @param noun Capitalized noun identifying the caller, e.g. `"Feedback"` or `"Log"` — produces
+   *   `"<noun> request failed (<status>): ..."` and `"<noun> response was not valid JSON: ..."`
+   *   so each caller keeps its own established message wording.
+   * @throws Error on network failure or a non-JSON body. {@link HttpError} (with `.status`) on a
+   *   non-2xx response.
+   */
+  protected async getJson<T>(url: string, noun: string): Promise<T> {
+    const text = await this.fetchOrThrow(
+      url,
+      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
+      `${noun} request failed`
+    );
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
+    }
   }
 
   protected log(...args: any[]): void {

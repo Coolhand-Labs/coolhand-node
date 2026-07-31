@@ -144,6 +144,64 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('LoggingService read integration', () => {
+    it('should expose getLogContent and searchLogs functions', () => {
+      const monitor = new Coolhand({
+        apiKey: 'test-key',
+        silent: true
+      });
+
+      expect(typeof monitor.getLogContent).toBe('function');
+      expect(typeof monitor.searchLogs).toBe('function');
+    });
+  });
+
+  describe('getLogContent / searchLogs', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates getLogContent to LoggingService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 'abc123' })) };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.getLogContent('abc123', { section: 'end' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_request_logs/abc123');
+      expect(url.searchParams.get('section')).toBe('end');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ id: 'abc123' });
+    });
+
+    it('delegates searchLogs to LoggingService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.searchLogs({ model: 'gpt-4', page: 1 });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('model')).toBe('gpt-4');
+      expect(url.searchParams.get('page')).toBe('1');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('logRequest', () => {
     const savedFetch = (global as any).fetch;
 
