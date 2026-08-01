@@ -324,7 +324,10 @@ export class RequestMonitoringService {
       const response = await originalFetch.call(globalThis, url, options);
 
       callData.status_code = response.status;
-      callData.response_headers = Object.fromEntries(response.headers.entries());
+      callData.response_headers = this.patternMatchingService.sanitizeHeaders(
+        Object.fromEntries(response.headers.entries()),
+        matchedPattern?.pattern
+      );
 
       // Clone response to read body without consuming it
       const responseClone = response.clone();
