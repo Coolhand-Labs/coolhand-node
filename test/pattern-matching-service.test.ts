@@ -298,7 +298,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized).toEqual({
-        'authorization': 'Bearer [REDACTED]',
+        'authorization': '[REDACTED]',
         'api-key': '[REDACTED]',
         'content-type': 'application/json'
       });
@@ -358,7 +358,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['authorization']).toBe('[REDACTED]');
       expect(sanitized['api-key']).toBe('[REDACTED]');
     });
 
@@ -392,7 +392,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized['custom-header']).toBe('keep-this');
-      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['authorization']).toBe('[REDACTED]');
     });
 
     it('should handle empty headers object', () => {
@@ -662,7 +662,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized.custom).toEqual({ nested: 'value' });
     });
 
@@ -674,7 +674,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized.accept).toBe('application/json, text/plain');
     });
 
@@ -696,7 +696,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized['x-api-key']).toBe('Bearer another-token-format'); // Not in default rules
     });
 
@@ -708,7 +708,47 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact non-Bearer authorization schemes', () => {
+      const headers = {
+        'authorization': 'Basic dXNlcjpwYXNzd29yZA=='
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact lowercase bearer scheme', () => {
+      const headers = {
+        'authorization': 'bearer sk-lowercase-SECRET'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact a non-Bearer authorization header under a pattern that only overrides other headers (e.g. Anthropic)', () => {
+      const anthropicPattern: CoolhandAPIPattern = {
+        name: 'Anthropic',
+        domains: ['api.anthropic.com'],
+        headers: {
+          'x-api-key': '[REDACTED]'
+        }
+      };
+
+      const headers = {
+        'authorization': 'Basic dXNlcjpwYXNzd29yZA==',
+        'x-api-key': 'ant-secret-key'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers, anthropicPattern);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
     });
 
     it('should handle API keys with different prefixes', () => {
