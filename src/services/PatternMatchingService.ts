@@ -325,6 +325,10 @@ export class PatternMatchingService {
     }
   }
 
+  private hostnameMatchesDomain(hostname: string, domain: string): boolean {
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
   // Defense in depth: a bug in any matcher (e.g. malformed apiPatterns surviving
   // load-time validation) must never break the host app's networking — this is the
   // hot path called from every patched http/https/fetch entry point.
@@ -355,7 +359,7 @@ export class PatternMatchingService {
       // Check domain matches
       for (const pattern of this.apiPatterns) {
         for (const domain of pattern.domains) {
-          if (hostname.includes(domain)) {
+          if (this.hostnameMatchesDomain(hostname, domain)) {
             return {
               pattern,
               matchType: 'domain',
@@ -386,7 +390,7 @@ export class PatternMatchingService {
       // Check domain matches
       for (const pattern of this.apiPatterns) {
         for (const domain of pattern.domains) {
-          if (hostname.includes(domain)) {
+          if (this.hostnameMatchesDomain(hostname, domain)) {
             return {
               pattern,
               matchType: 'domain',
@@ -408,7 +412,7 @@ export class PatternMatchingService {
         // Check domain matches
         for (const pattern of this.apiPatterns) {
           for (const domain of pattern.domains) {
-            if (urlObj.hostname.includes(domain)) {
+            if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
               return {
                 pattern,
                 matchType: 'domain',
