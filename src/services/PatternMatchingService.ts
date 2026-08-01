@@ -424,10 +424,7 @@ export class PatternMatchingService {
 
     // Default sanitization rules
     if (sanitized.authorization) {
-      const auth = Array.isArray(sanitized.authorization)
-        ? sanitized.authorization[0]
-        : sanitized.authorization;
-      sanitized.authorization = String(auth).replace(/Bearer .+/, 'Bearer [REDACTED]');
+      sanitized.authorization = '[REDACTED]';
     }
     if (sanitized['api-key'] !== undefined) {
       sanitized['api-key'] = '[REDACTED]';

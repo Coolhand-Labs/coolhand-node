@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-08-01
+
+### 🔒 Security
+- **`sanitizeHeaders` now redacts the entire `Authorization` header value unconditionally**, not just the `Bearer <token>` scheme. Previously, `Basic ...` and other non-`Bearer` schemes — including a lowercase `bearer` scheme used by some client libraries — passed through the default redaction rule unmasked. This was already covered for OpenAI/Google AI/GitHub Models/Vertex AI/OpenRouter/Cloudflare AI Gateway, whose patterns declare their own `authorization` override, but not for **Anthropic**, whose pattern only overrides `x-api-key` — so an Anthropic-matched request carrying a non-`Bearer` `Authorization` header (e.g. `Basic` proxy auth from a corporate egress gateway) leaked that credential into logged headers. ([#118](https://github.com/Coolhand-Labs/coolhand-node/issues/118))
+
 ## [0.10.1] - 2026-08-01
 
 ### ✨ New Features
