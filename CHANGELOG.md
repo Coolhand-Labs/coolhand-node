@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-08-01
+
+### ✨ New Features
+- **`Coolhand#getLogContent(logId, opts)` and `Coolhand#searchLogs(params)`** — new read methods for logs, backed by `GET /api/v2/llm_request_logs/{id}` (fetch content) and `GET /api/v2/llm_request_logs` (search). Both authenticate with the **private** API key — the public key used by `logRequest`/`createFeedback` will 401 on these — matching `searchFeedback`/`getFeedback`'s existing read-path convention. `getLogContent` supports `section`/`maxChars` for large logs, or `searchQuery` for snippet search (mutually exclusive — enforced at compile time via a discriminated `GetLogContentOptions` union), plus `includeThinking`. `searchLogs` supports named filters (`templateId`, `workloadId`, `model`, `sourceApi`, `sourceApiResult`, `unmatchedOnly`, `daysBack`, `includePrompts`, `sort`, `page`, `per`) and returns `{ logs, pagination }`, with `pagination` read from `X-Total-Count`/`X-Page`/`X-Per-Page`/`X-Total-Pages` response headers where the backend supports them. New exported types: `GetLogContentOptions` (+ `GetLogContentSliceOptions`/`GetLogContentSearchOptions`), `LlmRequestLogContent` (+ `LlmRequestLogContentFull`/`LlmRequestLogContentSearchResult`/`Base`/`Fields`), `SearchLogsParams`, `SearchLogsResponse`, `LlmRequestLogSummary`, `Pagination` (renamed from `FeedbackPagination`, which remains a `@deprecated` type alias — not a breaking change). ([#108](https://github.com/Coolhand-Labs/coolhand-node/issues/108), [#109](https://github.com/Coolhand-Labs/coolhand-node/pull/109))
+- Replaces what `coolhand-cli`'s `fetch-log`/`search-logs` commands currently do via `McpService.mcpCall('get_log_content' | 'search_logs', ...)` (JSON-RPC over `/mcp`) — the CLI migration itself is tracked separately, blocked on this release.
+
+### ⚠️ Upgrade Notes
+- **`getLogContent`/`searchLogs` depend on a backend change ([Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096)) that had not yet shipped to production as of this release.** Against a backend that hasn't deployed it yet: `getLogContent` 404s (no `show` route exists), and `searchLogs`' named filters are silently ignored (unfiltered results are returned, not an error) with only bare-minimum fields on each result and an estimated (not authoritative) `pagination`. See `docs/log-search.md`'s "Deployment status" section for the exact list of what does and doesn't work until that backend PR ships.
+
+### 🔒 Security
+- **`getFeedback` and `getLogContent` now reject a blank, whitespace-only, or bare dot-segment (`.`/`..`) ID client-side**, throwing a plain `Error` instead of silently sending the request. `encodeURIComponent` doesn't escape `.`, so WHATWG `URL` parsing was collapsing these into the collection's `index` route — returning a response shaped like a list, not a single record, typed as if it were the latter — and for `..`, sending the private API key to a different endpoint entirely. New shared `BaseService#buildResourceUrl` helper backs both methods.
+
+### 🔧 Build & CI
+- **GitHub Actions bumped to their latest major versions** (`actions/checkout` v4→v7, `actions/setup-node` v4→v7, `actions/upload-artifact` v4→v7, `actions/download-artifact` v4→v8) and 13 Dependabot PRs consolidated into one: `eslint` ^9→^10, `typescript` ^5→^6, `@types/node` ^20→^26, `globals` ^16→^17, plus the `examples/fastify-openai-unbundled` example's `pino`/`pino-pretty`/`zod`. ([#107](https://github.com/Coolhand-Labs/coolhand-node/pull/107))
+- **`tsconfig.json`/`jest.config.cjs` updated for the TypeScript 6.0 bump above** — `moduleResolution` changed to `"bundler"`, `ignoreDeprecations: "6.0"` and explicit `types: ["node", "jest"]` added, and `lib` extended with `ES2022.Error` (for `Error`'s `cause` option, already used by `BaseService`'s error handling).
+
 ## [0.10.0] - 2026-07-30
 
 ### 💥 Breaking Changes

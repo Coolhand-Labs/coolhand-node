@@ -65,7 +65,7 @@ export class FeedbackService extends BaseService {
     if (per !== undefined) {
       url.searchParams.set('per', String(per));
     }
-    return this.getJson<SearchFeedbackResponse>(url.toString());
+    return this.getJson<SearchFeedbackResponse>(url.toString(), 'Feedback');
   }
 
   /**
@@ -75,25 +75,15 @@ export class FeedbackService extends BaseService {
    * @param id The feedback record ID.
    * @returns The `:with_partials` view: the full record, including `original_output`/
    *   `revised_output`/`feedback_partials`.
-   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
-   *   whose `status` property holds the HTTP status code (e.g. 404 for an unknown ID).
+   * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`) — either would
+   *   otherwise silently resolve away to the `index` route or beyond, returning
+   *   `{ feedback: [...], pagination: {...} }` typed as a single record. Error on network failure
+   *   or a non-JSON body. A non-2xx response throws an error whose `status` property holds the
+   *   HTTP status code (e.g. 404 for an unknown ID).
    */
   public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
-    return this.getJson<LLMRequestLogFeedbackDetail>(`${this.apiEndpoint}/${encodeURIComponent(id)}`);
-  }
-
-  private async getJson<T>(url: string): Promise<T> {
-    const text = await this.fetchOrThrow(
-      url,
-      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
-      'Feedback request failed'
-    );
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(`Feedback response was not valid JSON: ${text.slice(0, 2000)}`);
-    }
+    const url = this.buildResourceUrl(id, 'getFeedback: id must be a non-empty string');
+    return this.getJson<LLMRequestLogFeedbackDetail>(url.toString(), 'Feedback');
   }
 
   private logFeedbackInfo(feedback: LLMRequestLogFeedback): void {

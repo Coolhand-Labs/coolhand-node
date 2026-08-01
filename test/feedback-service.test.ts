@@ -657,6 +657,22 @@ describe('FeedbackService', () => {
         message: expect.stringContaining('Feedback request failed (404)')
       });
     });
+
+    it('throws client-side on a blank or dot-segment id instead of silently hitting the index route', async () => {
+      const fetchSpy = jest.fn();
+      (global as any).fetch = fetchSpy;
+
+      const service = new FeedbackService({ apiKey: 'private-key-123', silent: true });
+
+      // A blank/"."/".." id would otherwise build a URL that resolves away to the collection
+      // endpoint (or further), returning { feedback: [...], pagination: {...} } typed as a single
+      // record — must fail fast instead, same as LoggingService#getLogContent's logId guard.
+      await expect(service.getFeedback('')).rejects.toThrow('id must be a non-empty string');
+      await expect(service.getFeedback('   ')).rejects.toThrow('id must be a non-empty string');
+      await expect(service.getFeedback('.')).rejects.toThrow('id must be a non-empty string');
+      await expect(service.getFeedback('..')).rejects.toThrow('id must be a non-empty string');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 });
 

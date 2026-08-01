@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -122,6 +122,8 @@ export class Coolhand {
    * @param params Ransack predicates (e.g. `sentiment_eq`, `explanation_cont`), `s` (sort), and
    *   `page`/`per` (pagination).
    * @returns The matching feedback records (`:summary` view) plus pagination metadata.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
    */
   public async searchFeedback(params?: SearchFeedbackParams): Promise<SearchFeedbackResponse> {
     return this.feedbackService.searchFeedback(params);
@@ -135,9 +137,49 @@ export class Coolhand {
    *
    * @param id The feedback record ID.
    * @returns The full feedback record (`:with_partials` view).
+   * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`). Error on
+   *   network failure or a non-JSON body. A non-2xx response throws an error whose `status`
+   *   property holds the HTTP status code (e.g. 404 for an unknown ID).
    */
   public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
     return this.feedbackService.getFeedback(id);
+  }
+
+  /**
+   * Fetch full input/output content for a single log by ID.
+   *
+   * Requires the **private** API key — construct this `Coolhand` instance with `apiKey` set to
+   * your private key, not the public key used for `createFeedback`/`logRequest`, which 401s here.
+   *
+   * @param logId The log's hashid.
+   * @param opts `section`/`maxChars` for large logs, or `searchQuery` for snippet search
+   *   (mutually exclusive with `section`/`maxChars` — enforced by the overloads below), plus
+   *   `includeThinking`.
+   * @throws Error if `logId` is blank/whitespace-only or a bare dot-segment (`.`/`..`), or if
+   *   `searchQuery` is blank/whitespace-only. Error on network failure or a non-JSON body. A
+   *   non-2xx response throws an error whose `status` property holds the HTTP status code (e.g.
+   *   404 for an unknown ID).
+   */
+  public async getLogContent(logId: string, opts?: GetLogContentSliceOptions): Promise<LlmRequestLogContentFull>;
+  public async getLogContent(logId: string, opts: GetLogContentSearchOptions): Promise<LlmRequestLogContentSearchResult>;
+  public async getLogContent(logId: string, opts: GetLogContentOptions): Promise<LlmRequestLogContent>;
+  public async getLogContent(logId: string, opts?: GetLogContentOptions): Promise<LlmRequestLogContent> {
+    return this.loggingService.getLogContent(logId, opts ?? {});
+  }
+
+  /**
+   * Search logs by named filters (`templateId`, `workloadId`, `model`, etc.) — not raw Ransack
+   * predicates, unlike {@link searchFeedback}.
+   *
+   * Requires the **private** API key, same as {@link getLogContent}.
+   *
+   * @returns `{ logs, pagination }` — the matching logs for the requested page, plus pagination
+   *   totals. See `LoggingService#searchLogs`/`docs/log-search.md` for how `pagination` is sourced.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
+   */
+  public async searchLogs(params?: SearchLogsParams): Promise<SearchLogsResponse> {
+    return this.loggingService.searchLogs(params);
   }
 
   /**
