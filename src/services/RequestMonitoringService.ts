@@ -329,12 +329,22 @@ export class RequestMonitoringService {
         matchedPattern?.pattern
       );
 
-      // Clone response to read body without consuming it
+      // Clone response to read body without consuming it. Drain and log in the
+      // background so a slow/streaming body doesn't delay the caller's fetch() —
+      // same reasoning as the res.on('data')/'end' handling on the http/https side.
       const responseClone = response.clone();
-      const responseText = await responseClone.text();
-      callData.response_body = parseBody(responseText);
-
-      this.onRequestComplete(callData, matchedPattern);
+      responseClone
+        .text()
+        .then((responseText) => {
+          callData.response_body = parseBody(responseText);
+        })
+        .catch((err) => {
+          this.log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
+          callData.response_body = null;
+        })
+        .finally(() => {
+          this.onRequestComplete(callData, matchedPattern);
+        });
 
       return response;
     } catch (error) {
