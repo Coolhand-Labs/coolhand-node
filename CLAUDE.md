@@ -16,6 +16,10 @@ npm run lint && npm run typecheck && npm test
 
 This mirrors what CI runs (`.github/workflows/ci.yml` runs lint, typecheck, and tests as separate jobs). A green run of all three means a green CI run. Do not substitute individual checks — run all three as the single gate.
 
+## Pull requests
+
+If a PR addresses one or more GitHub issues, prefix the PR title with a `[closes #N]` tag per issue, e.g. `[closes #111] [closes #505] fix for headers`. This lets GitHub auto-close the referenced issues when the PR merges.
+
 ## Running individual tools
 
 ```bash

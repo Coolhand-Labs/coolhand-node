@@ -8,9 +8,15 @@ jest.mock('fs');
 jest.mock('../src/services/PatternMatchingService');
 jest.mock('../src/services/LoggingService');
 
+// The fetch interception drains and logs the response body in a detached promise chain
+// (see issue #114) so callers of fetch() no longer wait on it; tests need to flush the
+// microtask queue after awaiting fetch() before asserting on the logged callData.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
   let underlyingFetchMock: jest.Mock;
+  let underlyingHttpsRequestMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -74,6 +80,10 @@ describe('Global Monitor', () => {
 
     // Capture reference before patching so tests can spy on originalFetch calls
     underlyingFetchMock = globalThis.fetch as jest.Mock;
+
+    // Capture the https.request automock reference before global-monitor patches it,
+    // so tests can control the "original" request behavior it wraps.
+    underlyingHttpsRequestMock = require('https').request as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -250,6 +260,53 @@ describe('Global Monitor', () => {
 
       // Should not throw even with non-configurable properties
       await expect(globalMonitor.initializeGlobalMonitoring(config)).resolves.not.toThrow();
+    });
+  });
+
+  describe('HTTPS/HTTP request interception', () => {
+    it('sanitizes query-param secrets from the logged URL for https.request', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          callback(fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      const rawUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=secret123';
+      const cleanUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=REDACTED';
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Google AI', domains: ['generativelanguage.googleapis.com'] },
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      } as any);
+      mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
+
+      // Ensure global monitoring (and therefore https.request patching) has run.
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      https.request(rawUrl, jest.fn());
+
+      // Let the queued microtask (response callback + 'end' event, plus the
+      // async decompress/log chain it triggers) flush.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPatternMatchingService.sanitizeURL).toHaveBeenCalledWith(rawUrl);
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.url).toBe(cleanUrl);
     });
   });
 
@@ -439,6 +496,7 @@ describe('Global Monitor', () => {
         headers: { authorization: 'Bearer token' },
         body: '{"prompt":"a"}'
       }));
+      await flush();
 
       expect(mockPatternMatchingService.matchesAPIPatternFromURL).toHaveBeenCalledWith(url);
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
@@ -461,6 +519,7 @@ describe('Global Monitor', () => {
       });
 
       await globalThis.fetch(request, { headers: { authorization: 'Bearer new' } });
+      await flush();
 
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
       expect(callData.headers).toMatchObject({ authorization: 'Bearer new' });
@@ -475,6 +534,7 @@ describe('Global Monitor', () => {
       });
 
       await globalThis.fetch(request);
+      await flush();
 
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
       expect(callData.headers).toHaveProperty('x-custom', 'keep-me');
@@ -491,6 +551,7 @@ describe('Global Monitor', () => {
       ));
 
       await globalThis.fetch('https://api.openai.com/v1/models');
+      await flush();
 
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
       expect(callData.response_headers).toEqual(expect.objectContaining({ 'set-cookie': '[REDACTED]' }));
@@ -502,6 +563,7 @@ describe('Global Monitor', () => {
       mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
 
       await globalThis.fetch(rawUrl, { method: 'POST', body: '{}' });
+      await flush();
 
       expect(mockPatternMatchingService.sanitizeURL).toHaveBeenCalledWith(rawUrl);
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
@@ -515,6 +577,7 @@ describe('Global Monitor', () => {
       });
 
       await globalThis.fetch(request, { body: '' });
+      await flush();
 
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
       expect(callData.request_body).toBeNull();
@@ -538,6 +601,49 @@ describe('Global Monitor', () => {
 
       await expect(globalThis.fetch(slowReq as any)).rejects.toThrow('network failure');
       expect(mockLoggingService.logRequestToAPI).not.toHaveBeenCalled();
+    });
+
+    it('resolves fetch() before the response body finishes streaming (issue #114)', async () => {
+      let resolveBody: (text: string) => void = () => {};
+      const bodyPromise = new Promise<string>((resolve) => { resolveBody = resolve; });
+
+      underlyingFetchMock.mockResolvedValueOnce({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: () => ({ text: () => bodyPromise })
+      });
+
+      // If interceptFetch still awaited the body drain before returning, this would hang
+      // forever since bodyPromise never resolves on its own.
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{}' });
+
+      expect(mockLoggingService.logRequestToAPI).not.toHaveBeenCalled();
+
+      resolveBody('{"result":"success"}');
+      await flush();
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ response_body: { result: 'success' } }),
+        mockPattern,
+        'global-monitoring'
+      );
+    });
+
+    it('logs with a null response_body when the detached body drain rejects', async () => {
+      underlyingFetchMock.mockResolvedValueOnce({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: () => ({ text: () => Promise.reject(new Error('stream aborted')) })
+      });
+
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{}' });
+      await flush();
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ response_body: null }),
+        mockPattern,
+        'global-monitoring'
+      );
     });
 
     it('fires originalFetch before awaiting a slow Request body', async () => {
@@ -576,6 +682,7 @@ describe('Global Monitor', () => {
 
       try {
         await globalThis.fetch('https://api.openai.com/v1/models');
+        await flush();
       } finally {
         (globalThis as any).Request = originalRequest;
       }

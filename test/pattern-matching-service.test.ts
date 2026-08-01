@@ -133,6 +133,45 @@ describe('PatternMatchingService', () => {
     });
   });
 
+  describe('Patterns File Shape Validation', () => {
+    const shapeInvalidCases: Array<[string, unknown]> = [
+      ['missing patterns key', {}],
+      ['patterns is null', { patterns: null }],
+      ['patterns is not an array', { patterns: 'oops' }],
+      ['root is a bare array', [{ name: 'OpenAI', domains: ['api.openai.com'] }]],
+      ['a pattern entry is missing domains', { patterns: [{ name: 'NoDomains' }] }],
+      ['a pattern entry has non-array domains', { patterns: [{ name: 'BadDomains', domains: 'api.openai.com' }] }]
+    ];
+
+    it.each(shapeInvalidCases)('falls back to default patterns when %s (default patterns file)', (_label, badData) => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(badData));
+
+      service = new PatternMatchingService();
+
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('Error loading API patterns'),
+        expect.stringContaining('not shaped correctly')
+      );
+      expect(service.getPatternsCountSync()).toBe(7);
+
+      // The service must remain usable after falling back — no throw on the next request.
+      const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
+      expect(result).toMatchObject({ pattern: expect.objectContaining({ name: 'OpenAI' }) });
+    });
+
+    it.each(shapeInvalidCases)('falls back to default patterns when %s (custom patterns file)', (_label, badData) => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(badData));
+
+      service = new PatternMatchingService('./custom-patterns.json');
+
+      expect(service.getPatternsCountSync()).toBe(7);
+      expect(() => service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).not.toThrow();
+      expect(() => service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).not.toThrow();
+    });
+  });
+
   describe('Domain Pattern Matching', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
@@ -204,6 +243,24 @@ describe('PatternMatchingService', () => {
 
     it('should return null for non-matching domains', () => {
       const result = service.matchesAPIPatternSync('https://unknown-api.com/endpoint');
+
+      expect(result).toBeNull();
+    });
+
+    it('should not match a hostname where the domain appears as a trailing substring', () => {
+      const result = service.matchesAPIPatternSync('https://api.openai.com.attacker.net/health');
+
+      expect(result).toBeNull();
+    });
+
+    it('should not match a hostname where the domain appears as a leading substring', () => {
+      const result = service.matchesAPIPatternSync('https://my-openai.com.internal/health');
+
+      expect(result).toBeNull();
+    });
+
+    it('should not match a hostname that merely contains the domain name without a label boundary', () => {
+      const result = service.matchesAPIPatternSync('https://notopenai.com/health');
 
       expect(result).toBeNull();
     });
@@ -298,7 +355,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized).toEqual({
-        'authorization': 'Bearer [REDACTED]',
+        'authorization': '[REDACTED]',
         'api-key': '[REDACTED]',
         'content-type': 'application/json'
       });
@@ -358,7 +415,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['authorization']).toBe('[REDACTED]');
       expect(sanitized['api-key']).toBe('[REDACTED]');
     });
 
@@ -392,7 +449,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized['custom-header']).toBe('keep-this');
-      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['authorization']).toBe('[REDACTED]');
     });
 
     it('should handle empty headers object', () => {
@@ -662,7 +719,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized.custom).toEqual({ nested: 'value' });
     });
 
@@ -674,7 +731,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized.accept).toBe('application/json, text/plain');
     });
 
@@ -696,7 +753,7 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
       expect(sanitized['x-api-key']).toBe('Bearer another-token-format'); // Not in default rules
     });
 
@@ -708,7 +765,47 @@ describe('PatternMatchingService', () => {
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact non-Bearer authorization schemes', () => {
+      const headers = {
+        'authorization': 'Basic dXNlcjpwYXNzd29yZA=='
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact lowercase bearer scheme', () => {
+      const headers = {
+        'authorization': 'bearer sk-lowercase-SECRET'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+    });
+
+    it('should redact a non-Bearer authorization header under a pattern that only overrides other headers (e.g. Anthropic)', () => {
+      const anthropicPattern: CoolhandAPIPattern = {
+        name: 'Anthropic',
+        domains: ['api.anthropic.com'],
+        headers: {
+          'x-api-key': '[REDACTED]'
+        }
+      };
+
+      const headers = {
+        'authorization': 'Basic dXNlcjpwYXNzd29yZA==',
+        'x-api-key': 'ant-secret-key'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers, anthropicPattern);
+
+      expect(sanitized.authorization).toBe('[REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
     });
 
     it('should handle API keys with different prefixes', () => {
@@ -820,8 +917,9 @@ describe('PatternMatchingService', () => {
       const endTime = Date.now();
       const totalTime = endTime - startTime;
 
-      // Should handle large header sanitization efficiently
-      expect(totalTime).toBeLessThan(100);
+      // Should handle large header sanitization efficiently (generous budget to
+      // stay stable under parallel test-worker CPU contention, not just on a quiet machine)
+      expect(totalTime).toBeLessThan(300);
     });
 
     it('should handle patterns with many domains efficiently', () => {
@@ -883,8 +981,50 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(malformedPatterns));
 
-      // Should not throw, but may have fewer patterns loaded
+      // Should not throw at construction time...
       expect(() => new PatternMatchingService()).not.toThrow();
+      service = new PatternMatchingService();
+
+      // ...and since one entry is missing `domains`, the whole file is treated as
+      // malformed and the service falls back to the 7 built-in default patterns,
+      // rather than silently loading the entries that happen to be well-formed.
+      expect(service.getPatternsCountSync()).toBe(7);
+
+      // Nor should the very next request throw — this is the actual crash #116 describes.
+      expect(() => service.matchesAPIPatternSync('https://valid.com/test')).not.toThrow();
+      expect(() => service.matchesAPIPatternFromURL('https://valid.com/test')).not.toThrow();
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenAI' })
+      });
+    });
+
+    it('should degrade to null instead of throwing when apiPatterns is corrupted after load', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+
+      service = new PatternMatchingService();
+      // Simulate a future bug elsewhere corrupting the cached patterns after a
+      // successful, validated load — the matching methods must still not throw.
+      (service as unknown as { apiPatterns: unknown }).apiPatterns = [{ name: 'Broken' }];
+
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('pattern matching failed'),
+        expect.any(String)
+      );
+    });
+
+    it('should degrade to null instead of throwing when apiPatterns is not iterable', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+
+      service = new PatternMatchingService();
+      (service as unknown as { apiPatterns: unknown }).apiPatterns = undefined;
+
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).toBeNull();
+      await expect(service.matchesAPIPattern('https://api.openai.com/v1/chat/completions')).resolves.toBeNull();
     });
 
     it('should handle circular references in headers gracefully', () => {
@@ -1317,6 +1457,23 @@ describe('PatternMatchingService', () => {
     it('should handle invalid URLs gracefully', () => {
       const result = service.sanitizeURL('not-a-valid-url');
       expect(result).toBe('not-a-valid-url');
+    });
+
+    it.each(['password', 'signature', 'sig', 'x-goog-api-key', 'X-Amz-Signature', 'X-Amz-Credential'])(
+      'should redact %s param',
+      (param) => {
+        const url = `https://api.example.com/v1/resource?${param}=super-secret-value`;
+        const result = service.sanitizeURL(url);
+        expect(result).not.toContain('super-secret-value');
+        expect(result).toContain('REDACTED');
+      }
+    );
+
+    it('should redact sensitive params case-insensitively', () => {
+      const url = 'https://api.example.com/v1/resource?SIGNATURE=super-secret-value';
+      const result = service.sanitizeURL(url);
+      expect(result).not.toContain('super-secret-value');
+      expect(result).toContain('REDACTED');
     });
   });
 });

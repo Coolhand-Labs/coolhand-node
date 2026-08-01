@@ -390,7 +390,7 @@ function patchHTTPS(): void {
             const requestId = generateRequestId(options, `https-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTPS request: ${method} ${buildURL(options, 'https')}`);
+              log(`🔄 Skipping duplicate HTTPS request: ${method} ${sanitizeForLog(buildURL(options, 'https'))}`);
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -432,7 +432,7 @@ function patchHTTPS(): void {
             const requestId = generateRequestId(options, 'https-GET');
 
             if (isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTPS GET: ${buildURL(options, 'https')}`);
+              log(`🔄 Skipping duplicate HTTPS GET: ${sanitizeForLog(buildURL(options, 'https'))}`);
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -480,7 +480,7 @@ function patchHTTP(): void {
             const requestId = generateRequestId(options, `http-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTP request: ${method} ${buildURL(options, 'http')}`);
+              log(`🔄 Skipping duplicate HTTP request: ${method} ${sanitizeForLog(buildURL(options, 'http'))}`);
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -522,7 +522,7 @@ function patchHTTP(): void {
             const requestId = generateRequestId(options, 'http-GET');
 
             if (isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTP GET: ${buildURL(options, 'http')}`);
+              log(`🔄 Skipping duplicate HTTP GET: ${sanitizeForLog(buildURL(options, 'http'))}`);
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -567,7 +567,7 @@ function patchFetch(): void {
         const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
 
         if (isIdempotentMethod(method) && isRequestActive(requestId)) {
-          log(`🔄 Skipping duplicate FETCH: ${method} ${urlStr}`);
+          log(`🔄 Skipping duplicate FETCH: ${method} ${sanitizeForLog(urlStr)}`);
           return originalFetch.call(this, url, options);
         }
 
@@ -604,7 +604,7 @@ function interceptRequest(
     id: state.interceptedCalls,
     timestamp: new Date().toISOString(),
     method: method,
-    url: url,
+    url: state.globalPatternService?.sanitizeURL(url) ?? url,
     headers: state.globalPatternService?.sanitizeHeaders(
       typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
       matchedPattern?.pattern
@@ -616,7 +616,7 @@ function interceptRequest(
     protocol: protocol
   };
 
-  log(`📞 Starting API call #${callData.id} to ${url}`);
+  log(`📞 Starting API call #${callData.id} to ${callData.url}`);
 
   let requestBody = '';
 
@@ -713,7 +713,7 @@ async function interceptFetch(
     protocol: 'fetch'
   };
 
-  log(`📞 Starting FETCH call #${callData.id} to ${url}`);
+  log(`📞 Starting FETCH call #${callData.id} to ${callData.url}`);
 
   try {
     // Body capture and the outbound request run concurrently. Using Promise.all
@@ -732,18 +732,26 @@ async function interceptFetch(
       matchedPattern?.pattern
     ) || {};
 
-    // Clone response to read body without consuming it
+    // Clone response to read body without consuming it. Drain and log in the
+    // background so a slow/streaming body doesn't delay the caller's fetch() —
+    // same reasoning as the res.on('data')/'end' handling on the http/https side.
     const responseClone = response.clone();
-    const responseText = await responseClone.text();
-    callData.response_body = parseBody(responseText);
-
-    // Log to API
-    const s = getState();
-    if (s.globalLoggingService) {
-      s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
-    }
-
-    unregisterActiveRequest(requestId, uniqueId);
+    responseClone
+      .text()
+      .then((responseText) => {
+        callData.response_body = parseBody(responseText);
+      })
+      .catch((err) => {
+        log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
+        callData.response_body = null;
+      })
+      .finally(() => {
+        const s = getState();
+        if (s.globalLoggingService) {
+          s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+        }
+        unregisterActiveRequest(requestId, uniqueId);
+      });
 
     return response;
   } catch (error) {
@@ -772,10 +780,22 @@ function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol
   return `${protocol}://${hostname}${port}${path}`;
 }
 
+function sanitizeForLog(url: string): string {
+  return getState().globalPatternService?.sanitizeURL(url) ?? url;
+}
+
+function extractHostname(value: string): string {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return 'unknown';
+  }
+}
+
 function debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
-  const hostname = typeof options === 'string' ? options :
+  const hostname = typeof options === 'string' ? extractHostname(options) :
                   options instanceof URL ? options.hostname :
-                  options.hostname || options.host || options.url || 'unknown';
+                  options.hostname || options.host || (typeof options.url === 'string' ? extractHostname(options.url) : undefined) || 'unknown';
   log(`🌐 ${type} to: ${hostname}`);
 
   // Count all requests
