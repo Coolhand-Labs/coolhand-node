@@ -11,6 +11,7 @@ jest.mock('../src/services/LoggingService');
 describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
   let underlyingFetchMock: jest.Mock;
+  let underlyingHttpsRequestMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -74,6 +75,10 @@ describe('Global Monitor', () => {
 
     // Capture reference before patching so tests can spy on originalFetch calls
     underlyingFetchMock = globalThis.fetch as jest.Mock;
+
+    // Capture the https.request automock reference before global-monitor patches it,
+    // so tests can control the "original" request behavior it wraps.
+    underlyingHttpsRequestMock = require('https').request as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -250,6 +255,53 @@ describe('Global Monitor', () => {
 
       // Should not throw even with non-configurable properties
       await expect(globalMonitor.initializeGlobalMonitoring(config)).resolves.not.toThrow();
+    });
+  });
+
+  describe('HTTPS/HTTP request interception', () => {
+    it('sanitizes query-param secrets from the logged URL for https.request', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          callback(fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      const rawUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=secret123';
+      const cleanUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=REDACTED';
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Google AI', domains: ['generativelanguage.googleapis.com'] },
+        matchType: 'domain',
+        matchValue: 'generativelanguage.googleapis.com'
+      } as any);
+      mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
+
+      // Ensure global monitoring (and therefore https.request patching) has run.
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      https.request(rawUrl, jest.fn());
+
+      // Let the queued microtask (response callback + 'end' event, plus the
+      // async decompress/log chain it triggers) flush.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPatternMatchingService.sanitizeURL).toHaveBeenCalledWith(rawUrl);
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.url).toBe(cleanUrl);
     });
   });
 
