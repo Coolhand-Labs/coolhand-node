@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - 2026-08-01
+
+### ✨ New Features
+- **`SearchLogsParams.includeTotal`** — new opt-in option for `searchLogs` that sends `?include_total=true`, asking the backend to compute exact `total_count`/`total_pages` (via `X-Total-Count`/`X-Total-Pages` response headers) instead of the client-side lower-bound estimate `paginationFromHeaders` otherwise falls back to. Defaults to off/unset, since the backend runs a `COUNT(*)` to answer it — leave it unset for high-frequency polling against this hot endpoint. No effect until [Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096) deploys; the param is silently ignored by today's backend. ([#121](https://github.com/Coolhand-Labs/coolhand-node/issues/121))
+
 ## [0.10.3] - 2026-08-01
 
 ### 🔒 Security
