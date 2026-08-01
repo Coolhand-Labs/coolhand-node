@@ -192,7 +192,9 @@ describe('Coolhand Node Monitor', () => {
           ok: true,
           status: 200,
           text: jest.fn().mockResolvedValue(JSON.stringify([])),
-          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '0', 'X-Page': '1', 'X-Per-Page': '25' })
+          // will_paginate's total_pages is 1 (not 0) for a zero-result set — this fixture mirrors
+          // the real wire format rather than the intuitive-but-wrong value.
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '1', 'X-Page': '1', 'X-Per-Page': '25' })
         };
       });
 

@@ -47,7 +47,7 @@ npm run test:esm          # Smoke test ESM build
 
 **DRY:**
 - Before writing a new service method, check `BaseService` and the sibling services (`FeedbackService`, `LoggingService`, `McpService`) for an existing helper (request building, error shape, URL/query construction) rather than re-implementing it.
-- When the same logic is needed twice within a class (e.g. two read methods both doing fetch + error handling), factor it into a private helper in that class rather than duplicating it — see `FeedbackService`'s `getJson` helper shared by `searchFeedback`/`getFeedback`.
+- When the same logic is needed twice within a class (e.g. two read methods both doing fetch + error handling), factor it into a private helper in that class — or, once a second service needs the same helper, promote it to `BaseService`, as with `getJson`/`getJsonWithHeaders`, shared by `FeedbackService`'s and `LoggingService`'s read methods.
 - Don't extract a shared abstraction across services for something that's only ever needed once — duplication of a few lines beats a premature abstraction.
 
 ## README and docs philosophy

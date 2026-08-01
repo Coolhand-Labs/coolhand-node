@@ -35,8 +35,8 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 /**
- * Thrown by {@link BaseService.fetchOrThrow} on a non-2xx response. Carries the HTTP `status` so
- * callers (e.g. the CLI) can react to it — a 401 vs. a 404 — without parsing the message string.
+ * Thrown by {@link BaseService.fetchWithHeaders} on a non-2xx response. Carries the HTTP `status`
+ * so callers (e.g. the CLI) can react to it — a 401 vs. a 404 — without parsing the message string.
  */
 export class HttpError extends Error {
   constructor(
@@ -167,9 +167,9 @@ export abstract class BaseService {
 
   /**
    * Fetch `url` and return the raw response body text plus headers, throwing on failure. The
-   * shared fetch/error/status-throwing logic behind {@link fetchOrThrow} and {@link getJson} —
-   * use this directly (via {@link getJsonWithHeaders}) only when a caller needs response headers,
-   * e.g. {@link LoggingService.searchLogs} reading pagination totals off X-Total-Count/etc.
+   * shared fetch/error/status-throwing primitive both {@link fetchOrThrow} (discards the headers)
+   * and {@link getJsonWithHeaders} (JSON-parses the body, keeps the headers — e.g. for
+   * `LoggingService#searchLogs` reading pagination totals off X-Total-Count/etc.) sit on top of.
    *
    * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
    *   `"Feedback request failed"`, so each caller keeps its own established message wording.
@@ -200,13 +200,12 @@ export abstract class BaseService {
   }
 
   /**
-   * Fetch `url` and return the raw response body text, throwing on failure. Used by services that
-   * throw-on-error (as opposed to {@link sendRequest}'s POST/null-on-error convention) — e.g.
-   * `McpService.mcpCall` and, via {@link getJson}, the `FeedbackService`/`LoggingService` read
-   * methods — so the fetch/error/status-throwing logic isn't duplicated in each service.
+   * Fetch `url` and return the raw response body text, throwing on failure. A thin wrapper around
+   * {@link fetchWithHeaders} for callers that don't need response headers — currently just
+   * `McpService.mcpCall` (as opposed to {@link sendRequest}'s POST/null-on-error convention).
    *
-   * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
-   *   `"Feedback request failed"`, so each caller keeps its own established message wording.
+   * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"`, so each
+   *   caller keeps its own established message wording.
    * @throws Error if global `fetch` is unavailable (Node.js < 18) or on a network failure.
    *   {@link HttpError} (with `.status`) on a non-2xx response.
    */
@@ -227,17 +226,8 @@ export abstract class BaseService {
    *   non-2xx response.
    */
   protected async getJson<T>(url: string, noun: string): Promise<T> {
-    const text = await this.fetchOrThrow(
-      url,
-      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
-      `${noun} request failed`
-    );
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
-    }
+    const { body } = await this.getJsonWithHeaders<T>(url, noun);
+    return body;
   }
 
   /**
@@ -260,6 +250,30 @@ export abstract class BaseService {
     } catch {
       throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
     }
+  }
+
+  /**
+   * Build `${this.apiEndpoint}/${id}` as a `URL` for a single-resource GET, guarding against
+   * inputs that WHATWG `URL` parsing would resolve away rather than treat as a path segment:
+   * blank/whitespace-only strings, and dot-segments (`.`/`..`) — `encodeURIComponent` doesn't
+   * escape `.`, so `new URL(...)` still collapses them, silently retargeting the request to this
+   * resource's own `index` route (or, for `..`, an unrelated path entirely) instead of 404ing.
+   * Verifies the built URL's `pathname` still ends with the exact encoded `id` to catch both.
+   *
+   * @param errorMessage Thrown verbatim on a rejected `id`, e.g.
+   *   `"getFeedback: id must be a non-empty string"`, so each caller keeps its own wording.
+   * @throws Error if `id` is blank, not a string, or resolves away via dot-segments.
+   */
+  protected buildResourceUrl(id: string, errorMessage: string): URL {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error(errorMessage);
+    }
+    const encodedId = encodeURIComponent(id);
+    const url = new URL(`${this.apiEndpoint}/${encodedId}`);
+    if (!url.pathname.endsWith(`/${encodedId}`)) {
+      throw new Error(errorMessage);
+    }
+    return url;
   }
 
   protected log(...args: any[]): void {

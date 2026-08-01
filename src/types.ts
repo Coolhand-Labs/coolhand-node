@@ -48,7 +48,13 @@ export interface CoolhandLogPayload {
 }
 
 export interface CoolhandLogResponse {
-  id?: number;
+  /**
+   * A raw integer database ID today; becomes a hashid string once
+   * Coolhand-Labs/coolhand#1096 ships (its blueprint change applies to `create`'s response too,
+   * not just `index`/`show` — see docs/log-search.md's "IDs" note). Widened ahead of that so this
+   * type doesn't need another breaking change when it happens.
+   */
+  id?: number | string;
   source_api?: string | null;
   source_api_result?: string | null;
   llm_provider_unique_id?: string | null;
@@ -179,10 +185,11 @@ export interface LLMRequestLogFeedbackSummary {
   updated_at: string;
 }
 
-// Shared pagination envelope shape — every paginated coolhand REST endpoint (feedback, logs, ...)
-// exposes the same X-Total-Count/X-Page/X-Per-Page/X-Total-Pages response headers as the single
-// standard way to get this metadata; some endpoints additionally embed this same shape in the
-// response body for backward compat (see SearchFeedbackResponse).
+// Shared pagination shape across paginated coolhand endpoints. Once Coolhand-Labs/coolhand#1096
+// ships, X-Total-Count/X-Page/X-Per-Page/X-Total-Pages response headers (see SearchLogsResponse)
+// become the universal delivery mechanism, present on every paginated v2 endpoint; the feedback
+// endpoint additionally keeps a legacy body envelope with this same shape (SearchFeedbackResponse
+// below), which is what searchFeedback reads. Neither endpoint sends these headers yet today.
 export interface Pagination {
   current_page: number;
   per_page: number;
@@ -191,6 +198,9 @@ export interface Pagination {
   has_next_page: boolean;
   has_prev_page: boolean;
 }
+
+/** @deprecated Renamed to {@link Pagination} — kept as an alias for existing imports. */
+export type FeedbackPagination = Pagination;
 
 export interface SearchFeedbackResponse {
   feedback: LLMRequestLogFeedbackSummary[];
@@ -232,7 +242,12 @@ export interface LLMRequestLogFeedbackDetail extends LLMRequestLogFeedbackRespon
 // raw content — so this is modeled as a discriminated union rather than one interface with all
 // four fields optional, enforcing the exclusivity at compile time instead of just documenting it.
 export interface GetLogContentSliceOptions {
-  /** Which part of each content field to return (default: `"full"`). */
+  /**
+   * Which part of each content field to return (default: `"full"`). Only takes effect together
+   * with `maxChars` — without it, the server returns the entire field regardless of `section`
+   * (and sets neither `truncated` nor `total_chars`), which is the opposite of what a caller
+   * reaching for `"end"`/`"beginning"` on a huge log is usually trying to avoid.
+   */
   section?: 'full' | 'beginning' | 'end';
   /** Max characters per content field — slices from the start, or the requested `section`. */
   maxChars?: number;
@@ -271,8 +286,11 @@ export interface LlmRequestLogContentBase {
   output_tokens: number | null;
   latency_ms: number | null;
   created_at: string;
-  /** Only present when `includeThinking` was set; null when the log has no thinking response. */
-  thinking_response?: string | null;
+  /**
+   * Only present when `includeThinking` was set; null when the log has no thinking response.
+   * An array of thinking blocks (the backend stores/returns this as `jsonb`, not a single string).
+   */
+  thinking_response?: string[] | null;
 }
 
 // Returned when getLogContent was called without `searchQuery` — the (optionally sliced)
@@ -346,9 +364,11 @@ export interface LlmRequestLogSummary {
 }
 
 // searchLogs' backing endpoint renders a bare array of matches on the wire (unlike
-// searchFeedback's { feedback:, pagination: } body) and exposes pagination via response headers
-// instead — LoggingService#searchLogs reads those headers and synthesizes this same Pagination
-// shape client-side, so callers get parity with searchFeedback regardless of the wire difference.
+// searchFeedback's { feedback:, pagination: } body) and, once Coolhand-Labs/coolhand#1096 ships,
+// exposes pagination via response headers instead — LoggingService#searchLogs reads those headers
+// when present and synthesizes this same Pagination shape client-side (same field names, shape,
+// and semantics as searchFeedback — both back onto will_paginate server-side), falling back to
+// values derived from the result/request until then (see docs/log-search.md).
 export interface SearchLogsResponse {
   logs: LlmRequestLogSummary[];
   pagination: Pagination;

@@ -271,13 +271,13 @@ and error handling.
 ```typescript
 const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
 
-const logs = await coolhand.searchLogs({ model: 'gpt-4', sourceApiResult: 'failed', daysBack: 7 });
+const { logs } = await coolhand.searchLogs({ model: 'gpt-4', sourceApiResult: 'failed', daysBack: 7 });
 
 const content = await coolhand.getLogContent(logs[0].id);
 ```
 
 See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling
-(`section`/`maxChars`/`searchQuery`), and error handling.
+(`section`/`maxChars`/`searchQuery`), current backend deployment status, and error handling.
 
 ## Framework Integration
 

@@ -122,6 +122,8 @@ export class Coolhand {
    * @param params Ransack predicates (e.g. `sentiment_eq`, `explanation_cont`), `s` (sort), and
    *   `page`/`per` (pagination).
    * @returns The matching feedback records (`:summary` view) plus pagination metadata.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
    */
   public async searchFeedback(params?: SearchFeedbackParams): Promise<SearchFeedbackResponse> {
     return this.feedbackService.searchFeedback(params);
@@ -135,6 +137,9 @@ export class Coolhand {
    *
    * @param id The feedback record ID.
    * @returns The full feedback record (`:with_partials` view).
+   * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`). Error on
+   *   network failure or a non-JSON body. A non-2xx response throws an error whose `status`
+   *   property holds the HTTP status code (e.g. 404 for an unknown ID).
    */
   public async getFeedback(id: string): Promise<LLMRequestLogFeedbackDetail> {
     return this.feedbackService.getFeedback(id);
@@ -150,6 +155,10 @@ export class Coolhand {
    * @param opts `section`/`maxChars` for large logs, or `searchQuery` for snippet search
    *   (mutually exclusive with `section`/`maxChars` — enforced by the overloads below), plus
    *   `includeThinking`.
+   * @throws Error if `logId` is blank/whitespace-only or a bare dot-segment (`.`/`..`), or if
+   *   `searchQuery` is blank/whitespace-only. Error on network failure or a non-JSON body. A
+   *   non-2xx response throws an error whose `status` property holds the HTTP status code (e.g.
+   *   404 for an unknown ID).
    */
   public async getLogContent(logId: string, opts?: GetLogContentSliceOptions): Promise<LlmRequestLogContentFull>;
   public async getLogContent(logId: string, opts: GetLogContentSearchOptions): Promise<LlmRequestLogContentSearchResult>;
@@ -164,7 +173,10 @@ export class Coolhand {
    *
    * Requires the **private** API key, same as {@link getLogContent}.
    *
-   * @returns The matching logs. There is no pagination metadata in the response.
+   * @returns `{ logs, pagination }` — the matching logs for the requested page, plus pagination
+   *   totals. See `LoggingService#searchLogs`/`docs/log-search.md` for how `pagination` is sourced.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code.
    */
   public async searchLogs(params?: SearchLogsParams): Promise<SearchLogsResponse> {
     return this.loggingService.searchLogs(params);

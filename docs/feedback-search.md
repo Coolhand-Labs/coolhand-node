@@ -89,4 +89,6 @@ try {
 }
 ```
 
-Network failures and non-JSON response bodies throw a plain `Error` without a `status` property.
+Network failures, non-JSON response bodies, and a blank/whitespace-only or dot-segment (`.`/`..`)
+`id` passed to `getFeedback` (rejected client-side before the request is made) throw a plain
+`Error` without a `status` property.

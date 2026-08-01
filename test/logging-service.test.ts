@@ -350,6 +350,51 @@ describe('LoggingService', () => {
       expect(url.searchParams.has('max_chars')).toBe(false);
     });
 
+    it('throws client-side on a blank searchQuery instead of silently returning the content shape', async () => {
+      const fetchSpy = jest.fn();
+      (global as any).fetch = fetchSpy;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+
+      // The backend branches on Rails' `.present?` (blank/whitespace-only counts as absent), so a
+      // blank query would otherwise fall through to the content shape server-side while this
+      // overload's return type promises a search result — must fail fast instead.
+      await expect(service.getLogContent('abc123', { searchQuery: '' })).rejects.toThrow(
+        'searchQuery must be a non-empty string'
+      );
+      await expect(service.getLogContent('abc123', { searchQuery: '   ' })).rejects.toThrow(
+        'searchQuery must be a non-empty string'
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws client-side on a blank logId instead of silently hitting the index route', async () => {
+      const fetchSpy = jest.fn();
+      (global as any).fetch = fetchSpy;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+
+      // A blank logId would otherwise build a URL Rails strips to the collection endpoint,
+      // returning a bare array typed as a single log's content — must fail fast instead.
+      await expect(service.getLogContent('')).rejects.toThrow('logId must be a non-empty string');
+      await expect(service.getLogContent('   ')).rejects.toThrow('logId must be a non-empty string');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws client-side on a dot-segment logId that WHATWG URL parsing would resolve away', async () => {
+      const fetchSpy = jest.fn();
+      (global as any).fetch = fetchSpy;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+
+      // encodeURIComponent doesn't escape "." — new URL(...) still collapses "." to the parent
+      // (collection) path and ".." further up, past this resource entirely. Both must be rejected
+      // the same as a blank id, not silently sent as a real request.
+      await expect(service.getLogContent('.')).rejects.toThrow('logId must be a non-empty string');
+      await expect(service.getLogContent('..')).rejects.toThrow('logId must be a non-empty string');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it('returns the parsed log content on success', async () => {
       const mockResponse: LlmRequestLogContentFull = {
         id: 'abc123',
@@ -364,14 +409,17 @@ describe('LoggingService', () => {
         created_at: '2026-01-01T00:00:00Z',
         system_prompt: 'You are a helpful assistant.',
         user_prompt: 'What is 2+2?',
-        output: '4'
+        output: '4',
+        thinking_response: ['Let me add these numbers.']
       };
       (global as any).fetch = mockGetFetch(mockResponse);
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
-      const result = await service.getLogContent('abc123');
+      // thinking_response is only ever present server-side when includeThinking was requested.
+      const result = await service.getLogContent('abc123', { includeThinking: true });
 
       expect(result).toEqual(mockResponse);
+      expect(result.thinking_response).toEqual(['Let me add these numbers.']);
     });
 
     it('returns snippet matches when searchQuery is used', async () => {
@@ -480,9 +528,11 @@ describe('LoggingService', () => {
     });
 
     it('sends explicit false booleans as the literal string "false", not omitting the param', async () => {
-      // The backend casts these via ActiveModel::Type::Boolean, which treats the string "false"
-      // as boolean false — so this must NOT be dropped the way `undefined` values are, or an
-      // explicit `unmatchedOnly: false` couldn't override a truthy default.
+      // Both are false-by-default backend-side anyway, so dropping `false` here wouldn't currently
+      // change behavior — but an explicit `false` is still caller intent, and this SDK shouldn't
+      // silently treat it like `undefined` (an actually-omitted param) the way it does everywhere
+      // else in this method. The backend casts the sent string via ActiveModel::Type::Boolean,
+      // which does treat the literal string "false" as boolean false, so this round-trips correctly.
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
@@ -495,6 +545,15 @@ describe('LoggingService', () => {
       const url = new URL(capturedUrl!);
       expect(url.searchParams.get('unmatched_only')).toBe('false');
       expect(url.searchParams.get('include_prompts')).toBe('false');
+    });
+
+    it('does not let a NaN page (type-legal but nonsensical) propagate into current_page', async () => {
+      (global as any).fetch = mockGetFetch([]);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ page: NaN });
+
+      expect(result.pagination.current_page).toBe(1);
     });
 
     it('returns { logs, pagination }, reading pagination off response headers', async () => {
@@ -532,7 +591,7 @@ describe('LoggingService', () => {
       });
     });
 
-    it('defaults pagination fields to 0 and has_next/prev_page to false when headers are absent', async () => {
+    it('defaults per_page to the server default (25) and other fields to 0 when headers are absent and logs is empty', async () => {
       (global as any).fetch = mockGetFetch([]);
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
@@ -541,12 +600,138 @@ describe('LoggingService', () => {
       expect(result.logs).toEqual([]);
       expect(result.pagination).toEqual({
         current_page: 1,
-        per_page: 0,
+        per_page: 25,
         total_count: 0,
         total_pages: 0,
         has_next_page: false,
         has_prev_page: false
       });
+    });
+
+    it('reports has_next_page: true when a full page comes back with headers absent, even though total_pages is only a lower-bound estimate', async () => {
+      const fullPage: LlmRequestLogSummary[] = Array.from({ length: 25 }, (_, i) => ({
+        id: `log-${i}`,
+        collector: 'manual',
+        source_api: 'openai',
+        source_api_result: 'success',
+        model: 'gpt-4',
+        template_id: null,
+        template_name: null,
+        input_tokens: 100,
+        output_tokens: 50,
+        latency_ms: 250,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z'
+      }));
+      (global as any).fetch = mockGetFetch(fullPage);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ page: 1 });
+
+      // A caller looping `while (pagination.has_next_page)` must not stop here just because
+      // total_pages' lower-bound estimate (1) matches the current page.
+      expect(result.pagination.total_pages).toBe(1);
+      expect(result.pagination.has_next_page).toBe(true);
+    });
+
+    it('does not extrapolate a fabricated total_count from an empty page, but still reports has_prev_page: true', async () => {
+      (global as any).fetch = mockGetFetch([]);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ page: 1000000, per: 25 });
+
+      // An empty page proves nothing about how many rows exist (unlike a non-empty page, which
+      // offset-based pagination guarantees a lower bound for) — extrapolating (page-1)*per here
+      // would report a fabricated ~25M-row total_count for a search that matched nothing.
+      expect(result.pagination.total_count).toBe(0);
+      expect(result.pagination.total_pages).toBe(0);
+      expect(result.pagination.has_next_page).toBe(false);
+      // has_prev_page is page-relative, not result-relative: still true regardless of the empty page.
+      expect(result.pagination.has_prev_page).toBe(true);
+    });
+
+    it('does not report total_count: 0 when logs is non-empty but pagination headers are absent (backend pre-#1096)', async () => {
+      const mockLogs: LlmRequestLogSummary[] = [
+        {
+          id: 'abc123',
+          collector: 'manual',
+          source_api: 'openai',
+          source_api_result: 'success',
+          model: 'gpt-4',
+          template_id: null,
+          template_name: null,
+          input_tokens: 100,
+          output_tokens: 50,
+          latency_ms: 250,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z'
+        }
+      ];
+      (global as any).fetch = mockGetFetch(mockLogs);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ page: 3, per: 10 });
+
+      expect(result.logs).toEqual(mockLogs);
+      // Lower-bound estimate: page 3 of 10-per-page, assuming pages 1-2 were full (20 items) plus
+      // this page's 1 real item = 21, so total_pages (ceil(21/10)) comes out to exactly 3 — this
+      // must stay self-consistent with per_page/current_page, not just "total_count: 1".
+      expect(result.pagination).toEqual({
+        current_page: 3,
+        per_page: 10,
+        total_count: 21,
+        total_pages: 3,
+        has_next_page: false,
+        has_prev_page: true
+      });
+    });
+
+    it('falls back to a fallback value when a present header is malformed (non-numeric)', async () => {
+      (global as any).fetch = mockGetFetch([{ id: 'abc123' } as unknown as LlmRequestLogSummary], {
+        headers: { 'X-Total-Count': 'not-a-number', 'X-Page': '1', 'X-Per-Page': '25', 'X-Total-Pages': '1' }
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs();
+
+      // X-Total-Count is present (so the "headers absent" branch doesn't apply) but garbage —
+      // falls back to logs.length rather than propagating NaN.
+      expect(result.pagination.total_count).toBe(1);
+      expect(Number.isNaN(result.pagination.total_count)).toBe(false);
+    });
+
+    it('derives a missing X-Total-Pages from X-Total-Count, not from current_page, so a real count is not truncated', async () => {
+      (global as any).fetch = mockGetFetch([], {
+        // X-Total-Count present and valid (500 real rows) but X-Total-Pages absent — a fallback of
+        // `currentPage` (1) would report total_pages: 1 and truncate a caller's pagination loop
+        // after the first 25-row page despite 500 real rows existing.
+        headers: { 'X-Total-Count': '500', 'X-Page': '1', 'X-Per-Page': '25' }
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs();
+
+      expect(result.pagination.total_count).toBe(500);
+      expect(result.pagination.total_pages).toBe(20);
+      expect(result.pagination.has_next_page).toBe(true);
+    });
+
+    it('treats an empty-string header value as absent, not a valid zero', async () => {
+      const mockLogs: LlmRequestLogSummary[] = [{ id: 'abc123' } as unknown as LlmRequestLogSummary];
+      (global as any).fetch = mockGetFetch(mockLogs, {
+        headers: { 'X-Total-Count': '', 'X-Page': '', 'X-Per-Page': '' }
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs();
+
+      // Number('') is 0 in JS — without a stricter check this would wrongly report total_count: 0
+      // for a non-empty `logs`. The header is technically present, so it falls back per-field
+      // rather than through the whole "headers absent" branch — per_page falls back to the
+      // server's real default (25), not logs.length.
+      expect(result.pagination.total_count).toBe(1);
+      expect(result.pagination.current_page).toBe(1);
+      expect(result.pagination.per_page).toBe(25);
     });
 
     it('throws with the HTTP status on a non-ok response', async () => {
