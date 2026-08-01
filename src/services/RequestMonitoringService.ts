@@ -1,10 +1,12 @@
 import * as https from 'https';
 import * as http from 'http';
+import { PassThrough } from 'stream';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
 import { decompressBuffer } from '../utils/decompress.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
+import { createResponseTee } from '../utils/tee-response.js';
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -241,6 +243,12 @@ export class RequestMonitoringService {
 
       const responseChunks: Buffer[] = [];
 
+      // See createResponseTee: hands the host an independent stream so the interceptor's own
+      // capture below can't starve a host callback that consumes `res` asynchronously. Only
+      // created when there's a callback to hand it to — an unread tee must never be constructed,
+      // since createResponseTee's backpressure guard only activates once *something* reads it.
+      const hostStream = callback ? createResponseTee(res, PassThrough) : null;
+
       res.on('data', (chunk: any) => {
         responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
@@ -262,7 +270,8 @@ export class RequestMonitoringService {
         this.onRequestComplete(callData, matchedPattern);
       });
 
-      if (callback) {callback(res);}
+      // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
+      if (callback) {callback(hostStream as unknown as http.IncomingMessage);}
     });
 
     // Intercept request body
