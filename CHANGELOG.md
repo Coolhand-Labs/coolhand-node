@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-08-01
+
+### 🔒 Security
+- **Header redaction in `PatternMatchingService#sanitizeHeaders` is no longer case-sensitive.** Every redaction rule (the default `authorization`/`api-key` rules and pattern-specific rules from `src/api-patterns.json`) did an exact-case property lookup, so headers sent with their conventional casing — `Authorization`, `X-Api-Key`, `OpenAI-API-Key`, as used by axios, got, and most provider SDKs — bypassed redaction entirely. Node's `http.request`/`fetch` (plain-object headers) preserve caller casing on the request side, unlike `IncomingMessage.headers`, which Node lowercases on responses — this is why response-header redaction was unaffected. Any host application sending a capitalized auth header had that third-party API key stored in Coolhand's backend in cleartext, and — when running with `dryRun: true` and `silent: false` — printed via `console.log`. Incoming header keys are now lowercase-normalized once before any redaction rule runs, closing the bypass regardless of the caller's casing. ([#110](https://github.com/Coolhand-Labs/coolhand-node/issues/110))
+
 ## [0.10.1] - 2026-08-01
 
 ### ✨ New Features
