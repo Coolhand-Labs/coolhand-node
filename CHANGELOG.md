@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.6] - 2026-08-01
+
+### 🔒 Security
+- **A malformed custom `COOLHAND_PATTERNS_FILE` (or `patternsFile` option) — valid JSON but the wrong shape, e.g. a typo, partial config, or hand-edited file — no longer crashes every outbound request in the host app.** `PatternMatchingService` now validates that a loaded patterns file is shaped as `{ patterns: [{ domains: string[], ... }] }` before using it, falling back to the built-in default patterns (with a warning naming the offending file) on any mismatch — matching the existing fallback behavior for invalid JSON syntax. As defense in depth, `matchesAPIPattern`/`matchesAPIPatternSync`/`matchesAPIPatternFromURL` now also catch any unexpected error internally and return `null` instead of throwing, so a future bug in this area degrades to "monitoring disabled" rather than breaking the host app's networking. ([#116](https://github.com/Coolhand-Labs/coolhand-node/issues/116))
+
 ## [0.10.4] - 2026-08-01
 
 ### 🔒 Security
