@@ -480,6 +480,22 @@ describe('Global Monitor', () => {
       expect(callData.headers).toHaveProperty('x-custom', 'keep-me');
     });
 
+    it('sanitizes response headers on the fetch path', async () => {
+      underlyingFetchMock.mockResolvedValueOnce({
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'session=secret', 'content-type': 'application/json' }),
+        clone: () => ({ text: () => Promise.resolve('{}') })
+      });
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => (
+        'set-cookie' in headers ? { ...headers, 'set-cookie': '[REDACTED]' } : { ...headers }
+      ));
+
+      await globalThis.fetch('https://api.openai.com/v1/models');
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.response_headers).toEqual(expect.objectContaining({ 'set-cookie': '[REDACTED]' }));
+    });
+
     it('sanitizes query-param secrets from the logged URL', async () => {
       const rawUrl = 'https://api.openai.com/v1/chat/completions?key=secret123';
       const cleanUrl = 'https://api.openai.com/v1/chat/completions?key=REDACTED';
