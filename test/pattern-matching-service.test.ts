@@ -350,6 +350,39 @@ describe('PatternMatchingService', () => {
       expect(sanitized['x-api-key']).toBe('[REDACTED]');
     });
 
+    it('should redact capitalized header keys against default rules (#110)', () => {
+      const headers = {
+        'Authorization': 'Bearer sk-CAPITALIZED-SECRET',
+        'Api-Key': 'secret-key'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['api-key']).toBe('[REDACTED]');
+    });
+
+    it('should redact mixed-case header keys against lowercase pattern rules (#110)', () => {
+      const headers = {
+        'X-Api-Key': 'sk-openai123',
+        'OpenAI-API-Key': 'sk-openai456'
+      };
+
+      const pattern: CoolhandAPIPattern = {
+        name: 'OpenAI',
+        domains: ['openai.com'],
+        headers: {
+          'x-api-key': '[REDACTED]',
+          'openai-api-key': '[REDACTED]'
+        }
+      };
+
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['openai-api-key']).toBe('[REDACTED]');
+    });
+
     it('should preserve headers not in sanitization rules', () => {
       const headers = {
         'custom-header': 'keep-this',
