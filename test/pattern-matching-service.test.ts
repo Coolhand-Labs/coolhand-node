@@ -133,6 +133,45 @@ describe('PatternMatchingService', () => {
     });
   });
 
+  describe('Patterns File Shape Validation', () => {
+    const shapeInvalidCases: Array<[string, unknown]> = [
+      ['missing patterns key', {}],
+      ['patterns is null', { patterns: null }],
+      ['patterns is not an array', { patterns: 'oops' }],
+      ['root is a bare array', [{ name: 'OpenAI', domains: ['api.openai.com'] }]],
+      ['a pattern entry is missing domains', { patterns: [{ name: 'NoDomains' }] }],
+      ['a pattern entry has non-array domains', { patterns: [{ name: 'BadDomains', domains: 'api.openai.com' }] }]
+    ];
+
+    it.each(shapeInvalidCases)('falls back to default patterns when %s (default patterns file)', (_label, badData) => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(badData));
+
+      service = new PatternMatchingService();
+
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('Error loading API patterns'),
+        expect.stringContaining('not shaped correctly')
+      );
+      expect(service.getPatternsCountSync()).toBe(7);
+
+      // The service must remain usable after falling back — no throw on the next request.
+      const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
+      expect(result).toMatchObject({ pattern: expect.objectContaining({ name: 'OpenAI' }) });
+    });
+
+    it.each(shapeInvalidCases)('falls back to default patterns when %s (custom patterns file)', (_label, badData) => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(badData));
+
+      service = new PatternMatchingService('./custom-patterns.json');
+
+      expect(service.getPatternsCountSync()).toBe(7);
+      expect(() => service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).not.toThrow();
+      expect(() => service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).not.toThrow();
+    });
+  });
+
   describe('Domain Pattern Matching', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
@@ -942,8 +981,50 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(malformedPatterns));
 
-      // Should not throw, but may have fewer patterns loaded
+      // Should not throw at construction time...
       expect(() => new PatternMatchingService()).not.toThrow();
+      service = new PatternMatchingService();
+
+      // ...and since one entry is missing `domains`, the whole file is treated as
+      // malformed and the service falls back to the 7 built-in default patterns,
+      // rather than silently loading the entries that happen to be well-formed.
+      expect(service.getPatternsCountSync()).toBe(7);
+
+      // Nor should the very next request throw — this is the actual crash #116 describes.
+      expect(() => service.matchesAPIPatternSync('https://valid.com/test')).not.toThrow();
+      expect(() => service.matchesAPIPatternFromURL('https://valid.com/test')).not.toThrow();
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenAI' })
+      });
+    });
+
+    it('should degrade to null instead of throwing when apiPatterns is corrupted after load', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+
+      service = new PatternMatchingService();
+      // Simulate a future bug elsewhere corrupting the cached patterns after a
+      // successful, validated load — the matching methods must still not throw.
+      (service as unknown as { apiPatterns: unknown }).apiPatterns = [{ name: 'Broken' }];
+
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('pattern matching failed'),
+        expect.any(String)
+      );
+    });
+
+    it('should degrade to null instead of throwing when apiPatterns is not iterable', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+
+      service = new PatternMatchingService();
+      (service as unknown as { apiPatterns: unknown }).apiPatterns = undefined;
+
+      expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).toBeNull();
+      await expect(service.matchesAPIPattern('https://api.openai.com/v1/chat/completions')).resolves.toBeNull();
     });
 
     it('should handle circular references in headers gracefully', () => {

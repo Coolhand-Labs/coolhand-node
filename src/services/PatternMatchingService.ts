@@ -1,4 +1,4 @@
-import { CoolhandAPIPatterns, CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
+import { CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
 // Runtime detection utility
 const isEdgeRuntime = () => {
@@ -151,6 +151,20 @@ export class PatternMatchingService {
     if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`); }
   }
 
+  // Guards against valid JSON that isn't shaped as { patterns: [{ domains: string[], ... }] } —
+  // e.g. a typo'd or hand-edited COOLHAND_PATTERNS_FILE — so it triggers the same
+  // fallback-to-defaults path as invalid JSON, instead of crashing every request later.
+  private validatePatternsShape(patternsData: unknown, sourceFile: string): CoolhandAPIPattern[] {
+    const patterns = (patternsData as { patterns?: unknown } | null)?.patterns;
+    const isValid = Array.isArray(patterns) && patterns.every(
+      (pattern) => pattern && typeof pattern === 'object' && Array.isArray((pattern as CoolhandAPIPattern).domains)
+    );
+    if (!isValid) {
+      throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], ... }] })`);
+    }
+    return patterns as CoolhandAPIPattern[];
+  }
+
   private async loadAPIPatterns(customPatternsFile?: string): Promise<void> {
     // Load Node.js modules first
     const hasNodeModules = await loadNodeModules();
@@ -218,8 +232,8 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
-        this.apiPatterns = patternsData.patterns;
+        const patternsData: unknown = JSON.parse(fileContent);
+        this.apiPatterns = this.validatePatternsShape(patternsData, patternsFile);
         if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`); }
       } else {
         if (customPatternsFile) {
@@ -236,8 +250,8 @@ export class PatternMatchingService {
 
           if (fs.existsSync(defaultPatternsFile)) {
             const fileContent = fs.readFileSync(defaultPatternsFile, 'utf-8');
-            const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
-            this.apiPatterns = patternsData.patterns;
+            const patternsData: unknown = JSON.parse(fileContent);
+            this.apiPatterns = this.validatePatternsShape(patternsData, defaultPatternsFile);
             if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns as fallback`); }
           } else {
             throw new Error('Default patterns file not found');
@@ -287,8 +301,8 @@ export class PatternMatchingService {
 
       if (fs.existsSync(patternsFile)) {
         const fileContent = fs.readFileSync(patternsFile, 'utf-8');
-        const patternsData: CoolhandAPIPatterns = JSON.parse(fileContent);
-        this.apiPatterns = patternsData.patterns;
+        const patternsData: unknown = JSON.parse(fileContent);
+        this.apiPatterns = this.validatePatternsShape(patternsData, patternsFile);
         if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`); }
       } else {
         if (customPatternsFile) {
@@ -315,73 +329,37 @@ export class PatternMatchingService {
     return hostname === domain || hostname.endsWith('.' + domain);
   }
 
-  public async matchesAPIPattern(options: CoolhandRequestOptions | string | URL): Promise<CoolhandMatchedPattern | null> {
-    this.ensureInitialized();
-
-    if (typeof options === 'string') {
-      return this.matchesAPIPatternFromURL(options);
-    }
-
-    if (options instanceof URL) {
-      return this.matchesAPIPatternFromURL(options.toString());
-    }
-
-    // Construct URL from options
-    const hostname = options.hostname || options.host || '';
-
-    // Check domain matches
-    for (const pattern of this.apiPatterns) {
-      for (const domain of pattern.domains) {
-        if (this.hostnameMatchesDomain(hostname, domain)) {
-          return {
-            pattern,
-            matchType: 'domain',
-            matchValue: domain
-          };
-        }
-      }
-    }
-
-    return null;
-  }
-
-  // Synchronous version for backwards compatibility (uses cached patterns)
-  public matchesAPIPatternSync(options: CoolhandRequestOptions | string | URL): CoolhandMatchedPattern | null {
-    if (typeof options === 'string') {
-      return this.matchesAPIPatternFromURL(options);
-    }
-
-    if (options instanceof URL) {
-      return this.matchesAPIPatternFromURL(options.toString());
-    }
-
-    // Construct URL from options
-    const hostname = options.hostname || options.host || '';
-
-    // Check domain matches
-    for (const pattern of this.apiPatterns) {
-      for (const domain of pattern.domains) {
-        if (this.hostnameMatchesDomain(hostname, domain)) {
-          return {
-            pattern,
-            matchType: 'domain',
-            matchValue: domain
-          };
-        }
-      }
-    }
-
-    return null;
-  }
-
-  public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
+  // Defense in depth: a bug in any matcher (e.g. malformed apiPatterns surviving
+  // load-time validation) must never break the host app's networking — this is the
+  // hot path called from every patched http/https/fetch entry point.
+  private safeMatch(fn: () => CoolhandMatchedPattern | null): CoolhandMatchedPattern | null {
     try {
-      const urlObj = new URL(url);
+      return fn();
+    } catch (error) {
+      if (!this.silent) { console.warn(`⚠️  Coolhand: pattern matching failed, request will not be monitored:`, (error as Error).message); }
+      return null;
+    }
+  }
+
+  public async matchesAPIPattern(options: CoolhandRequestOptions | string | URL): Promise<CoolhandMatchedPattern | null> {
+    return this.safeMatch(() => {
+      this.ensureInitialized();
+
+      if (typeof options === 'string') {
+        return this.matchesAPIPatternFromURL(options);
+      }
+
+      if (options instanceof URL) {
+        return this.matchesAPIPatternFromURL(options.toString());
+      }
+
+      // Construct URL from options
+      const hostname = options.hostname || options.host || '';
 
       // Check domain matches
       for (const pattern of this.apiPatterns) {
         for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
+          if (this.hostnameMatchesDomain(hostname, domain)) {
             return {
               pattern,
               matchType: 'domain',
@@ -391,36 +369,90 @@ export class PatternMatchingService {
         }
       }
 
-      // Check path matches
+      return null;
+    });
+  }
+
+  // Synchronous version for backwards compatibility (uses cached patterns)
+  public matchesAPIPatternSync(options: CoolhandRequestOptions | string | URL): CoolhandMatchedPattern | null {
+    return this.safeMatch(() => {
+      if (typeof options === 'string') {
+        return this.matchesAPIPatternFromURL(options);
+      }
+
+      if (options instanceof URL) {
+        return this.matchesAPIPatternFromURL(options.toString());
+      }
+
+      // Construct URL from options
+      const hostname = options.hostname || options.host || '';
+
+      // Check domain matches
       for (const pattern of this.apiPatterns) {
-        if (pattern.paths) {
-          for (const pathPattern of pattern.paths) {
-            if (urlObj.pathname.includes(pathPattern)) {
+        for (const domain of pattern.domains) {
+          if (this.hostnameMatchesDomain(hostname, domain)) {
+            return {
+              pattern,
+              matchType: 'domain',
+              matchValue: domain
+            };
+          }
+        }
+      }
+
+      return null;
+    });
+  }
+
+  public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
+    return this.safeMatch(() => {
+      try {
+        const urlObj = new URL(url);
+
+        // Check domain matches
+        for (const pattern of this.apiPatterns) {
+          for (const domain of pattern.domains) {
+            if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
               return {
                 pattern,
-                matchType: 'path',
-                matchValue: pathPattern
+                matchType: 'domain',
+                matchValue: domain
+              };
+            }
+          }
+        }
+
+        // Check path matches
+        for (const pattern of this.apiPatterns) {
+          if (pattern.paths) {
+            for (const pathPattern of pattern.paths) {
+              if (urlObj.pathname.includes(pathPattern)) {
+                return {
+                  pattern,
+                  matchType: 'path',
+                  matchValue: pathPattern
+                };
+              }
+            }
+          }
+        }
+      } catch {
+        // If URL parsing fails, fall back to simple string matching
+        for (const pattern of this.apiPatterns) {
+          for (const domain of pattern.domains) {
+            if (url.includes(domain)) {
+              return {
+                pattern,
+                matchType: 'domain',
+                matchValue: domain
               };
             }
           }
         }
       }
-    } catch {
-      // If URL parsing fails, fall back to simple string matching
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (url.includes(domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-    }
 
-    return null;
+      return null;
+    });
   }
 
   public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
