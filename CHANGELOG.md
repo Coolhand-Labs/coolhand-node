@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026-08-01
+
+### 🔒 Security
+- **Fetch-path response headers are now sanitized before logging**, matching the http/https interception path. `interceptFetch` (`src/global-monitor.ts`, `src/services/RequestMonitoringService.ts`) previously stored `Object.fromEntries(response.headers.entries())` as-is; it now runs the result through `sanitizeHeaders()` first, the same as the http/https path already did. Low impact today since no current pattern declares sensitive *response* headers, but a monitored API returning `set-cookie` or a similar sensitive header on the fetch path would have been logged verbatim while the equivalent http/https call would have redacted it. ([#119](https://github.com/Coolhand-Labs/coolhand-node/issues/119))
+
 ## [0.10.2] - 2026-08-01
 
 ### 🔒 Security
