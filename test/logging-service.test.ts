@@ -1,6 +1,6 @@
 import { LoggingService, LoggingServiceConfig } from '../src/services/LoggingService';
 import { HttpError } from '../src/services/BaseService';
-import { CoolhandCallData, CoolhandMatchedPattern, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsResponse } from '../src/types';
+import { CoolhandCallData, CoolhandMatchedPattern, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, LlmRequestLogSummary, SearchLogsResponse } from '../src/types';
 
 // Mock fetch for testing
 const originalFetch = (global as any).fetch;
@@ -16,9 +16,14 @@ function createMockFetch(mockResponse: any, status: number = 200, ok: boolean = 
 }
 
 // Helper for GET-based reads (getLogContent/searchLogs), which only read the `text()` body.
-function mockGetFetch(bodyObj: any, { ok = true, status = 200 }: { ok?: boolean; status?: number } = {}): any {
+// `headers` defaults to an empty Headers so callers that don't care (getLogContent) are
+// unaffected; searchLogs tests pass explicit pagination headers via the `headers` option.
+function mockGetFetch(
+  bodyObj: any,
+  { ok = true, status = 200, headers = {} }: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}
+): any {
   const text = typeof bodyObj === 'string' ? bodyObj : JSON.stringify(bodyObj);
-  return jest.fn().mockResolvedValue({ ok, status, text: jest.fn().mockResolvedValue(text) });
+  return jest.fn().mockResolvedValue({ ok, status, text: jest.fn().mockResolvedValue(text), headers: new Headers(headers) });
 }
 
 // Helper function to create mock call data
@@ -435,7 +440,7 @@ describe('LoggingService', () => {
       (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
         capturedUrl = url;
         capturedOptions = options;
-        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
       });
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
@@ -481,7 +486,7 @@ describe('LoggingService', () => {
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
-        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
       });
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
@@ -492,8 +497,8 @@ describe('LoggingService', () => {
       expect(url.searchParams.get('include_prompts')).toBe('false');
     });
 
-    it('returns the parsed array of matching logs on success, with no pagination envelope', async () => {
-      const mockResponse: SearchLogsResponse = [
+    it('returns { logs, pagination }, reading pagination off response headers', async () => {
+      const mockLogs: LlmRequestLogSummary[] = [
         {
           id: 'abc123',
           collector: 'manual',
@@ -509,12 +514,39 @@ describe('LoggingService', () => {
           updated_at: '2026-01-01T00:00:00Z'
         }
       ];
-      (global as any).fetch = mockGetFetch(mockResponse);
+      (global as any).fetch = mockGetFetch(mockLogs, {
+        headers: { 'X-Page': '2', 'X-Per-Page': '1', 'X-Total-Count': '5', 'X-Total-Pages': '5' }
+      });
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
-      const result = await service.searchLogs({ page: 1 });
+      const result: SearchLogsResponse = await service.searchLogs({ page: 2, per: 1 });
 
-      expect(result).toEqual(mockResponse);
+      expect(result.logs).toEqual(mockLogs);
+      expect(result.pagination).toEqual({
+        current_page: 2,
+        per_page: 1,
+        total_count: 5,
+        total_pages: 5,
+        has_next_page: true,
+        has_prev_page: true
+      });
+    });
+
+    it('defaults pagination fields to 0 and has_next/prev_page to false when headers are absent', async () => {
+      (global as any).fetch = mockGetFetch([]);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs();
+
+      expect(result.logs).toEqual([]);
+      expect(result.pagination).toEqual({
+        current_page: 1,
+        per_page: 0,
+        total_count: 0,
+        total_pages: 0,
+        has_next_page: false,
+        has_prev_page: false
+      });
     });
 
     it('throws with the HTTP status on a non-ok response', async () => {

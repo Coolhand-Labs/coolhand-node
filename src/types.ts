@@ -179,7 +179,11 @@ export interface LLMRequestLogFeedbackSummary {
   updated_at: string;
 }
 
-export interface FeedbackPagination {
+// Shared pagination envelope shape — every paginated coolhand REST endpoint (feedback, logs, ...)
+// exposes the same X-Total-Count/X-Page/X-Per-Page/X-Total-Pages response headers as the single
+// standard way to get this metadata; some endpoints additionally embed this same shape in the
+// response body for backward compat (see SearchFeedbackResponse).
+export interface Pagination {
   current_page: number;
   per_page: number;
   total_count: number;
@@ -190,7 +194,7 @@ export interface FeedbackPagination {
 
 export interface SearchFeedbackResponse {
   feedback: LLMRequestLogFeedbackSummary[];
-  pagination: FeedbackPagination;
+  pagination: Pagination;
 }
 
 export interface LLMRequestLogFeedbackFocusRange {
@@ -341,5 +345,11 @@ export interface LlmRequestLogSummary {
   user_prompt?: string | null;
 }
 
-// searchLogs' backing endpoint has no pagination envelope — it renders a bare array of matches.
-export type SearchLogsResponse = LlmRequestLogSummary[];
+// searchLogs' backing endpoint renders a bare array of matches on the wire (unlike
+// searchFeedback's { feedback:, pagination: } body) and exposes pagination via response headers
+// instead — LoggingService#searchLogs reads those headers and synthesizes this same Pagination
+// shape client-side, so callers get parity with searchFeedback regardless of the wire difference.
+export interface SearchLogsResponse {
+  logs: LlmRequestLogSummary[];
+  pagination: Pagination;
+}

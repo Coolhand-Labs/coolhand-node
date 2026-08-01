@@ -188,7 +188,12 @@ describe('Coolhand Node Monitor', () => {
       (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
         capturedUrl = url;
         capturedOptions = options;
-        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])) };
+        return {
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify([])),
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '0', 'X-Page': '1', 'X-Per-Page': '25' })
+        };
       });
 
       const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
@@ -198,7 +203,8 @@ describe('Coolhand Node Monitor', () => {
       expect(url.searchParams.get('model')).toBe('gpt-4');
       expect(url.searchParams.get('page')).toBe('1');
       expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
-      expect(result).toEqual([]);
+      expect(result.logs).toEqual([]);
+      expect(result.pagination.total_count).toBe(0);
     });
   });
 

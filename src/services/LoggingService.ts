@@ -9,6 +9,8 @@ import {
   LlmRequestLogContent,
   LlmRequestLogContentFull,
   LlmRequestLogContentSearchResult,
+  LlmRequestLogSummary,
+  Pagination,
   SearchLogsParams,
   SearchLogsResponse
 } from '../types';
@@ -86,8 +88,11 @@ export class LoggingService extends BaseService {
    * existing Ransack-backed search/sort; `sort` reaches that directly, sent as `q[s]`. Requires
    * the client's **private** API key, same as {@link getLogContent}.
    *
-   * @returns The matching logs. Unlike `searchFeedback`, there is no pagination metadata in the
-   *   response — just the array of matches for the requested page.
+   * @returns `{ logs, pagination }` — the matching logs for the requested page, plus pagination
+   *   totals. The backing endpoint renders `logs` as a bare array on the wire and exposes
+   *   pagination via X-Total-Count/X-Page/X-Per-Page/X-Total-Pages response headers instead of a
+   *   body envelope; this method reads those headers and assembles the same shape
+   *   `searchFeedback` returns, so callers don't need to care about the wire-level difference.
    * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
    *   whose `status` property holds the HTTP status code.
    */
@@ -114,7 +119,27 @@ export class LoggingService extends BaseService {
         url.searchParams.set(key, String(value));
       }
     }
-    return this.getJson<SearchLogsResponse>(url.toString(), 'Log');
+    const { body, headers } = await this.getJsonWithHeaders<LlmRequestLogSummary[]>(url.toString(), 'Log');
+    return { logs: body, pagination: this.paginationFromHeaders(headers) };
+  }
+
+  // X-Total-Count/etc. are the standard pagination signal across every paginated coolhand
+  // endpoint (see BaseService#getJsonWithHeaders) — has_next_page/has_prev_page aren't sent as
+  // separate headers, so they're derived from current_page/total_pages here, same as the server
+  // computes them for searchFeedback's body-embedded pagination object.
+  private paginationFromHeaders(headers: Headers): Pagination {
+    const currentPage = Number(headers.get('x-page') ?? '1');
+    const perPage = Number(headers.get('x-per-page') ?? '0');
+    const totalCount = Number(headers.get('x-total-count') ?? '0');
+    const totalPages = Number(headers.get('x-total-pages') ?? '0');
+    return {
+      current_page: currentPage,
+      per_page: perPage,
+      total_count: totalCount,
+      total_pages: totalPages,
+      has_next_page: currentPage < totalPages,
+      has_prev_page: currentPage > 1
+    };
   }
 
   private logRequestInfo(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): void {

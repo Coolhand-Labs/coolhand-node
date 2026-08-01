@@ -166,17 +166,21 @@ export abstract class BaseService {
   }
 
   /**
-   * Fetch `url` and return the raw response body text, throwing on failure. Used by services that
-   * throw-on-error (as opposed to {@link sendRequest}'s POST/null-on-error convention) — e.g.
-   * `McpService.mcpCall` and, via {@link getJson}, the `FeedbackService`/`LoggingService` read
-   * methods — so the fetch/error/status-throwing logic isn't duplicated in each service.
+   * Fetch `url` and return the raw response body text plus headers, throwing on failure. The
+   * shared fetch/error/status-throwing logic behind {@link fetchOrThrow} and {@link getJson} —
+   * use this directly (via {@link getJsonWithHeaders}) only when a caller needs response headers,
+   * e.g. {@link LoggingService.searchLogs} reading pagination totals off X-Total-Count/etc.
    *
    * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
    *   `"Feedback request failed"`, so each caller keeps its own established message wording.
    * @throws Error if global `fetch` is unavailable (Node.js < 18) or on a network failure.
    *   {@link HttpError} (with `.status`) on a non-2xx response.
    */
-  protected async fetchOrThrow(url: string, init: RequestInit, errorPrefix: string): Promise<string> {
+  protected async fetchWithHeaders(
+    url: string,
+    init: RequestInit,
+    errorPrefix: string
+  ): Promise<{ text: string; headers: Headers }> {
     if (typeof fetch === 'undefined') {
       throw new Error(`${errorPrefix}: global fetch is unavailable (requires Node.js 18+)`);
     }
@@ -192,6 +196,22 @@ export abstract class BaseService {
     if (!res.ok) {
       throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
     }
+    return { text, headers: res.headers };
+  }
+
+  /**
+   * Fetch `url` and return the raw response body text, throwing on failure. Used by services that
+   * throw-on-error (as opposed to {@link sendRequest}'s POST/null-on-error convention) — e.g.
+   * `McpService.mcpCall` and, via {@link getJson}, the `FeedbackService`/`LoggingService` read
+   * methods — so the fetch/error/status-throwing logic isn't duplicated in each service.
+   *
+   * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
+   *   `"Feedback request failed"`, so each caller keeps its own established message wording.
+   * @throws Error if global `fetch` is unavailable (Node.js < 18) or on a network failure.
+   *   {@link HttpError} (with `.status`) on a non-2xx response.
+   */
+  protected async fetchOrThrow(url: string, init: RequestInit, errorPrefix: string): Promise<string> {
+    const { text } = await this.fetchWithHeaders(url, init, errorPrefix);
     return text;
   }
 
@@ -215,6 +235,28 @@ export abstract class BaseService {
 
     try {
       return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
+    }
+  }
+
+  /**
+   * Like {@link getJson}, but also returns the response headers — for endpoints (e.g.
+   * searchLogs) that expose metadata like pagination totals via X-Total-Count/etc. headers
+   * rather than the response body.
+   *
+   * @throws Error on network failure or a non-JSON body. {@link HttpError} (with `.status`) on a
+   *   non-2xx response.
+   */
+  protected async getJsonWithHeaders<T>(url: string, noun: string): Promise<{ body: T; headers: Headers }> {
+    const { text, headers } = await this.fetchWithHeaders(
+      url,
+      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
+      `${noun} request failed`
+    );
+
+    try {
+      return { body: JSON.parse(text) as T, headers };
     } catch {
       throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
     }
