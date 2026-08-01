@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔒 Security
 - **Domain matching in `PatternMatchingService` now anchors on a label boundary instead of doing a plain substring check.** `hostname.includes(domain)` treated `api.openai.com.attacker.net`, `my-openai.com.internal`, and `notopenai.com` as matches for the `openai.com` pattern, since each merely contains the substring. This meant (1) requests to hosts an operator never intended to monitor could have their bodies forwarded to Coolhand's backend, and (2) an attacker-controlled or misconfigured internal hostname could force traffic into the interception code path. Replaced with `hostname === domain || hostname.endsWith('.' + domain)` via a new private `hostnameMatchesDomain` helper, used by `matchesAPIPattern`, `matchesAPIPatternSync`, and `matchesAPIPatternFromURL`. ([#117](https://github.com/Coolhand-Labs/coolhand-node/issues/117))
 
+## [0.10.5] - 2026-08-01
+
+### 🐛 Bug Fixes
+- **Fixed intercepted `fetch()` blocking until the full response body arrives, breaking streaming** — the patched global `fetch()` and `RequestMonitoringService`'s `fetch()` interception both awaited `responseClone.text()` (a full drain of a cloned response body) before returning the response to the caller. For `stream: true` chat completions this destroyed time-to-first-token entirely, and against a server that holds the connection open indefinitely, the caller's `fetch()` never resolved at all. The clone-drain now runs detached from the returned response — same fire-and-forget pattern already used for the `res.on('data')`/`'end'` handling on the http/https side — so `fetch()` resolves as soon as headers arrive and the caller can stream the body itself. ([#114](https://github.com/Coolhand-Labs/coolhand-node/issues/114))
+
 ## [0.10.4] - 2026-08-01
 
 ### 🔒 Security

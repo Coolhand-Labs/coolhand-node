@@ -10,6 +10,11 @@ jest.mock('https');
 jest.mock('http');
 jest.mock('fs');
 
+// The fetch interception drains and logs the response body in a detached promise chain
+// (see issue #114) so callers of fetch() no longer wait on it; tests need to flush the
+// microtask queue after awaiting fetch() before asserting on onRequestComplete.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('RequestMonitoringService', () => {
   let service: RequestMonitoringService;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
@@ -229,6 +234,7 @@ describe('RequestMonitoringService', () => {
       const options = { method: 'POST', body: '{"test": true}' };
 
       await globalThis.fetch(url, options);
+      await flush();
 
       expect(mockPatternMatchingService.matchesAPIPatternFromURL).toHaveBeenCalledWith(url);
       expect(onRequestCompleteMock).toHaveBeenCalled();
@@ -254,9 +260,69 @@ describe('RequestMonitoringService', () => {
       service.setupMonitoring();
 
       await globalThis.fetch('https://api.test.com/v1/test', { method: 'GET' });
+      await flush();
 
       const [callData] = onRequestCompleteMock.mock.calls[0];
       expect(callData.response_headers).toEqual(expect.objectContaining({ 'set-cookie': '[REDACTED]' }));
+    });
+
+    it('resolves fetch() before the response body finishes streaming (issue #114)', async () => {
+      let resolveBody: (text: string) => void = () => {};
+      const bodyPromise = new Promise<string>((resolve) => { resolveBody = resolve; });
+
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockReturnValue(bodyPromise)
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      // If interceptFetch still awaited the body drain before returning, this would hang
+      // forever since bodyPromise never resolves on its own.
+      await globalThis.fetch('https://api.test.com/v1/test', { method: 'POST', body: '{"test": true}' });
+
+      expect(onRequestCompleteMock).not.toHaveBeenCalled();
+
+      resolveBody('{"result": "success"}');
+      await flush();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledWith(
+        expect.objectContaining({ response_body: { result: 'success' } }),
+        mockMatchedPattern
+      );
+    });
+
+    it('logs with a null response_body when the detached body drain rejects', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockReturnValue(Promise.reject(new Error('stream aborted')))
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch('https://api.test.com/v1/test', { method: 'POST', body: '{"test": true}' });
+      await flush();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledWith(
+        expect.objectContaining({ response_body: null }),
+        mockMatchedPattern
+      );
     });
 
     it('should handle fetch errors', async () => {

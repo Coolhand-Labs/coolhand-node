@@ -732,18 +732,26 @@ async function interceptFetch(
       matchedPattern?.pattern
     ) || {};
 
-    // Clone response to read body without consuming it
+    // Clone response to read body without consuming it. Drain and log in the
+    // background so a slow/streaming body doesn't delay the caller's fetch() —
+    // same reasoning as the res.on('data')/'end' handling on the http/https side.
     const responseClone = response.clone();
-    const responseText = await responseClone.text();
-    callData.response_body = parseBody(responseText);
-
-    // Log to API
-    const s = getState();
-    if (s.globalLoggingService) {
-      s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
-    }
-
-    unregisterActiveRequest(requestId, uniqueId);
+    responseClone
+      .text()
+      .then((responseText) => {
+        callData.response_body = parseBody(responseText);
+      })
+      .catch((err) => {
+        log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
+        callData.response_body = null;
+      })
+      .finally(() => {
+        const s = getState();
+        if (s.globalLoggingService) {
+          s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+        }
+        unregisterActiveRequest(requestId, uniqueId);
+      });
 
     return response;
   } catch (error) {
