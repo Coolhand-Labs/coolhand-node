@@ -207,6 +207,24 @@ describe('PatternMatchingService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should not match a hostname where the domain appears as a trailing substring', () => {
+      const result = service.matchesAPIPatternSync('https://api.openai.com.attacker.net/health');
+
+      expect(result).toBeNull();
+    });
+
+    it('should not match a hostname where the domain appears as a leading substring', () => {
+      const result = service.matchesAPIPatternSync('https://my-openai.com.internal/health');
+
+      expect(result).toBeNull();
+    });
+
+    it('should not match a hostname that merely contains the domain name without a label boundary', () => {
+      const result = service.matchesAPIPatternSync('https://notopenai.com/health');
+
+      expect(result).toBeNull();
+    });
   });
 
   describe('Path Pattern Matching', () => {
