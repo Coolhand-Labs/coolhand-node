@@ -495,7 +495,15 @@ export class PatternMatchingService {
       if (!urlObj.search) {
         return url;
       }
-      const sensitiveParams = new Set(['key', 'api_key', 'apikey', 'token', 'access_token', 'secret']);
+      // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
+      // api-patterns.json) — included here too as defense-in-depth for callers that pass it
+      // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
+      // on AWS SigV4-presigned URLs.
+      const sensitiveParams = new Set([
+        'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
+        'password', 'signature', 'sig', 'x-goog-api-key',
+        'x-amz-signature', 'x-amz-credential'
+      ]);
       let redacted = false;
       for (const [name] of urlObj.searchParams.entries()) {
         if (sensitiveParams.has(name.toLowerCase())) {
