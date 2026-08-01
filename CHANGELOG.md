@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔒 Security
+- **The `http`/`https` module interception path (`http.request`/`https.request`/`http.get`/`https.get`) now sanitizes the captured request URL before logging it**, matching the `fetch` interception path. Previously, only `fetch` sanitized query-string secrets (e.g. Google AI/Vertex AI's `?key=<API key>` auth param) before storing/logging the URL — the `http`/`https` path stored and logged it verbatim, so any library calling an AI API via those modules directly (axios's Node adapter, `got`, raw `https.request`) leaked the key to `console.log` and to Coolhand's backend. Debug-mode (`silent: false`) logging of in-flight and deduplicated requests was also leaking the raw URL in a few spots; those now go through the same sanitizer. `sanitizeURL`'s redacted query-param list was also expanded to cover `password`, `signature`/`sig`, and the AWS SigV4 presign params (`X-Amz-Signature`, `X-Amz-Credential`). ([#113](https://github.com/Coolhand-Labs/coolhand-node/issues/113))
+
 ## [0.10.4] - 2026-08-01
 
 ### 🔒 Security

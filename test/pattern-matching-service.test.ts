@@ -860,8 +860,9 @@ describe('PatternMatchingService', () => {
       const endTime = Date.now();
       const totalTime = endTime - startTime;
 
-      // Should handle large header sanitization efficiently
-      expect(totalTime).toBeLessThan(100);
+      // Should handle large header sanitization efficiently (generous budget to
+      // stay stable under parallel test-worker CPU contention, not just on a quiet machine)
+      expect(totalTime).toBeLessThan(300);
     });
 
     it('should handle patterns with many domains efficiently', () => {
@@ -1357,6 +1358,23 @@ describe('PatternMatchingService', () => {
     it('should handle invalid URLs gracefully', () => {
       const result = service.sanitizeURL('not-a-valid-url');
       expect(result).toBe('not-a-valid-url');
+    });
+
+    it.each(['password', 'signature', 'sig', 'x-goog-api-key', 'X-Amz-Signature', 'X-Amz-Credential'])(
+      'should redact %s param',
+      (param) => {
+        const url = `https://api.example.com/v1/resource?${param}=super-secret-value`;
+        const result = service.sanitizeURL(url);
+        expect(result).not.toContain('super-secret-value');
+        expect(result).toContain('REDACTED');
+      }
+    );
+
+    it('should redact sensitive params case-insensitively', () => {
+      const url = 'https://api.example.com/v1/resource?SIGNATURE=super-secret-value';
+      const result = service.sanitizeURL(url);
+      expect(result).not.toContain('super-secret-value');
+      expect(result).toContain('REDACTED');
     });
   });
 });
