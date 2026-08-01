@@ -234,6 +234,31 @@ describe('RequestMonitoringService', () => {
       expect(onRequestCompleteMock).toHaveBeenCalled();
     });
 
+    it('should sanitize response headers on the fetch path', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'session=secret', 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockResolvedValue('{"result": "success"}')
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => (
+        'set-cookie' in headers ? { ...headers, 'set-cookie': '[REDACTED]' } : { ...headers }
+      ));
+
+      service.setupMonitoring();
+
+      await globalThis.fetch('https://api.test.com/v1/test', { method: 'GET' });
+
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(callData.response_headers).toEqual(expect.objectContaining({ 'set-cookie': '[REDACTED]' }));
+    });
+
     it('should handle fetch errors', async () => {
       const error = new Error('Network error');
       const originalFetch = jest.fn().mockRejectedValue(error);

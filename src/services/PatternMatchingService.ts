@@ -424,14 +424,13 @@ export class PatternMatchingService {
   }
 
   public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
-    const sanitized = { ...headers };
+    const sanitized: Record<string, any> = Object.fromEntries(
+      Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
+    );
 
     // Default sanitization rules
     if (sanitized.authorization) {
-      const auth = Array.isArray(sanitized.authorization)
-        ? sanitized.authorization[0]
-        : sanitized.authorization;
-      sanitized.authorization = String(auth).replace(/Bearer .+/, 'Bearer [REDACTED]');
+      sanitized.authorization = '[REDACTED]';
     }
     if (sanitized['api-key'] !== undefined) {
       sanitized['api-key'] = '[REDACTED]';
@@ -440,10 +439,6 @@ export class PatternMatchingService {
     // Pattern-specific sanitization
     if (pattern?.headers) {
       for (const [headerKey, redactionValue] of Object.entries(pattern.headers)) {
-        if (sanitized[headerKey]) {
-          sanitized[headerKey] = redactionValue;
-        }
-        // Also check lowercase version
         const lowerKey = headerKey.toLowerCase();
         if (sanitized[lowerKey]) {
           sanitized[lowerKey] = redactionValue;

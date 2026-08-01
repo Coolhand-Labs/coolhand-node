@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔒 Security
 - **Domain matching in `PatternMatchingService` now anchors on a label boundary instead of doing a plain substring check.** `hostname.includes(domain)` treated `api.openai.com.attacker.net`, `my-openai.com.internal`, and `notopenai.com` as matches for the `openai.com` pattern, since each merely contains the substring. This meant (1) requests to hosts an operator never intended to monitor could have their bodies forwarded to Coolhand's backend, and (2) an attacker-controlled or misconfigured internal hostname could force traffic into the interception code path. Replaced with `hostname === domain || hostname.endsWith('.' + domain)` via a new private `hostnameMatchesDomain` helper, used by `matchesAPIPattern`, `matchesAPIPatternSync`, and `matchesAPIPatternFromURL`. ([#117](https://github.com/Coolhand-Labs/coolhand-node/issues/117))
 
+## [0.10.4] - 2026-08-01
+
+### 🔒 Security
+- **`sanitizeHeaders` now redacts the entire `Authorization` header value unconditionally**, not just the `Bearer <token>` scheme. Previously, `Basic ...` and other non-`Bearer` schemes — including a lowercase `bearer` scheme used by some client libraries — passed through the default redaction rule unmasked. This was already covered for OpenAI/Google AI/GitHub Models/Vertex AI/OpenRouter/Cloudflare AI Gateway, whose patterns declare their own `authorization` override, but not for **Anthropic**, whose pattern only overrides `x-api-key` — so an Anthropic-matched request carrying a non-`Bearer` `Authorization` header (e.g. `Basic` proxy auth from a corporate egress gateway) leaked that credential into logged headers. ([#118](https://github.com/Coolhand-Labs/coolhand-node/issues/118))
+
+## [0.10.3] - 2026-08-01
+
+### 🔒 Security
+- **Fetch-path response headers are now sanitized before logging**, matching the http/https interception path. `interceptFetch` (`src/global-monitor.ts`, `src/services/RequestMonitoringService.ts`) previously stored `Object.fromEntries(response.headers.entries())` as-is; it now runs the result through `sanitizeHeaders()` first, the same as the http/https path already did. Low impact today since no current pattern declares sensitive *response* headers, but a monitored API returning `set-cookie` or a similar sensitive header on the fetch path would have been logged verbatim while the equivalent http/https call would have redacted it. ([#119](https://github.com/Coolhand-Labs/coolhand-node/issues/119))
+
+## [0.10.2] - 2026-08-01
+
+### 🔒 Security
+- **Header redaction in `PatternMatchingService#sanitizeHeaders` is no longer case-sensitive.** Every redaction rule (the default `authorization`/`api-key` rules and pattern-specific rules from `src/api-patterns.json`) did an exact-case property lookup, so headers sent with their conventional casing — `Authorization`, `X-Api-Key`, `OpenAI-API-Key`, as used by axios, got, and most provider SDKs — bypassed redaction entirely. Node's `http.request`/`fetch` (plain-object headers) preserve caller casing on the request side, unlike `IncomingMessage.headers`, which Node lowercases on responses — this is why response-header redaction was unaffected. Any host application sending a capitalized auth header had that third-party API key stored in Coolhand's backend in cleartext, and — when running with `dryRun: true` and `silent: false` — printed via `console.log`. Incoming header keys are now lowercase-normalized once before any redaction rule runs, closing the bypass regardless of the caller's casing. ([#110](https://github.com/Coolhand-Labs/coolhand-node/issues/110))
+
 ## [0.10.1] - 2026-08-01
 
 ### ✨ New Features
