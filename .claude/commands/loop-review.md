@@ -71,19 +71,26 @@ Effort: EFFORT
 Already fixed in prior iterations — do NOT re-flag these:
 PREVIOUS_FIXES
 
-Return a numbered list of issues with file path and line numbers. Be specific about what to fix and why.
+Tag every finding with a severity:
+- `[CRITICAL]` — security vulnerabilities, wrong/broken behavior, performance problems
+- `[NICE-TO-HAVE]` — DRY violations, missing test coverage, code-reuse opportunities
+- `[NITPICK]` — documentation, comments, naming, formatting-adjacent issues
+
+Return a numbered list of issues with file path and line numbers, each prefixed with its severity tag, e.g. `1. [CRITICAL] file:line — problem — fix`. Be specific about what to fix and why.
 If there are NO issues (and the deterministic checks passed), respond with exactly: LGTM: No issues found.
+
+End your response with a line: `TOKENS_USED: <number>` — your best estimate of tokens used this pass (approximate, not metered).
 ---
 
 ### Step 3 — Check Result
 
-- If the deterministic checks passed AND the agent says `LGTM: No issues found.` → exit the loop, go to Final Summary
+- If the deterministic checks passed AND the first line of the agent's response is exactly `LGTM: No issues found.` → exit the loop, go to Final Summary
 - If iteration count has reached 5 → exit the loop, go to Final Summary (partial)
 - Otherwise → proceed to Step 4
 
 ### Step 4 — Fix
 
-Fix every issue from both the deterministic checks and the reviewer. Use Edit, Write, and Bash tools to apply fixes directly. Do not skip any finding.
+For every finding — from both the deterministic checks and the reviewer — either fix it, or reject it with a one-line reason (false positive / out of scope / disagree with the call). Every finding must get one of these two dispositions; none may be silently dropped. Deterministic-check failures (lint/typecheck/test) should essentially never be rejected. Use Edit, Write, and Bash tools to apply fixes directly. Track the fixed count and rejected count (with severity breakdown) for this iteration.
 
 ### Step 5 — Log & Continue
 
@@ -96,12 +103,12 @@ Maintain this log as you work:
 ```
 === Iteration 1 ===
 Deterministic checks: [PASS | FAIL — list of failing checks]
-Reviewer found N issues:
-  1. [file:line] description
+Reviewer found N issues (X critical, Y nice-to-have, Z nitpick):
+  1. [CRITICAL] [file:line] description
   2. ...
-Fixed:
+Fixed: F, Rejected: R
   - Applied: [description of fix]
-  - Applied: [description of fix]
+  - Rejected: [description] — [reason]
 
 === Iteration 2 ===
 ...
@@ -110,11 +117,22 @@ Fixed:
 [CLEAN after N iterations] or [STOPPED at max iterations — N issues remain]
 ```
 
+## Run Log (CSV)
+
+After the loop exits (before Final Summary), append one row per iteration to `~/loop-review-outputs/coolhand-node.csv`. Create the directory and file with this header if they don't already exist:
+
+```
+timestamp,branch,iteration,model,thinking_level,clock_seconds,tokens_used_approx,critical_found,nice_to_have_found,nitpick_found,total_found,issues_addressed,issues_ignored
+```
+
+For each iteration, bracket wall-clock time with `date +%s` before Step 1's deterministic checks and after Step 4's fixes complete, and use `date -u +%Y-%m-%dT%H:%M:%SZ` for `timestamp` at write time. `branch` = `git branch --show-current`. `model` = `default`. `thinking_level` = the EFFORT value used that iteration. `tokens_used_approx` comes from the reviewer's `TOKENS_USED:` line. `issues_addressed`/`issues_ignored` are the fixed/rejected counts from Step 4. Append with plain `cat >> ~/loop-review-outputs/coolhand-node.csv <<EOF ... EOF` — no CSV quoting needed.
+
 ## Final Summary
 
 After the loop exits, output:
 
 1. **Overall result**: CLEAN (N iterations) or STOPPED (issues remain)
-2. **Per-iteration breakdown**: What was found (deterministic + reviewer) vs. what was fixed each round
+2. **Per-iteration breakdown**: What was found (deterministic + reviewer, with severity breakdown) vs. what was fixed/rejected each round
 3. **All files modified**: Complete list of files touched across all iterations
 4. **Remaining issues** (if stopped at max): Unresolved items with context on why they're hard to fix automatically
+5. **Run log**: Number of CSV rows appended and the path (`~/loop-review-outputs/coolhand-node.csv`)
