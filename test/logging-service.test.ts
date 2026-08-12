@@ -505,7 +505,8 @@ describe('LoggingService', () => {
         includePrompts: true,
         sort: 'created_at desc',
         page: 2,
-        per: 10
+        per: 10,
+        includeTotal: true
       });
 
       const url = new URL(capturedUrl!);
@@ -523,8 +524,23 @@ describe('LoggingService', () => {
       expect(url.searchParams.get('q[s]')).toBe('created_at desc');
       expect(url.searchParams.get('page')).toBe('2');
       expect(url.searchParams.get('per')).toBe('10');
+      expect(url.searchParams.get('include_total')).toBe('true');
       expect(capturedOptions.method).toBe('GET');
       expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+    });
+
+    it('omits include_total when not passed', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.searchLogs({ model: 'gpt-4' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.has('include_total')).toBe(false);
     });
 
     it('sends explicit false booleans as the literal string "false", not omitting the param', async () => {
@@ -540,11 +556,12 @@ describe('LoggingService', () => {
       });
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
-      await service.searchLogs({ unmatchedOnly: false, includePrompts: false });
+      await service.searchLogs({ unmatchedOnly: false, includePrompts: false, includeTotal: false });
 
       const url = new URL(capturedUrl!);
       expect(url.searchParams.get('unmatched_only')).toBe('false');
       expect(url.searchParams.get('include_prompts')).toBe('false');
+      expect(url.searchParams.get('include_total')).toBe('false');
     });
 
     it('does not let a NaN page (type-legal but nonsensical) propagate into current_page', async () => {
