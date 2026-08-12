@@ -120,7 +120,8 @@ export class LoggingService extends BaseService {
    *   when present, assembling the same `Pagination` shape `searchFeedback` embeds in its body.
    *   Until #1096 deploys, those headers are absent and `pagination` is derived from `logs`/
    *   `params` instead (see {@link paginationFromHeaders}) rather than falsely reporting zero
-   *   results.
+   *   results. Pass `params.includeTotal` to opt into exact totals at the cost of a `COUNT(*)` on
+   *   the backend — left unset, the estimate above is used.
    * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
    *   whose `status` property holds the HTTP status code.
    */
@@ -140,7 +141,8 @@ export class LoggingService extends BaseService {
       include_prompts: params.includePrompts,
       'q[s]': params.sort,
       page: params.page,
-      per: params.per
+      per: params.per,
+      include_total: params.includeTotal
     };
     for (const [key, value] of Object.entries(queryParams)) {
       if (value !== undefined) {
