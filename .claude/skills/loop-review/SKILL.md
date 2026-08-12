@@ -34,7 +34,9 @@ Default: 5.
 
 ## The round loop
 
-Repeat the following cycle up to the round cap (default 5):
+Repeat the following cycle up to the round cap (default 5). Bracket each
+round's wall-clock time with `date +%s` before step 1 and after step 3
+completes.
 
 1. **Deterministic checks.** Run this repo's verify gate from `CLAUDE.md`
    (mirrors what CI runs as separate lint/typecheck/test jobs):
@@ -55,28 +57,85 @@ Repeat the following cycle up to the round cap (default 5):
    changing what would be committed) before the review step.
 
 2. **Review.** Invoke `/code-review <effort> --fix` (via the `Skill` tool)
-   against `git diff origin/main`.
+   against `git diff origin/main`. Every finding must carry a severity:
+   - `[CRITICAL]` — security vulnerabilities, wrong/broken behavior,
+     performance problems
+   - `[NICE-TO-HAVE]` — DRY violations, missing test coverage,
+     code-reuse opportunities
+   - `[NITPICK]` — documentation, comments, naming, formatting-adjacent
+     issues
 
-3. **Dry round (0 findings from both deterministic checks and review) →
+   If `/code-review`'s own output isn't already severity-tagged, tag each
+   finding yourself before logging it. Also record your best estimate of
+   tokens used by the review step this round (approximate, not metered).
+
+3. **Disposition.** For every finding this round — deterministic-check
+   failures and reviewer findings alike — record exactly one of:
+   **fixed** (by `--fix` or your own follow-up Edit/Write/Bash), or
+   **rejected: `<one-line reason>`** (false positive / out of scope /
+   disagree with the call). None may be silently dropped. Deterministic
+   check failures should essentially never be rejected. Log the round
+   using the Iteration Log Format below, then append a row to the CSV run
+   log.
+
+4. **Dry round (0 findings from both deterministic checks and review) →
    converged.** Stop and move to post-loop verification.
 
-4. **Findings found and fixed** → do not declare victory yet. Go back to
+5. **Findings found and fixed** → do not declare victory yet. Go back to
    step 1 for a confirming round — fixes can introduce their own
    regressions, and a clean-looking pass doesn't guarantee convergence.
 
-5. **No-progress detection**: if two consecutive rounds return the same
+6. **No-progress detection**: if two consecutive rounds return the same
    non-empty set of findings, `--fix` isn't resolving them mechanically
    (likely a design/architecture call that needs a human). Stop looping,
-   list the stuck findings, and hand them to the user instead of retrying
-   forever.
+   list the stuck findings with their rejection reasons, and hand them to
+   the user instead of retrying forever.
 
-6. **Safety cap**: if the round cap is reached without converging or
+7. **Safety cap**: if the round cap is reached without converging or
    getting stuck, stop and report the remaining findings — don't loop
    silently past the cap.
 
 Each round's fixes should stay reviewable: don't squash multiple rounds
 into one silent edit. Note per-round changes in the final summary so the
 user can inspect them with `git diff`.
+
+## Iteration Log Format
+
+Maintain this log as you work:
+
+```
+=== Round 1 ===
+Deterministic checks: [PASS | FAIL — list of failing checks]
+Reviewer found N issues (X critical, Y nice-to-have, Z nitpick):
+  1. [CRITICAL] [file:line] description
+  2. ...
+Fixed: F, Rejected: R
+  - Applied: [description of fix]
+  - Rejected: [description] — [reason]
+
+=== Round 2 ===
+...
+
+=== RESULT ===
+[CLEAN after N rounds] or [STOPPED — N issues remain]
+```
+
+## Run Log (CSV)
+
+After the loop exits (before Final Summary), append one row per round to
+`~/loop-review-outputs/coolhand-node.csv`. Create the directory and file
+with this header if they don't already exist:
+
+```
+timestamp,branch,round,effort,clock_seconds,tokens_used_approx,critical_found,nice_to_have_found,nitpick_found,total_found,issues_fixed,issues_rejected
+```
+
+Use `date -u +%Y-%m-%dT%H:%M:%SZ` for `timestamp` at write time. `branch`
+= `git branch --show-current`. `effort` = the effort level used that
+round (see Scope). `tokens_used_approx` is your estimate from step 2.
+`issues_fixed`/`issues_rejected` are the counts from step 3. Append with
+plain `cat >> ~/loop-review-outputs/coolhand-node.csv <<EOF ... EOF` — no
+CSV quoting needed.
 
 ## Review criteria
 
@@ -154,6 +213,20 @@ npm run lint && npm run typecheck && npm test
 ```
 
 and include the result in the final summary.
+
+## Final Summary
+
+After the loop exits, output:
+
+1. **Overall result**: CLEAN (N rounds) or STOPPED (issues remain)
+2. **Per-round breakdown**: What was found (deterministic + reviewer, with
+   severity breakdown) vs. what was fixed/rejected each round
+3. **All files modified**: Complete list of files touched across all
+   rounds
+4. **Remaining issues** (if stopped): Unresolved items with context on
+   why they're hard to fix automatically
+5. **Run log**: Number of CSV rows appended and the path
+   (`~/loop-review-outputs/coolhand-node.csv`)
 
 ## Rationalizations to resist
 
