@@ -177,7 +177,9 @@ describe('createRequire contract', () => {
   it('should return http/https modules whose request property is configurable', async () => {
     // This is the core invariant the fix relies on.
     const { createRequire } = await import('module') as any;
-    const cjsRequire = createRequire('file://' + process.cwd() + '/');
+    // Same base as global-monitor.ts's createRequireBase() — an absolute path, since
+    // 'file://' + cwd is malformed on Windows.
+    const cjsRequire = createRequire(process.cwd() + '/');
 
     const httpsModule = cjsRequire('https');
     const httpModule = cjsRequire('http');
@@ -194,7 +196,7 @@ describe('createRequire contract', () => {
 
   it('should return patchable https.get', async () => {
     const { createRequire } = await import('module') as any;
-    const cjsRequire = createRequire('file://' + process.cwd() + '/');
+    const cjsRequire = createRequire(process.cwd() + '/');
     const httpsModule = cjsRequire('https');
 
     const desc = Object.getOwnPropertyDescriptor(httpsModule, 'get');

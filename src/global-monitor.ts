@@ -32,6 +32,16 @@ let http: any = null;
 let _createRequire: ((id: string) => any) | null = null;
 try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM or Edge */ }
 
+// createRequire accepts a file URL string or an absolute path. The fallback is an
+// absolute path, not a hand-built 'file://' + process.cwd(): that produces
+// 'file://C:\Users\...' on Windows (drive letter in the URL host slot), and building
+// a valid URL would need url.pathToFileURL — a Node import this file must not take.
+// eval() keeps import.meta.url out of the CJS build, where it is a compile error.
+const createRequireBase = (): string => {
+  try { return eval('import.meta.url') as string; } catch { /* CJS — no import.meta */ }
+  return process.cwd() + '/';
+};
+
 // Synchronous module loader — used by initGlobalMonitoringCore so patching happens
 // immediately when auto-monitor is imported in CJS builds.
 const loadNodeModulesSync = (): boolean => {
@@ -41,9 +51,7 @@ const loadNodeModulesSync = (): boolean => {
   }
   if (!_createRequire) { return false; } // native ESM — fall through to async path
   try {
-    let baseUrl: string;
-    try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
-    const req = _createRequire(baseUrl);
+    const req = _createRequire(createRequireBase());
     https = req('https');
     http = req('http');
     return true;
@@ -70,11 +78,7 @@ const loadNodeModules = async () => {
     if (desc && desc.configurable === false) {
       log('ESM namespace detected (non-configurable properties), using createRequire fallback');
       const { createRequire: cr } = await import('module') as any;
-      // Use eval to access import.meta.url without causing ts-jest compile errors.
-      // Falls back to process.cwd() in CJS environments where import.meta is unavailable.
-      let baseUrl: string;
-      try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
-      const cjsRequire = cr(baseUrl);
+      const cjsRequire = cr(createRequireBase());
       httpsModule = cjsRequire('https');
       httpModule = cjsRequire('http');
     }
