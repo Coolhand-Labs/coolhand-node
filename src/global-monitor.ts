@@ -9,7 +9,8 @@ import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { parseBody } from './utils/parse-body.js';
-import { decompressBuffer } from './utils/decompress.js';
+import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
+import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -623,15 +624,17 @@ function interceptRequest(
   const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-    const responseChunks: Buffer[] = [];
+    const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
+      log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+    });
 
     res.on('data', (chunk: any) => {
-      responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
     res.on('end', async () => {
       try {
-        const rawBuffer = Buffer.concat(responseChunks);
+        const rawBuffer = responseBuffer.concat();
         const contentEncoding = res.headers?.['content-encoding'];
         const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
         callData.response_body = parseBody(responseBody);
