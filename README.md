@@ -499,6 +499,11 @@ Write methods (`logRequest`, `createFeedback`) never throw — a failed API call
 network issue is logged to console and resolves to `null` instead of interrupting your
 application.
 
+`uploadClientFile` follows the same null-on-failure convention for API/network errors, but throws
+if global `fetch` is unavailable (Node.js < 18) — there's no fallback path for multipart uploads,
+unlike `logRequest`/`createFeedback`'s JSON requests. See
+[docs/client-file-upload.md](./docs/client-file-upload.md).
+
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`) throw instead, since
 callers need to react to the result — a non-2xx response throws an `HttpError` with the status
 code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
@@ -516,6 +521,7 @@ code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
+- **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 

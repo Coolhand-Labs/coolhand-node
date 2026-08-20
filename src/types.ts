@@ -44,6 +44,7 @@ export interface CoolhandLogPayload {
   llm_request_log: {
     raw_request: CoolhandCallData;
     collector?: string;
+    metadata?: Record<string, unknown>;
   };
 }
 
@@ -59,7 +60,27 @@ export interface CoolhandLogResponse {
   source_api_result?: string | null;
   llm_provider_unique_id?: string | null;
   warnings?: string[];
+  metadata?: Record<string, unknown> | null;
   [key: string]: unknown;
+}
+
+export interface CoolhandClientFilePayload {
+  name: string;
+  file_type?: 'slide_deck' | 'report' | 'document';
+  description?: string;
+  file: Buffer | Blob;
+  filename: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CoolhandClientFileResponse {
+  id: string;
+  name: string;
+  file_type: string;
+  status: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface CoolhandAPIPattern {
