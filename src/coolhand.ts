@@ -121,6 +121,9 @@ export class Coolhand {
   /**
    * Upload a file (slide deck, report, or document) to Coolhand.
    *
+   * Requires the **private** API key — construct this `Coolhand` instance with `apiKey` set to
+   * your private key, not the public key used for `createFeedback`/`logRequest`, which 401s here.
+   *
    * Uploads always land with `status: draft` — `status` is not settable via this method.
    * Requires Node.js 18+ (uses global `fetch`/`FormData`; there is no fallback for pre-18 Node).
    *

@@ -501,7 +501,8 @@ application.
 
 `uploadClientFile` follows the same null-on-failure convention for API/network errors, but throws
 if global `fetch` is unavailable (Node.js < 18) — there's no fallback path for multipart uploads,
-unlike `logRequest`/`createFeedback`'s JSON requests. See
+unlike `logRequest`/`createFeedback`'s JSON requests. Unlike those two, it requires your **private**
+API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`) throw instead, since

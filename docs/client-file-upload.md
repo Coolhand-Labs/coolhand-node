@@ -2,6 +2,10 @@
 
 `uploadClientFile()` uploads a file (slide deck, report, or document) to Coolhand.
 
+**Auth:** requires your **private** API key, passed as `apiKey` in the `Coolhand` constructor. The
+public key used for `logRequest`/`createFeedback` will 401 on this endpoint — construct a separate
+`Coolhand` instance with the private key if your process also logs with the public key.
+
 ## Usage
 
 ```typescript
@@ -9,7 +13,7 @@ import { Coolhand } from 'coolhand-node';
 import { readFile } from 'fs/promises';
 
 const coolhand = new Coolhand({
-  apiKey: 'your-api-key'
+  apiKey: 'your-private-api-key'
 });
 
 const file = await readFile('./q3-review.pdf');
