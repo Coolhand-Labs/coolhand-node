@@ -9,32 +9,29 @@ construct a separate `Coolhand` instance with the private key if your process al
 public key.
 
 **IDs:** `getLogContent(logId)` and `searchLogs`' `templateId` filter expect **hashids** — the
-`id`/`template_id` strings you get back from a `searchLogs` result. Today, this is not the same
-`id` `logRequest()`'s response resolves to, which is a plain numeric database ID; don't pass that
-value here. (Once `#1096` below ships, `logRequest()`'s response `id` becomes a hashid too — the
-same field, on the same blueprint, that `searchLogs`/`getLogContent` already return as one — so
-this distinction goes away then; `CoolhandLogResponse.id` is typed `number | string` to cover both.)
+`id`/`template_id` strings you get back from a `searchLogs` result. `logRequest()`'s response `id`
+is the same hashid, on the same blueprint, that `searchLogs`/`getLogContent` return — the backend
+switched to always returning hashids (never the raw integer PK) as part of `#1096` below.
+`CoolhandLogResponse.id` remains typed `number | string` for backward compatibility with older
+backend deployments that may still return the raw integer.
 `workloadId` is also a hashid, but one that doesn't come back from a log result — get it from the
 app UI. (Not from a feedback record's `workload_id` — despite that field's name and its own doc
 comment, `LLMRequestLogFeedbackResponse`/`Summary.workload_id` are the raw integer database ID, not
 a hashid; passing that value here 422s.)
 
-**Deployment status:** this entire read surface is implemented against
-[Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096), which is not
-yet merged. Against today's deployed backend:
-- `getLogContent` 404s outright — no `show` route exists yet.
-- `searchLogs`' named filters below (everything except `sort`, `page`, and `per`, which already
-  work today) are silently ignored — the backend returns unfiltered results, not an error.
-- Each result is missing every field except `id`/`collector`/`source_api`/`created_at`/
-  `updated_at` (`model`, `source_api_result`, `template_id`, `template_name`, the token/latency
-  fields, and `include_prompts`' fields are all additive in `#1096`), and `id` is the raw integer
-  primary key, not a hashid.
-- Pagination (below) falls back to a lower-bound estimate on a non-empty page, and to `0` on an
-  empty one — never a real total, until `#1096` ships.
-- `includeTotal` has no effect — the backend doesn't recognize `include_total` yet, so it's
-  silently ignored and pagination still falls back to the estimate above, until `#1096` ships.
-- `#1096` also scopes `index` to client-generated logs only (excludes internally-generated
-  records, e.g. evals); if you're relying on the current, broader result set, expect it to shrink.
+**Status:** this entire read surface is implemented against
+[Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096), which has
+shipped to production. Notable behavior from that change:
+- `getLogContent` is backed by a dedicated `GET /api/v2/llm_request_logs/{id}` `show` route.
+- `searchLogs`' named filters below are applied server-side, on top of the endpoint's own
+  Ransack-backed search.
+- Each result includes `model`, `source_api_result`, `template_id`, `template_name`, the
+  token/latency fields, and (with `includePrompts`) the prompt fields, in addition to
+  `id`/`collector`/`source_api`/`created_at`/`updated_at`.
+- `index` is scoped to client-generated logs only (excludes internally-generated records, e.g.
+  evals).
+- 422s on invalid input (an unknown `templateId`/`workloadId`, a non-positive `daysBack`/
+  `maxChars`, or an invalid `section`) are live.
 
 ## `searchLogs(params)`
 
@@ -74,7 +71,7 @@ the endpoint's own Ransack-backed search, not in place of it; `sort` below reach
 | `sort` | `string` | Ransack sort expression, e.g. `"created_at desc"` — sent as `q[s]`. Defaults to newest-first (`id desc`) when omitted |
 | `page` | `number` | Page number. Must be a positive integer — the backend's pagination gem raises on `0`, negative, or non-integer values, rejected with a generic 500, not a 422 |
 | `per` | `number` | Page size (default 25, max 100 — enforced server-side) |
-| `includeTotal` | `boolean` | Ask the backend to compute exact `total_count`/`total_pages` instead of the lower-bound estimate below. Costs a `COUNT(*)` on the backend, so it's opt-in — omit it (default) for high-frequency polling. No effect until `#1096` ships (see "Deployment status" above) |
+| `includeTotal` | `boolean` | Ask the backend to compute exact `total_count`/`total_pages` instead of the lower-bound estimate below. Costs a `COUNT(*)` on the backend, so it's opt-in — omit it (default) for high-frequency polling |
 
 `sort` is the only raw Ransack passthrough this method exposes — other `q[...]` predicates the
 endpoint's underlying search may accept aren't reachable through `searchLogs`.
@@ -114,13 +111,13 @@ endpoint's underlying search may accept aren't reachable through `searchLogs`.
 ```
 
 The backing endpoint renders `logs` as a bare array on the wire; `searchLogs` reads `pagination`
-off `X-Total-Count`/`X-Page`/`X-Per-Page`/`X-Total-Pages` response headers
-([Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096) — not yet
-deployed as of this writing) and assembles the same field names/shape/semantics `searchFeedback`
-embeds in its body — both endpoints paginate via `will_paginate` server-side
-(`ActiveRecord::Relation#page`/`#previous_page`/`#next_page`), so once `#1096` ships,
-`has_prev_page`/`has_next_page` mean exactly the same thing on both methods. Until that backend PR ships, those
-headers are absent and `pagination` is derived from `logs`/the requested `page`/`per` instead:
+off `X-Total-Count`/`X-Page`/`X-Per-Page`/`X-Total-Pages` response headers (from
+[Coolhand-Labs/coolhand#1096](https://github.com/Coolhand-Labs/coolhand/pull/1096), live in
+production) and assembles the same field names/shape/semantics `searchFeedback` embeds in its
+body — both endpoints paginate via `will_paginate` server-side (`ActiveRecord::Relation#page`/
+`#previous_page`/`#next_page`), so `has_prev_page`/`has_next_page` mean exactly the same thing on
+both methods. Those `X-Total-*` headers are only present when `includeTotal: true` is passed
+(see below) — without it, `pagination` is derived from `logs`/the requested `page`/`per` instead:
 
 - If `logs` is non-empty, `total_count`/`total_pages` are a **lower-bound estimate** — every prior
   page assumed full, plus this page's actual count (e.g. a single result on `page: 3, per: 10`
@@ -131,15 +128,14 @@ headers are absent and `pagination` is derived from `logs`/the requested `page`/
   fabricate a total, not estimate a real lower bound.
 - `has_next_page` is `logs.length >= per` (a full page might not be the last one — costs one extra,
   empty request in the worst case, never drops real results) and `has_prev_page` is simply
-  `page > 1`, both independent of the `total_count`/`total_pages` estimate above. Unlike
-  `total_count`/`total_pages`, `has_prev_page`'s meaning does **not** change once `#1096` ships —
-  `page > 1` is exactly what `will_paginate`'s `previous_page.present?` reduces to, with no
-  out-of-range check on either side.
+  `page > 1`, both independent of the `total_count`/`total_pages` estimate above — `page > 1` is
+  exactly what `will_paginate`'s `previous_page.present?` reduces to, with no out-of-range check
+  on either side.
 
 Pass `includeTotal: true` to opt into the real `X-Total-Count`/`X-Total-Pages`-backed values
-instead of the estimate above, once `#1096` ships — `searchLogs` already prefers those headers
-whenever present, so no other code changes are needed on your end. Leave it unset for
-high-frequency polling, since it costs a `COUNT(*)` per request on the backend.
+instead of the estimate above — `searchLogs` already prefers those headers whenever present, so no
+other code changes are needed on your end. Leave it unset for high-frequency polling, since it
+costs a `COUNT(*)` per request on the backend.
 
 ## `getLogContent(logId, opts)`
 
@@ -209,8 +205,8 @@ When `searchQuery` was passed, `matches`/`search_query` replace the content fiel
 Both methods throw an `HttpError` (exported from `coolhand-node`) on a non-2xx response, with the
 HTTP status attached to the `status` property, so callers can branch on it (e.g. 401 →
 re-authenticate, 404 → unknown ID) without parsing the message string. `searchLogs`/`getLogContent`
-also 422 on invalid input once `#1096` ships: an unknown `templateId`/`workloadId`, a non-positive
-`daysBack`/`maxChars`, or an invalid `section`.
+also 422 on invalid input: an unknown `templateId`/`workloadId`, a non-positive `daysBack`/
+`maxChars`, or an invalid `section`.
 
 ```typescript
 import { Coolhand, HttpError } from 'coolhand-node';
