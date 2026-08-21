@@ -340,6 +340,11 @@ export interface SearchLogsParams {
   page?: number;
   /** Page size (default 25, max 100 — enforced server-side; `per_page` is also accepted on the wire but this SDK only sends `per`). */
   per?: number;
+  /** Ask the backend to compute exact `total_count`/`total_pages` (via `X-Total-Count`/
+   *  `X-Total-Pages` response headers) instead of the client-side lower-bound estimate. Costs a
+   *  `COUNT(*)` on the backend, so it's opt-in and defaults to off — leave it unset for
+   *  high-frequency polling. No effect until Coolhand-Labs/coolhand#1096 ships. */
+  includeTotal?: boolean;
 }
 
 // Blueprint fields for a log returned by searchLogs — system_prompt/user_prompt only present

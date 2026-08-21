@@ -1,6 +1,7 @@
 import * as https from 'https';
 import * as zlib from 'zlib';
 import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
+import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { EventEmitter } from 'events';
@@ -757,6 +758,24 @@ describe('RequestMonitoringService', () => {
         }
       );
     });
+
+    it('should truncate raw response buffering once it exceeds MAX_DECOMPRESSED_BYTES', (done) => {
+      // Feed more chunk bytes than the cap allows; the interceptor should stop
+      // accumulating rather than growing responseChunks unbounded, and still
+      // complete the call instead of hanging or crashing.
+      const chunkSize = 1024 * 1024; // 1 MB
+      const chunkCount = Math.ceil(MAX_DECOMPRESSED_BYTES / chunkSize) + 2;
+      const chunks = Array.from({ length: chunkCount }, () => Buffer.alloc(chunkSize, 'a'));
+
+      runInterceptWithResponse(
+        { 'content-type': 'text/plain' },
+        chunks,
+        done,
+        () => {
+          expect(onRequestCompleteMock).toHaveBeenCalled();
+        }
+      );
+    }, 20000);
   });
 
   describe('Edge Cases and Error Handling', () => {

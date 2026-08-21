@@ -31,6 +31,8 @@ yet merged. Against today's deployed backend:
   primary key, not a hashid.
 - Pagination (below) falls back to a lower-bound estimate on a non-empty page, and to `0` on an
   empty one — never a real total, until `#1096` ships.
+- `includeTotal` has no effect — the backend doesn't recognize `include_total` yet, so it's
+  silently ignored and pagination still falls back to the estimate above, until `#1096` ships.
 - `#1096` also scopes `index` to client-generated logs only (excludes internally-generated
   records, e.g. evals); if you're relying on the current, broader result set, expect it to shrink.
 
@@ -72,6 +74,7 @@ the endpoint's own Ransack-backed search, not in place of it; `sort` below reach
 | `sort` | `string` | Ransack sort expression, e.g. `"created_at desc"` — sent as `q[s]`. Defaults to newest-first (`id desc`) when omitted |
 | `page` | `number` | Page number. Must be a positive integer — the backend's pagination gem raises on `0`, negative, or non-integer values, rejected with a generic 500, not a 422 |
 | `per` | `number` | Page size (default 25, max 100 — enforced server-side) |
+| `includeTotal` | `boolean` | Ask the backend to compute exact `total_count`/`total_pages` instead of the lower-bound estimate below. Costs a `COUNT(*)` on the backend, so it's opt-in — omit it (default) for high-frequency polling. No effect until `#1096` ships (see "Deployment status" above) |
 
 `sort` is the only raw Ransack passthrough this method exposes — other `q[...]` predicates the
 endpoint's underlying search may accept aren't reachable through `searchLogs`.
@@ -132,6 +135,11 @@ headers are absent and `pagination` is derived from `logs`/the requested `page`/
   `total_count`/`total_pages`, `has_prev_page`'s meaning does **not** change once `#1096` ships —
   `page > 1` is exactly what `will_paginate`'s `previous_page.present?` reduces to, with no
   out-of-range check on either side.
+
+Pass `includeTotal: true` to opt into the real `X-Total-Count`/`X-Total-Pages`-backed values
+instead of the estimate above, once `#1096` ships — `searchLogs` already prefers those headers
+whenever present, so no other code changes are needed on your end. Leave it unset for
+high-frequency polling, since it costs a `COUNT(*)` per request on the backend.
 
 ## `getLogContent(logId, opts)`
 

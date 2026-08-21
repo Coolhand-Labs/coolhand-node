@@ -9,7 +9,8 @@ import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { parseBody } from './utils/parse-body.js';
-import { decompressBuffer } from './utils/decompress.js';
+import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
+import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
 import type { PassThrough } from 'stream';
@@ -37,6 +38,16 @@ let PassThroughCtor: (new () => PassThrough) | null = null;
 let _createRequire: ((id: string) => any) | null = null;
 try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM or Edge */ }
 
+// createRequire accepts a file URL string or an absolute path. The fallback is an
+// absolute path, not a hand-built 'file://' + process.cwd(): that produces
+// 'file://C:\Users\...' on Windows (drive letter in the URL host slot), and building
+// a valid URL would need url.pathToFileURL — a Node import this file must not take.
+// eval() keeps import.meta.url out of the CJS build, where it is a compile error.
+const createRequireBase = (): string => {
+  try { return eval('import.meta.url') as string; } catch { /* CJS — no import.meta */ }
+  return process.cwd() + '/';
+};
+
 // Synchronous module loader — used by initGlobalMonitoringCore so patching happens
 // immediately when auto-monitor is imported in CJS builds.
 const loadNodeModulesSync = (): boolean => {
@@ -46,9 +57,7 @@ const loadNodeModulesSync = (): boolean => {
   }
   if (!_createRequire) { return false; } // native ESM — fall through to async path
   try {
-    let baseUrl: string;
-    try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
-    const req = _createRequire(baseUrl);
+    const req = _createRequire(createRequireBase());
     https = req('https');
     http = req('http');
     PassThroughCtor = req('stream').PassThrough;
@@ -76,11 +85,7 @@ const loadNodeModules = async () => {
     if (desc && desc.configurable === false) {
       log('ESM namespace detected (non-configurable properties), using createRequire fallback');
       const { createRequire: cr } = await import('module') as any;
-      // Use eval to access import.meta.url without causing ts-jest compile errors.
-      // Falls back to process.cwd() in CJS environments where import.meta is unavailable.
-      let baseUrl: string;
-      try { baseUrl = eval('import.meta.url') as string; } catch { baseUrl = 'file://' + process.cwd() + '/'; }
-      const cjsRequire = cr(baseUrl);
+      const cjsRequire = cr(createRequireBase());
       httpsModule = cjsRequire('https');
       httpModule = cjsRequire('http');
     }
@@ -630,7 +635,9 @@ function interceptRequest(
   const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-    const responseChunks: Buffer[] = [];
+    const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
+      log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+    });
 
     // See createResponseTee: hands the host an independent stream so the interceptor's own
     // capture below can't starve a host callback that consumes `res` asynchronously. Only
@@ -641,12 +648,12 @@ function interceptRequest(
     const hostStream = (callback && PassThroughCtor) ? createResponseTee(res, PassThroughCtor) : null;
 
     res.on('data', (chunk: any) => {
-      responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
     res.on('end', async () => {
       try {
-        const rawBuffer = Buffer.concat(responseChunks);
+        const rawBuffer = responseBuffer.concat();
         const contentEncoding = res.headers?.['content-encoding'];
         const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
         callData.response_body = parseBody(responseBody);

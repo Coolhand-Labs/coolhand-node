@@ -4,7 +4,8 @@ import { PassThrough } from 'stream';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
-import { decompressBuffer } from '../utils/decompress.js';
+import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from '../utils/decompress.js';
+import { CappedBuffer } from '../utils/capped-buffer.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
 
@@ -241,7 +242,9 @@ export class RequestMonitoringService {
     const req = originalRequest(options as any, (res: http.IncomingMessage) => {
       this.log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
-      const responseChunks: Buffer[] = [];
+      const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
+        this.log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+      });
 
       // See createResponseTee: hands the host an independent stream so the interceptor's own
       // capture below can't starve a host callback that consumes `res` asynchronously. Only
@@ -250,12 +253,12 @@ export class RequestMonitoringService {
       const hostStream = callback ? createResponseTee(res, PassThrough) : null;
 
       res.on('data', (chunk: any) => {
-        responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
 
       res.on('end', async () => {
         try {
-          const rawBuffer = Buffer.concat(responseChunks);
+          const rawBuffer = responseBuffer.concat();
           const contentEncoding = res.headers?.['content-encoding'];
           const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this));
           callData.response_body = parseBody(responseBody);
