@@ -17,6 +17,16 @@ Global monitoring operates at the **Node.js runtime level** by intercepting HTTP
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
+### Response Stream Handling (http/https)
+
+For intercepted `http.request()`/`https.request()` calls, the response object your callback receives is **not** the raw `http.IncomingMessage` — it's an independent stream (`PassThrough`) carrying the same metadata (`statusCode`, `statusMessage`, `headers`, `rawHeaders`, `httpVersion`, `httpVersionMajor`, `httpVersionMinor`, `method`, `url`, `socket`, `trailers`, `rawTrailers`, `complete`, `aborted`) and a `setTimeout()` shim that delegates to the real response. This exists because a raw Node `Readable` can only have one true consumer — if the interceptor read the response directly (to capture the body for logging) before your code did, a callback that consumes the response asynchronously (`await` before `res.on('data', ...)`, or a deferred `.pipe()`) would receive nothing. The independent stream sidesteps that entirely: it buffers correctly no matter when your code reads it.
+
+In practice this is transparent for the vast majority of code — `res.on('data'/'end'/'aborted'/'timeout', ...)`, `.pipe()`, and `.destroy()` (which still aborts the real underlying response) all behave as expected. Two differences: `res instanceof http.IncomingMessage` is `false` for this stream, and `res.setTimeout(ms).on('data', ...)`-style chaining returns the tee rather than the real response (intentionally — returning the real response there would silently reintroduce the race this section describes). If any code you monitor relies on the `instanceof` check rather than duck-typing, account for it.
+
+**Not covered**: this only applies when the response is delivered via the callback argument to `http.request()`/`https.request()`. Code that instead does `const req = https.request(options); req.on('response', handler)` still receives the raw `res` directly from Node, bypassing the tee — `handler` remains exposed to the original starvation bug if it consumes the response asynchronously. The callback form is by far the more common pattern and is what this fix targets; if you monitor code using the `req.on('response', ...)` form, be aware it isn't covered yet.
+
+`fetch()` interception is unaffected — it already reads the body via `response.clone()` and returns the original `Response` object untouched.
+
 ### What Gets Monitored
 
 ✅ **Automatically Detected & Logged:**

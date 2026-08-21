@@ -5,6 +5,7 @@ import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { EventEmitter } from 'events';
+import { Readable } from 'stream';
 
 // Mock the modules
 jest.mock('https');
@@ -433,6 +434,57 @@ describe('RequestMonitoringService', () => {
           done();
         }, 10);
       }, 10);
+    });
+
+    it('should not starve a host callback that attaches its data listener asynchronously', (done) => {
+      // Regression test for #115: a real Readable (not EventEmitter) is required here because
+      // only a real stream reproduces Node's flowing-mode race — an EventEmitter never "drops"
+      // emitted events regardless of listener attach order, so it can't reproduce this bug.
+      const realRes = new Readable({ read() {} }) as any;
+      realRes.statusCode = 200;
+      realRes.headers = { 'content-type': 'application/json' };
+
+      const originalRequest = jest.fn().mockImplementation((options, callback) => {
+        callback(realRes);
+        realRes.push('{"ok":true}');
+        realRes.push(null);
+        return mockReq;
+      });
+
+      const options = { hostname: 'api.test.com', path: '/test' };
+
+      let hostReceived = '';
+      const hostCallback = async (res: any) => {
+        try {
+          // Simulate host code that does something async (e.g. an awaited DB call) before
+          // touching the response. A macrotask gap (setImmediate) is used rather than a
+          // microtask (Promise.resolve()) because it deterministically runs after any
+          // stream flow already scheduled via process.nextTick, reliably reproducing the race.
+          await new Promise((resolve) => setImmediate(resolve));
+          // Also confirms the tee carries IncomingMessage-shaped metadata, not just body bytes.
+          expect(res.statusCode).toBe(200);
+          expect(res.headers).toEqual({ 'content-type': 'application/json' });
+          res.on('data', (chunk: any) => { hostReceived += chunk.toString(); });
+          res.on('end', () => {
+            try {
+              expect(hostReceived).toBe('{"ok":true}');
+              done();
+            } catch (e) {
+              done(e);
+            }
+          });
+        } catch (e) {
+          done(e);
+        }
+      };
+
+      (service as any).interceptRequest(
+        originalRequest,
+        options,
+        hostCallback,
+        'https',
+        mockMatchedPattern
+      );
     });
 
     it('should handle request errors', () => {

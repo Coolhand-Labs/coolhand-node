@@ -12,6 +12,8 @@ import { parseBody } from './utils/parse-body.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
 import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
+import { createResponseTee } from './utils/tee-response.js';
+import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
@@ -26,6 +28,9 @@ const isEdgeRuntime = () => {
 // Node.js modules - conditionally imported
 let https: any = null;
 let http: any = null;
+// Precisely typed (unlike https/http above) since `import type` is free at runtime and
+// createResponseTee's PassThrough-specific echo semantics benefit from the real type here.
+let PassThroughCtor: (new () => PassThrough) | null = null;
 
 // Available in CJS builds (and tsup's CJS shim); null in native ESM and Edge runtimes.
 // Using try/catch avoids a static top-level import of 'module' that would throw at
@@ -55,6 +60,7 @@ const loadNodeModulesSync = (): boolean => {
     const req = _createRequire(createRequireBase());
     https = req('https');
     http = req('http');
+    PassThroughCtor = req('stream').PassThrough;
     return true;
   } catch {
     return false;
@@ -86,6 +92,7 @@ const loadNodeModules = async () => {
 
     https = httpsModule;
     http = httpModule;
+    PassThroughCtor = ((await import('stream')) as any).PassThrough;
 
     return true;
   } catch {
@@ -632,6 +639,14 @@ function interceptRequest(
       log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
     });
 
+    // See createResponseTee: hands the host an independent stream so the interceptor's own
+    // capture below can't starve a host callback that consumes `res` asynchronously. Only
+    // created when there's a callback to hand it to — an unread tee must never be constructed,
+    // since createResponseTee's backpressure guard only activates once *something* reads it.
+    // Falls back to the raw `res` only if `stream` somehow failed to load, matching prior
+    // (buggy) behavior rather than dropping the response.
+    const hostStream = (callback && PassThroughCtor) ? createResponseTee(res, PassThroughCtor) : null;
+
     res.on('data', (chunk: any) => {
       responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
@@ -659,7 +674,7 @@ function interceptRequest(
       unregisterActiveRequest(requestId, uniqueId);
     });
 
-    if (callback) { callback(res); }
+    if (callback) { callback(hostStream || res); }
   });
 
   // Intercept request body

@@ -308,6 +308,58 @@ describe('Global Monitor', () => {
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
       expect(callData.url).toBe(cleanUrl);
     });
+
+    it('does not starve a host callback that attaches its data listener asynchronously (regression for #115)', async () => {
+      // Regression test for #115: a real Readable (not EventEmitter) is required here because
+      // only a real stream reproduces Node's flowing-mode race — an EventEmitter never "drops"
+      // emitted events regardless of listener attach order.
+      const { Readable } = require('stream');
+      const { EventEmitter } = require('events');
+
+      const realRes: any = new Readable({ read() {} });
+      realRes.statusCode = 200;
+      realRes.headers = { 'content-type': 'application/json' };
+
+      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        callback(realRes);
+        realRes.push('{"ok":true}');
+        realRes.push(null);
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      let hostReceived = '';
+      let hostEnded = false;
+      const hostCallback = async (res: any) => {
+        // Simulate host code that does something async before touching the response. A macrotask
+        // gap (setImmediate) reliably reproduces the race — see request-monitoring-service.test.ts
+        // for why a microtask (Promise.resolve()) doesn't.
+        await new Promise((resolve) => setImmediate(resolve));
+        res.on('data', (chunk: any) => { hostReceived += chunk.toString(); });
+        res.on('end', () => { hostEnded = true; });
+      };
+
+      const https = require('https');
+      https.request('https://api.test.com/v1/test', hostCallback);
+
+      // Let the setImmediate gap, stream flow, and interceptor's own async decompress/log chain flush.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(hostReceived).toBe('{"ok":true}');
+      expect(hostEnded).toBe(true);
+    });
   });
 
   describe('Fetch Patching', () => {
