@@ -1,6 +1,5 @@
-import * as https from 'https';
-import * as http from 'http';
 import { PassThrough } from 'stream';
+import type { IncomingMessage, ClientRequest } from 'http';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
@@ -9,6 +8,44 @@ import { CappedBuffer } from '../utils/capped-buffer.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
 import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
+
+type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
+
+// Node.js http/https modules — loaded via createRequire rather than a static
+// `import * as https from 'https'`. tsup's CJS output compiles a static import to
+// `__toESM(require("https"))`, whose __copyProps helper defines properties without
+// `configurable: true` (defaults to false), so the Object.defineProperty patching
+// below would silently no-op. createRequire returns the real, mutable CJS module
+// object instead. See global-monitor.ts's loadNodeModulesSync for the sibling fix
+// (issue #25) this mirrors — the synchronous half only, since setupMonitoring()
+// below is called synchronously from Coolhand's constructor and has no async path.
+let https: any = null;
+let http: any = null;
+
+let _createRequire: ((id: string) => any) | null = null;
+try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM */ }
+
+// createRequire accepts a file URL string or an absolute path. The fallback is an
+// absolute path, not a hand-built 'file://' + process.cwd(): that produces
+// 'file://C:\Users\...' on Windows (drive letter in the URL host slot), and building
+// a valid URL would need url.pathToFileURL — a Node import this file must not take.
+// eval() keeps import.meta.url out of the CJS build, where it is a compile error.
+const createRequireBase = (): string => {
+  try { return eval('import.meta.url') as string; } catch { /* CJS — no import.meta */ }
+  return process.cwd() + '/';
+};
+
+const loadNodeModules = (): boolean => {
+  if (!_createRequire) { return false; } // native ESM — no synchronous fallback available
+  try {
+    const req = _createRequire(createRequireBase());
+    https = req('https');
+    http = req('http');
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export class RequestMonitoringService {
   private callCounter: number = 0;
@@ -28,11 +65,15 @@ export class RequestMonitoringService {
 
   public setupMonitoring(): void {
     if (!RequestMonitoringService.isPatched) {
-      // Patch HTTPS
-      this.patchHTTPS();
+      if (loadNodeModules()) {
+        // Patch HTTPS
+        this.patchHTTPS();
 
-      // Patch HTTP (some libraries might use HTTP with upgrade)
-      this.patchHTTP();
+        // Patch HTTP (some libraries might use HTTP with upgrade)
+        this.patchHTTP();
+      } else {
+        console.warn('⚠️  Node.js HTTP modules not available - HTTP/HTTPS interception disabled (fetch() interception still active)');
+      }
 
       // Patch fetch if available (Node 18+)
       this.patchFetch();
@@ -55,8 +96,8 @@ export class RequestMonitoringService {
         Object.defineProperty(https, 'request', {
           value: function(
             urlOrOptions: CoolhandRequestOptions | string | URL,
-            optionsOrCallback?: CoolhandRequestOptions | ((res: http.IncomingMessage) => void),
-            extraCallback?: (res: http.IncomingMessage) => void
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
           ) {
             const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTPS REQUEST', options);
@@ -81,6 +122,8 @@ export class RequestMonitoringService {
           writable: true,
           configurable: true
         });
+      } else {
+        console.warn('⚠️  Could not patch https.request: property is non-configurable');
       }
     } catch {
       // Silently ignore if we can't patch
@@ -93,8 +136,8 @@ export class RequestMonitoringService {
         Object.defineProperty(https, 'get', {
           value: function(
             urlOrOptions: CoolhandRequestOptions | string | URL,
-            optionsOrCallback?: CoolhandRequestOptions | ((res: http.IncomingMessage) => void),
-            extraCallback?: (res: http.IncomingMessage) => void
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
           ) {
             const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTPS GET', options);
@@ -108,7 +151,7 @@ export class RequestMonitoringService {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
-              return monitor.interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
+              return monitor.interceptRequest(originalGet, options, callback, 'https', matchedPattern);
             }
 
             return originalGet.call(this, options as any, callback as any);
@@ -116,6 +159,8 @@ export class RequestMonitoringService {
           writable: true,
           configurable: true
         });
+      } else {
+        console.warn('⚠️  Could not patch https.get: property is non-configurable');
       }
     } catch {
       // Silently ignore if we can't patch
@@ -134,8 +179,8 @@ export class RequestMonitoringService {
         Object.defineProperty(http, 'request', {
           value: function(
             urlOrOptions: CoolhandRequestOptions | string | URL,
-            optionsOrCallback?: CoolhandRequestOptions | ((res: http.IncomingMessage) => void),
-            extraCallback?: (res: http.IncomingMessage) => void
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
           ) {
             const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTP REQUEST', options);
@@ -158,6 +203,8 @@ export class RequestMonitoringService {
           writable: true,
           configurable: true
         });
+      } else {
+        console.warn('⚠️  Could not patch http.request: property is non-configurable');
       }
     } catch {
       // Silently ignore if we can't patch
@@ -170,8 +217,8 @@ export class RequestMonitoringService {
         Object.defineProperty(http, 'get', {
           value: function(
             urlOrOptions: CoolhandRequestOptions | string | URL,
-            optionsOrCallback?: CoolhandRequestOptions | ((res: http.IncomingMessage) => void),
-            extraCallback?: (res: http.IncomingMessage) => void
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
           ) {
             const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTP GET', options);
@@ -185,7 +232,7 @@ export class RequestMonitoringService {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
-              return monitor.interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
+              return monitor.interceptRequest(originalGet, options, callback, 'http', matchedPattern);
             }
 
             return originalGet.call(this, options as any, callback as any);
@@ -193,6 +240,8 @@ export class RequestMonitoringService {
           writable: true,
           configurable: true
         });
+      } else {
+        console.warn('⚠️  Could not patch http.get: property is non-configurable');
       }
     } catch {
       // Silently ignore if we can't patch
@@ -230,12 +279,12 @@ export class RequestMonitoringService {
   }
 
   private interceptRequest(
-    originalRequest: typeof https.request | typeof http.request,
+    originalRequest: OriginalRequestFn,
     options: CoolhandRequestOptions | string | URL,
-    callback?: (res: http.IncomingMessage) => void,
+    callback?: (res: IncomingMessage) => void,
     protocol: 'https' | 'http' = 'https',
     matchedPattern?: CoolhandMatchedPattern
-  ): http.ClientRequest {
+  ): ClientRequest {
     this.interceptedCalls++;
 
     const url = this.buildURL(options, protocol);
@@ -260,7 +309,7 @@ export class RequestMonitoringService {
 
     let requestBody = '';
 
-    const req = originalRequest(options as any, (res: http.IncomingMessage) => {
+    const req = originalRequest(options as any, (res: IncomingMessage) => {
       this.log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
       const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
@@ -295,7 +344,7 @@ export class RequestMonitoringService {
       });
 
       // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
-      if (callback) {callback(hostStream as unknown as http.IncomingMessage);}
+      if (callback) {callback(hostStream as unknown as IncomingMessage);}
     });
 
     // Intercept request body
