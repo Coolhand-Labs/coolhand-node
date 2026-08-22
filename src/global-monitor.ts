@@ -13,6 +13,7 @@ import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js'
 import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
+import { readCappedResponseText } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
 import { matchesExcludePattern } from './utils/exclude-patterns.js';
@@ -424,7 +425,7 @@ function patchHTTPS(): void {
 
           if (matchedPattern) {
             const targetUrl = buildURL(options, 'https');
-            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+            if (isSelfOrExcluded(targetUrl)) {
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -477,7 +478,7 @@ function patchHTTPS(): void {
 
           if (matchedPattern) {
             const targetUrl = buildURL(options, 'https');
-            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+            if (isSelfOrExcluded(targetUrl)) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -534,7 +535,7 @@ function patchHTTP(): void {
 
           if (matchedPattern) {
             const targetUrl = buildURL(options, 'http');
-            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+            if (isSelfOrExcluded(targetUrl)) {
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -587,7 +588,7 @@ function patchHTTP(): void {
 
           if (matchedPattern) {
             const targetUrl = buildURL(options, 'http');
-            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+            if (isSelfOrExcluded(targetUrl)) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -635,7 +636,7 @@ function patchFetch(): void {
       const matchedPattern = globalPatternService.matchesAPIPatternFromURL(urlStr);
 
       if (matchedPattern) {
-        if (isSelfEndpoint(urlStr) || isExcluded(urlStr)) {
+        if (isSelfOrExcluded(urlStr)) {
           return originalFetch.call(this, url, options);
         }
 
@@ -718,7 +719,9 @@ function interceptRequest(
     // activates once *something* reads it. Falls back to the raw `res` only if `stream` somehow
     // failed to load, matching prior (buggy) behavior rather than dropping the response.
     const hostStream = (req.listenerCount('response') > 0 && PassThroughCtor)
-      ? createResponseTee(res, PassThroughCtor)
+      ? createResponseTee(res, PassThroughCtor, MAX_DECOMPRESSED_BYTES, () => {
+          log(`⚠️ Host response stream for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; destroying host copy`);
+        })
       : null;
 
     res.on('data', (chunk: any) => {
@@ -842,8 +845,9 @@ async function interceptFetch(
     // background so a slow/streaming body doesn't delay the caller's fetch() —
     // same reasoning as the res.on('data')/'end' handling on the http/https side.
     const responseClone = response.clone();
-    responseClone
-      .text()
+    readCappedResponseText(responseClone, MAX_DECOMPRESSED_BYTES, () => {
+      log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+    })
       .then((responseText) => {
         callData.response_body = parseBody(responseText);
       })

@@ -358,20 +358,33 @@ describe('PatternMatchingService', () => {
       service = new PatternMatchingService();
     });
 
-    it('should fall back to string matching when URL parsing fails', () => {
+    it('returns null when URL parsing fails, even if the raw string contains a known domain', () => {
+      // Issue #171: the catch-fallback used to do an unanchored substring match against the raw
+      // URL string, reopening the exact bug class #117 fixed for the parseable-URL path. There is
+      // no hostname left to safely anchor once URL parsing fails, so this must now return null.
       const result = service.matchesAPIPatternFromURL('invalid-url-with-openai.com');
 
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'OpenAI' }),
-        matchType: 'domain',
-        matchValue: 'openai.com'
-      });
+      expect(result).toBeNull();
     });
 
     it('should return null for invalid URLs with no matching domains', () => {
       const result = service.matchesAPIPatternFromURL('invalid-url-no-match');
 
       expect(result).toBeNull();
+    });
+
+    it('does not match an unanchored substring resembling a known domain', () => {
+      expect(service.matchesAPIPatternFromURL('notopenai.com')).toBeNull();
+    });
+
+    it('does not match a known domain embedded elsewhere in a malformed URL', () => {
+      expect(service.matchesAPIPatternFromURL('evil.com/openai.com/x')).toBeNull();
+    });
+
+    it('does not match on an unparseable Request.toString() fallback value', () => {
+      // Request has no custom toString(), so url.toString() on a Request instance yields
+      // "[object Request]" — this reaches the catch-fallback on every fetch(new Request(...)) call.
+      expect(service.matchesAPIPatternFromURL('[object Request]')).toBeNull();
     });
   });
 
@@ -1189,27 +1202,24 @@ describe('PatternMatchingService', () => {
       });
     });
 
-    it('should handle URL parsing failures with fallback', () => {
-      // Test URLs that might cause URL constructor to fail
-      const problematicUrls = [
-        'not-a-url-at-all',
-        'ftp://api.openai.com/test', // Different protocol
-        '://api.openai.com/test', // Missing protocol
-        'https:/api.openai.com/test', // Malformed protocol
-        'api.openai.com/test' // Missing protocol entirely
-      ];
-
-      problematicUrls.forEach(url => {
-        const result = service.matchesAPIPatternFromURL(url);
-        // Most should fall back to string matching and find openai.com
-        if (url.includes('openai.com')) {
-          expect(result).toMatchObject({
-            pattern: expect.objectContaining({ name: 'OpenAI' }),
-            matchType: 'domain',
-            matchValue: 'openai.com'
-          });
-        }
+    it('matches URLs the URL constructor can parse, and returns null for the ones it cannot (no string-matching fallback)', () => {
+      // Issue #171: the catch-fallback used to string-match the raw URL, so every one of these
+      // matched 'openai.com' regardless of whether it parsed. Now, only entries the WHATWG URL
+      // constructor can actually parse go through the anchored try-branch and match; the rest hit
+      // the catch block, which returns null rather than falling back to substring matching.
+      expect(service.matchesAPIPatternFromURL('ftp://api.openai.com/test')).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenAI' }),
+        matchType: 'domain',
+        matchValue: 'openai.com'
       });
+      expect(service.matchesAPIPatternFromURL('https:/api.openai.com/test')).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenAI' }),
+        matchType: 'domain',
+        matchValue: 'openai.com'
+      });
+      expect(service.matchesAPIPatternFromURL('not-a-url-at-all')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('://api.openai.com/test')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('api.openai.com/test')).toBeNull();
     });
   });
 

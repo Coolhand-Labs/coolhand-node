@@ -260,82 +260,72 @@ describe('createResponseTee', () => {
     res.push(null);
   });
 
-  it('destroys the tee (never pausing res) once an unread tee exceeds the buffered-byte cap', (done) => {
-    // Regression test for the #115 fix's own regression: a host callback that does `await` before
-    // attaching a listener leaves the tee unread during that gap, so `hostIsReading()` is false and
-    // `res` is correctly never paused (see the test above) — but without a hard cap, the tee's
-    // internal buffer would then grow completely unbounded during that gap. This asserts the cap
-    // kicks in, `res` is still never touched, and `res`'s own direct listeners (standing in for the
-    // interceptor's own capture) still receive everything and see a normal 'end'.
-    class TinyPassThrough extends PassThrough {
-      constructor() { super({ highWaterMark: 1 }); }
-    }
-
+  it('destroys the host stream once it exceeds the byte cap, but still delivers the full response to the interceptor\'s own res listeners', (done) => {
     const res = makeRes();
-    const hostStream = createResponseTee(res, TinyPassThrough, 100); // tiny cap, tee intentionally never read
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 10, onCapExceeded);
 
+    // Registered separately from the tee, mimicking the interceptor's own (independently capped)
+    // capture listeners on `res` at the call sites — these must be unaffected by the host cap.
     let received = 0;
-    let sawPause = false;
-    const originalPause = res.pause.bind(res);
-    res.pause = (...args: any[]) => { sawPause = true; return originalPause(...args); };
-
     res.on('data', (chunk: Buffer) => { received += chunk.length; });
     res.on('end', () => {
       try {
-        expect(received).toBe(1024);
-        expect(sawPause).toBe(false);
         expect(hostStream.destroyed).toBe(true);
+        expect(received).toBe(20);
+        expect(onCapExceeded).toHaveBeenCalledTimes(1);
         done();
       } catch (e) {
         done(e);
       }
     });
 
-    res.push(Buffer.alloc(1024, 'a')); // far exceeds the 100-byte cap in one chunk
+    res.push(Buffer.alloc(20, 'a'));
     res.push(null);
   });
 
-  it('does not destroy the tee when a genuinely-reading-but-slow host exceeds the same tiny cap', (done) => {
-    class TinyPassThrough extends PassThrough {
-      constructor() { super({ highWaterMark: 1 }); }
-    }
+  it('does not destroy the real res when the host stream is destroyed due to the byte cap', (done) => {
+    // Same EventEmitter-double technique as the close-handler test above: a real Readable
+    // auto-destroys itself shortly after 'end' regardless of our code, so asserting against a
+    // real stream can't distinguish "our guard skipped the call" from Node's own auto-destroy.
+    const res = new EventEmitter() as any;
+    res.destroyed = false;
+    res.destroy = jest.fn();
+    res.headers = {};
 
-    const res = makeRes();
-    const hostStream = createResponseTee(res, TinyPassThrough, 100);
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 10, onCapExceeded);
 
-    let prematurelyDestroyed = false;
-    hostStream.on('error', () => { prematurelyDestroyed = true; });
-
-    hostStream.pause(); // engaged but not draining yet — puts it in "reading" state (see hostIsReading)
-
-    let received = '';
-    res.push(Buffer.alloc(1024, 'a')); // far exceeds the 100-byte cap, but the host IS reading
-
-    setImmediate(() => {
+    hostStream.on('close', () => {
       try {
-        expect(res.isPaused()).toBe(true);
-        expect(prematurelyDestroyed).toBe(false);
+        expect(res.destroy).not.toHaveBeenCalled();
+        expect(onCapExceeded).toHaveBeenCalledTimes(1);
+        done();
       } catch (e) {
-        return done(e);
+        done(e);
       }
-
-      hostStream.on('data', (chunk: Buffer) => { received += chunk.toString(); });
-      hostStream.resume();
-      res.push(null);
-
-      setImmediate(() => {
-        try {
-          // A normally-completed stream also ends up `destroyed: true` (Node's autoDestroy
-          // fires once both sides finish) — that alone doesn't indicate the cap kicked in.
-          // What actually proves the cap was never hit: no error was emitted, and every byte
-          // made it through instead of being cut short by an early hostStream.destroy(err).
-          expect(prematurelyDestroyed).toBe(false);
-          expect(received).toHaveLength(1024);
-          done();
-        } catch (e) {
-          done(e);
-        }
-      });
     });
+
+    res.emit('data', Buffer.alloc(20, 'a'));
+  });
+
+  it('does not call onCapExceeded or destroy the host stream when it stays under the byte cap', (done) => {
+    const res = makeRes();
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 1024, onCapExceeded);
+    hostStream.resume(); // drain so 'end' fires
+
+    hostStream.on('end', () => {
+      try {
+        expect(onCapExceeded).not.toHaveBeenCalled();
+        expect(hostStream.destroyed).toBe(false);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    res.push(Buffer.alloc(20, 'a'));
+    res.push(null);
   });
 });
