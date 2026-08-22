@@ -1,4 +1,3 @@
-import * as https from 'https';
 import * as zlib from 'zlib';
 import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
 import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
@@ -7,10 +6,34 @@ import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { EventEmitter } from 'events';
 import { Readable } from 'stream';
 
-// Mock the modules
-jest.mock('https');
-jest.mock('http');
+// https/http are no longer statically imported by RequestMonitoringService (see issue #161)
+// — it loads them via createRequire, which bypasses jest.mock() entirely and returns Node's
+// real module objects. jest.mock('https')/jest.mock('http') would have no effect here.
 jest.mock('fs');
+
+// Because the source now patches the REAL https/http module objects instead of a jest.mock()
+// stand-in, every test that calls setupMonitoring() overwrites the process-wide request/get
+// functions. Capture pristine references once at import time — before any test has a chance
+// to patch them — and restore them after every test so patching doesn't leak across tests (or
+// across other test files sharing this Jest worker). This must use require(), not `import * as
+// https`: this test file is transpiled to ESM (see jest.config.js's ts-jest ESM preset), and an
+// ESM namespace object's properties are always non-configurable, which would make the
+// Object.defineProperty restore below throw — the same non-configurability issue the source fix
+// works around via createRequire.
+const nodeHttps = require('https');
+const nodeHttp = require('http');
+
+const originalHttpsRequest = nodeHttps.request;
+const originalHttpsGet = nodeHttps.get;
+const originalHttpRequest = nodeHttp.request;
+const originalHttpGet = nodeHttp.get;
+
+const restoreHttpModules = () => {
+  Object.defineProperty(nodeHttps, 'request', { value: originalHttpsRequest, writable: true, configurable: true });
+  Object.defineProperty(nodeHttps, 'get', { value: originalHttpsGet, writable: true, configurable: true });
+  Object.defineProperty(nodeHttp, 'request', { value: originalHttpRequest, writable: true, configurable: true });
+  Object.defineProperty(nodeHttp, 'get', { value: originalHttpGet, writable: true, configurable: true });
+};
 
 // The fetch interception drains and logs the response body in a detached promise chain
 // (see issue #114) so callers of fetch() no longer wait on it; tests need to flush the
@@ -74,6 +97,7 @@ describe('RequestMonitoringService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    restoreHttpModules();
   });
 
   describe('Constructor and Setup', () => {
@@ -125,8 +149,11 @@ describe('RequestMonitoringService', () => {
     it('should patch https.request successfully', () => {
       service.setupMonitoring();
 
+      // https/http are now loaded via createRequire (see issue #161), which returns
+      // Node's real module objects rather than this file's jest.mock('https') stand-in
+      // — so the target object can no longer be asserted by reference, only shape.
       expect(Object.defineProperty).toHaveBeenCalledWith(
-        https,
+        expect.anything(),
         'request',
         expect.objectContaining({
           value: expect.any(Function),
@@ -143,7 +170,7 @@ describe('RequestMonitoringService', () => {
 
       // Test that the patching happened
       expect(Object.defineProperty).toHaveBeenCalledWith(
-        https,
+        expect.anything(),
         'request',
         expect.objectContaining({
           value: expect.any(Function)
@@ -164,7 +191,7 @@ describe('RequestMonitoringService', () => {
       service.setupMonitoring();
 
       expect(Object.defineProperty).toHaveBeenCalledWith(
-        https,
+        expect.anything(),
         'get',
         expect.objectContaining({
           value: expect.any(Function),
@@ -172,6 +199,40 @@ describe('RequestMonitoringService', () => {
           configurable: true
         })
       );
+    });
+
+    it('completes an intercepted https.get() call without the caller needing to call req.end() (regression)', () => {
+      // Regression test: the https.get() patch used to hand interceptRequest() the
+      // `https.request` reference instead of `https.get`. interceptRequest() never calls
+      // req.end() itself (callers of .request() are expected to end the request themselves),
+      // but callers of .get() never call .end() either — that's .get()'s whole contract, since
+      // the real https.get() ends the request for you. Passing the wrong original meant every
+      // intercepted https.get() call to a matched API pattern hung forever.
+      const mockReq = new EventEmitter() as any;
+      mockReq.write = jest.fn();
+      // Captured separately from mockReq.end: interceptRequest() overwrites the
+      // req.end property with its own wrapper once it gets a hold of the request
+      // object, so asserting on mockReq.end after the fact would inspect that
+      // wrapper instead of the original — capture the original mock fn up front.
+      const mockEndFn = jest.fn();
+      mockReq.end = mockEndFn;
+
+      // Stand in for the real https.request/https.get pair: mimic Node's actual
+      // https.get(), which delegates to https.request() and then calls req.end().
+      nodeHttps.request = jest.fn().mockReturnValue(mockReq);
+      nodeHttps.get = jest.fn((options: any, callback?: any) => {
+        const req = nodeHttps.request(options, callback);
+        req.end();
+        return req;
+      });
+
+      (mockPatternMatchingService as any).matchesAPIPatternSync = jest.fn().mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      nodeHttps.get({ hostname: 'api.test.com', path: '/v1/test' }, jest.fn());
+
+      expect(mockEndFn).toHaveBeenCalled();
     });
 
     it('should handle patching errors gracefully', () => {
@@ -187,6 +248,88 @@ describe('RequestMonitoringService', () => {
     it('should patch http.request and http.get', () => {
       // Just test that setup completes without error
       expect(() => service.setupMonitoring()).not.toThrow();
+    });
+  });
+
+  // Regression tests for issue #161: the four patch guards previously had no `else`
+  // branch at all, so a non-configurable property (e.g. from a bundler-wrapped or
+  // ESM-namespace https/http module) failed silently, with zero indication anywhere
+  // that HTTP/HTTPS interception was never actually applied.
+  describe('Non-configurable property warnings (issue #161)', () => {
+    let consoleWarnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    });
+
+    it('warns for https.request, https.get, http.request, and http.get when non-configurable', () => {
+      jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({
+        configurable: false,
+        writable: false,
+        enumerable: true,
+        value: jest.fn()
+      });
+
+      service.setupMonitoring();
+
+      const warnCalls = consoleWarnSpy.mock.calls.map((c) => c[0]);
+      const patchWarnings = warnCalls.filter(
+        (msg): msg is string => typeof msg === 'string' && msg.includes('non-configurable')
+      );
+      expect(patchWarnings).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('https.request'),
+          expect.stringContaining('https.get'),
+          expect.stringContaining('http.request'),
+          expect.stringContaining('http.get')
+        ])
+      );
+      expect(patchWarnings).toHaveLength(4);
+    });
+
+    it('does not warn about non-configurable properties when they are configurable', () => {
+      jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: jest.fn()
+      });
+      jest.spyOn(Object, 'defineProperty').mockImplementation((obj, prop, descriptor) => {
+        (obj as any)[prop] = descriptor.value;
+        return obj;
+      });
+
+      service.setupMonitoring();
+
+      const warnCalls = consoleWarnSpy.mock.calls.map((c) => c[0]);
+      const patchWarnings = warnCalls.filter(
+        (msg): msg is string => typeof msg === 'string' && msg.includes('non-configurable')
+      );
+      expect(patchWarnings).toHaveLength(0);
+    });
+
+    it('falls back to fetch-only and warns when createRequire is unavailable (native ESM)', async () => {
+      jest.resetModules();
+      jest.doMock('module', () => ({ createRequire: undefined }));
+
+      try {
+        const { RequestMonitoringService: FreshRequestMonitoringService } =
+          await import('../src/services/RequestMonitoringService');
+        const freshService = new FreshRequestMonitoringService(mockPatternMatchingService, true);
+        const patchHTTPSSpy = jest.spyOn(freshService as any, 'patchHTTPS');
+        const patchFetchSpy = jest.spyOn(freshService as any, 'patchFetch');
+
+        freshService.setupMonitoring();
+
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('HTTP modules not available')
+        );
+        expect(patchHTTPSSpy).not.toHaveBeenCalled();
+        expect(patchFetchSpy).toHaveBeenCalled();
+      } finally {
+        jest.dontMock('module');
+        jest.resetModules();
+      }
     });
   });
 
