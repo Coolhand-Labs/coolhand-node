@@ -385,7 +385,6 @@ Example patterns file (`my-patterns.json`):
     {
       "name": "My Custom AI",
       "domains": ["api.mycustomai.com"],
-      "paths": ["/v1/generate", "/v1/chat"],
       "headers": {
         "authorization": "[REDACTED]",
         "api-key": "[REDACTED]"
@@ -394,6 +393,8 @@ Example patterns file (`my-patterns.json`):
   ]
 }
 ```
+
+A `domains` match applies to **every** path on that host — `paths` isn't a further restriction on top of it. `paths` only matters on its own, as a fallback for hosts that didn't match any pattern's `domains` at all, and only when the pattern explicitly opts in via `allowPathMatchAcrossDomains: true` (off by default, since a wrong opt-in lets unrelated hosts that happen to share a path fragment — e.g. `/v1/chat` — get captured and forwarded to Coolhand). Without that flag, a pattern's `paths` field (like `"My Custom AI"`'s above) has no effect.
 
 ## Monitoring Statistics
 

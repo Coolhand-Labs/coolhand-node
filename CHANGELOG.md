@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-08-22
+
+### 🔒 Security
+- **`RequestMonitoringService` (used by the primary `new Coolhand({ apiKey })` API) now loads Node's `http`/`https` modules via `createRequire` instead of a static `import * as https from 'https'`.** Previously, tsup's CJS output wrapped that static import in a non-configurable module object, so every `Object.defineProperty` patch attempt silently no-opped — `new Coolhand()` reported "ready" but never actually intercepted axios/got/AWS SDK/etc. traffic over `http`/`https` (only `fetch` was ever patched). Same root cause class as #25 (which fixed the sibling `global-monitor.ts` path), fixed the same way here. All four patch guards (`https.request`, `https.get`, `http.request`, `http.get`) now `console.warn` when patching can't be applied (non-configurable property, or `createRequire` unavailable in native ESM), instead of failing silently. Also fixes `https.get()`/`http.get()` passing the `.request` function into the shared interceptor instead of `.get`, which hung every intercepted `.get()` call to a matched pattern forever — this was the `RequestMonitoringService.ts` half of the still-open [#111](https://github.com/Coolhand-Labs/coolhand-node/issues/111); the `global-monitor.ts` half is not yet fixed. ([#161](https://github.com/Coolhand-Labs/coolhand-node/issues/161))
+- **`sanitizeHeaders`'s default redaction set now covers `x-api-key`, `cookie`, `set-cookie`, and `proxy-authorization`**, not just `authorization`/`api-key`. Previously, any header outside those two names was only redacted if the *matched* provider pattern's own `headers` map happened to declare it — a request matched to the wrong pattern (or a custom `patternsFile` entry with no `headers` map) would leak its real credential headers unredacted; `x-api-key` (used by Anthropic, Google AI, and others) and session/gateway cookies were never redacted by any built-in pattern in `api-patterns.json`. ([#163](https://github.com/Coolhand-Labs/coolhand-node/issues/163))
+
+### 📖 Documentation
+- **`uploadClientFile` now documents that it requires the private API key** (the public key used by `logRequest`/`createFeedback` 401s here) — this requirement was missing from the JSDoc, README, and `docs/client-file-upload.md`'s usage example when the endpoint was added in 0.11.0.
+
 ## [0.11.0] - 2026-08-21
 
 ### 💥 Breaking Changes
