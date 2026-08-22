@@ -406,45 +406,43 @@ export class PatternMatchingService {
 
   public matchesAPIPatternFromURL(url: string): CoolhandMatchedPattern | null {
     return this.safeMatch(() => {
+      let urlObj: URL;
       try {
-        const urlObj = new URL(url);
-
-        // Check domain matches
-        for (const pattern of this.apiPatterns) {
-          for (const domain of pattern.domains) {
-            if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
-              return {
-                pattern,
-                matchType: 'domain',
-                matchValue: domain
-              };
-            }
-          }
-        }
-
-        // Check path matches
-        for (const pattern of this.apiPatterns) {
-          if (pattern.paths) {
-            for (const pathPattern of pattern.paths) {
-              if (urlObj.pathname.includes(pathPattern)) {
-                return {
-                  pattern,
-                  matchType: 'path',
-                  matchValue: pathPattern
-                };
-              }
-            }
-          }
-        }
+        urlObj = new URL(url);
       } catch {
-        // If URL parsing fails, fall back to simple string matching
-        for (const pattern of this.apiPatterns) {
-          for (const domain of pattern.domains) {
-            if (url.includes(domain)) {
+        // Unparseable URL — no hostname can be reliably/safely anchored, so there is
+        // nothing left to match against. Every call site already treats `null` as
+        // "not one of our providers, pass through unmonitored," which is the correct,
+        // safe behavior here — see issue #171 (unanchored substring fallback let
+        // e.g. "notopenai.com" or "evil.com/openai.com/x" falsely match). Scoped to just
+        // the URL constructor so an unrelated bug in the matching loops below (e.g.
+        // corrupted apiPatterns) still escapes to safeMatch's warning instead of being
+        // silently swallowed here too.
+        return null;
+      }
+
+      // Check domain matches
+      for (const pattern of this.apiPatterns) {
+        for (const domain of pattern.domains) {
+          if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
+            return {
+              pattern,
+              matchType: 'domain',
+              matchValue: domain
+            };
+          }
+        }
+      }
+
+      // Check path matches
+      for (const pattern of this.apiPatterns) {
+        if (pattern.paths) {
+          for (const pathPattern of pattern.paths) {
+            if (urlObj.pathname.includes(pathPattern)) {
               return {
                 pattern,
-                matchType: 'domain',
-                matchValue: domain
+                matchType: 'path',
+                matchValue: pathPattern
               };
             }
           }

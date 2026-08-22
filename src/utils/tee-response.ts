@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'http';
 import type { PassThrough } from 'stream';
+import { MAX_DECOMPRESSED_BYTES } from './decompress.js';
 
 const COPIED_FIELDS = [
   'statusCode', 'statusMessage', 'headers', 'rawHeaders',
@@ -52,14 +53,28 @@ function hostIsReading(hostStream: ResponseTee): boolean {
  *
  * `instanceof http.IncomingMessage` is `false` for the returned tee — it's a real `PassThrough`
  * with IncomingMessage-shaped metadata copied on, not a real instance of it.
+ *
+ * The host-facing tee is capped at `maxBytes` independently of the interceptor's own capture
+ * (which has its own, separate `CappedBuffer` cap) — a host that doesn't drain the tee promptly
+ * must not be able to grow it unbounded, mirroring the #112 fix on the interceptor's own side.
+ * Exceeding the cap destroys `hostStream` only; `res` and the interceptor's own listeners on it
+ * are unaffected and continue to completion.
  */
-export function createResponseTee(res: IncomingMessage, PassThroughCtor: new () => PassThrough): ResponseTee {
+export function createResponseTee(
+  res: IncomingMessage,
+  PassThroughCtor: new () => PassThrough,
+  maxBytes: number = MAX_DECOMPRESSED_BYTES,
+  onCapExceeded?: () => void
+): ResponseTee {
   const hostStream = new PassThroughCtor() as ResponseTee;
+  let hostBytesWritten = 0;
 
   // Prevents an uncaught 'error' throw if `res` errors before the host has attached its own
   // 'error' listener (e.g. during an awaited gap) — degrades to a silent stall instead of
   // crashing the process. A host that *has* attached its own listener by the time the error is
-  // forwarded (below) still receives it — multiple listeners on the same event both fire.
+  // forwarded (below) still receives it — multiple listeners on the same event both fire. The
+  // byte-cap destroy below is one more source of this same 'error' — a host without its own
+  // listener silently never sees 'end' once the cap trips, same as any other tee-ending error.
   hostStream.on('error', () => { /* see comment above */ });
 
   copyIncomingMessageMetadata(res, hostStream);
@@ -71,6 +86,14 @@ export function createResponseTee(res: IncomingMessage, PassThroughCtor: new () 
     if (hostStream.destroyed) { return; }
 
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+
+    hostBytesWritten += buf.length;
+    if (hostBytesWritten > maxBytes) {
+      onCapExceeded?.();
+      hostStream.destroy(new Error(`Host response stream exceeded ${maxBytes} bytes; destroying to bound memory growth`));
+      return;
+    }
+
     // Respect backpressure — but only once the host has demonstrably started reading. `res` is
     // the interceptor's own single source of truth (its own capture listener is on this same
     // `res`, not on the tee), so pausing it when nobody is draining the tee would silently stall
@@ -113,6 +136,11 @@ export function createResponseTee(res: IncomingMessage, PassThroughCtor: new () 
   // only actually tears down the socket when the response didn't finish normally (`aborted`),
   // so calling `.destroy()` here on an already-fully-consumed `res` is a safe no-op.
   hostStream.on('close', () => {
+    // A cap-triggered destroy only abandons the host's copy — `res` and the interceptor's own
+    // (independently capped) capture listeners on it must keep running to completion.
+    if (hostBytesWritten > maxBytes) {
+      return;
+    }
     if (!res.destroyed) {
       res.destroy();
     }
