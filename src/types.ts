@@ -38,6 +38,7 @@ export interface CoolhandRequestOptions {
   headers?: Record<string, any>;
   href?: string;
   url?: string;
+  auth?: string;
 }
 
 export interface CoolhandLogPayload {

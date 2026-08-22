@@ -7,6 +7,7 @@ import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from '../utils/decompress.js
 import { CappedBuffer } from '../utils/capped-buffer.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
+import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -93,7 +94,12 @@ export class RequestMonitoringService {
       const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
       if (!requestDescriptor || requestDescriptor.configurable !== false) {
         Object.defineProperty(https, 'request', {
-          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: IncomingMessage) => void) {
+          value: function(
+            urlOrOptions: CoolhandRequestOptions | string | URL,
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
+          ) {
+            const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTPS REQUEST', options);
 
             // Check if this matches any API pattern
@@ -128,7 +134,12 @@ export class RequestMonitoringService {
       const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
       if (!getDescriptor || getDescriptor.configurable !== false) {
         Object.defineProperty(https, 'get', {
-          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: IncomingMessage) => void) {
+          value: function(
+            urlOrOptions: CoolhandRequestOptions | string | URL,
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
+          ) {
+            const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTPS GET', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
@@ -166,7 +177,12 @@ export class RequestMonitoringService {
       const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
       if (!requestDescriptor || requestDescriptor.configurable !== false) {
         Object.defineProperty(http, 'request', {
-          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: IncomingMessage) => void) {
+          value: function(
+            urlOrOptions: CoolhandRequestOptions | string | URL,
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
+          ) {
+            const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTP REQUEST', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
@@ -199,7 +215,12 @@ export class RequestMonitoringService {
       const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
       if (!getDescriptor || getDescriptor.configurable !== false) {
         Object.defineProperty(http, 'get', {
-          value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: IncomingMessage) => void) {
+          value: function(
+            urlOrOptions: CoolhandRequestOptions | string | URL,
+            optionsOrCallback?: CoolhandRequestOptions | ((res: IncomingMessage) => void),
+            extraCallback?: (res: IncomingMessage) => void
+          ) {
+            const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
             monitor.debugRequest('HTTP GET', options);
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
