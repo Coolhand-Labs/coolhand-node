@@ -67,6 +67,10 @@ export interface CoolhandAPIPattern {
   name: string;
   domains: string[];
   paths?: string[];
+  /** Allow `paths` to match regardless of hostname (e.g. a self-hosted proxy under an
+   *  unrelated domain). Off by default — a wrong opt-in lets unrelated hosts sharing a
+   *  common path fragment (e.g. `/v1/models`) be captured and forwarded to Coolhand. */
+  allowPathMatchAcrossDomains?: boolean;
   headers?: Record<string, string>;
 }
 

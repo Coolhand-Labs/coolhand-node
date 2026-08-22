@@ -422,9 +422,10 @@ export class PatternMatchingService {
           }
         }
 
-        // Check path matches
+        // Check path matches (only for patterns that explicitly opt in to
+        // cross-domain path matching — see CoolhandAPIPattern.allowPathMatchAcrossDomains)
         for (const pattern of this.apiPatterns) {
-          if (pattern.paths) {
+          if (pattern.paths && pattern.allowPathMatchAcrossDomains) {
             for (const pathPattern of pattern.paths) {
               if (urlObj.pathname.includes(pathPattern)) {
                 return {

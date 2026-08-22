@@ -273,14 +273,10 @@ describe('PatternMatchingService', () => {
       service = new PatternMatchingService();
     });
 
-    it('should match by path when domain does not match', () => {
+    it('should NOT match by path across an unrelated domain by default (#162)', () => {
       const result = service.matchesAPIPatternFromURL('https://different-domain.com/v1/chat/completions');
 
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'OpenAI' }),
-        matchType: 'path',
-        matchValue: '/v1/chat/completions'
-      });
+      expect(result).toBeNull();
     });
 
     it('should prefer domain matching over path matching', () => {
@@ -293,14 +289,10 @@ describe('PatternMatchingService', () => {
       });
     });
 
-    it('should match partial paths', () => {
+    it('should NOT match a partial path across an unrelated domain by default (#162)', () => {
       const result = service.matchesAPIPatternFromURL('https://other-domain.com/v1/chat/completions/stream');
 
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'OpenAI' }),
-        matchType: 'path',
-        matchValue: '/v1/chat/completions'
-      });
+      expect(result).toBeNull();
     });
 
     it('should handle patterns without paths', () => {
@@ -310,6 +302,51 @@ describe('PatternMatchingService', () => {
         pattern: expect.objectContaining({ name: 'TestAPI' }),
         matchType: 'domain',
         matchValue: 'test.api.com'
+      });
+    });
+
+    it('should NOT match unrelated internal/third-party hosts sharing a common path fragment (#162 exploit examples)', () => {
+      expect(service.matchesAPIPatternFromURL('https://internal.corp.example.com/v1/messages')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://billing.example.com/api/v1/chat/completions')).toBeNull();
+      expect(service.matchesAPIPatternFromURL('https://api.notanllm.com/v1/models?x=1')).toBeNull();
+    });
+  });
+
+  describe('Cross-domain path matching (opt-in)', () => {
+    const optInPatterns = {
+      patterns: [
+        {
+          name: 'Legit Proxy',
+          domains: ['legit.example.com'],
+          paths: ['/v1/generate'],
+          allowPathMatchAcrossDomains: true
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(optInPatterns));
+      service = new PatternMatchingService();
+    });
+
+    it('should match by path across an unrelated domain when the pattern opts in', () => {
+      const result = service.matchesAPIPatternFromURL('https://my-proxy.example.net/v1/generate');
+
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Legit Proxy' }),
+        matchType: 'path',
+        matchValue: '/v1/generate'
+      });
+    });
+
+    it('should still prefer domain matching over path matching when opted in', () => {
+      const result = service.matchesAPIPatternFromURL('https://legit.example.com/v1/generate');
+
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Legit Proxy' }),
+        matchType: 'domain',
+        matchValue: 'legit.example.com'
       });
     });
   });
@@ -530,7 +567,7 @@ describe('PatternMatchingService', () => {
       expect(result).toBeNull();
     });
 
-    it('should handle patterns with empty domains array', () => {
+    it('should NOT match by path for a pattern with an empty domains array and no opt-in (#162)', () => {
       const emptyPatternsData = {
         patterns: [
           {
@@ -545,11 +582,7 @@ describe('PatternMatchingService', () => {
       const emptyService = new PatternMatchingService();
 
       const result = emptyService.matchesAPIPatternSync('https://any.com/test');
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'Empty' }),
-        matchType: 'path',
-        matchValue: '/test'
-      });
+      expect(result).toBeNull();
     });
   });
 
@@ -1163,26 +1196,18 @@ describe('PatternMatchingService', () => {
       });
     });
 
-    it('should match :generateContent path on a non-Google domain (proxy scenario)', () => {
+    it('should NOT match :generateContent path on a non-Google domain by default (#162 — was a false-positive "proxy scenario")', () => {
       const result = service.matchesAPIPatternFromURL(
         'https://my-proxy.example.com/v1beta/models/gemini-pro:generateContent'
       );
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'Google AI' }),
-        matchType: 'path',
-        matchValue: '/v1beta/models'
-      });
+      expect(result).toBeNull();
     });
 
-    it('should match :streamGenerateContent path on a non-Google domain', () => {
+    it('should NOT match :streamGenerateContent path on a non-Google domain by default (#162)', () => {
       const result = service.matchesAPIPatternFromURL(
         'https://my-proxy.example.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse'
       );
-      expect(result).toMatchObject({
-        pattern: expect.objectContaining({ name: 'Google AI' }),
-        matchType: 'path',
-        matchValue: '/v1beta/models'
-      });
+      expect(result).toBeNull();
     });
 
     it('should match Gemini URL with ?key= query param', () => {
