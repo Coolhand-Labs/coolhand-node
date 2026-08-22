@@ -65,6 +65,11 @@ export function createResponseTee(
 ): ResponseTee {
   const hostStream = new PassThroughCtor() as ResponseTee;
   let bufferedBeforeRead = 0;
+  // Distinguishes "we destroyed the tee ourselves to bound memory" from "the host destroyed the
+  // tee" (see the `close` handler below) — only the latter should propagate to `res`. Cap-driven
+  // destruction must never abort the real response: the interceptor's own capture below reads
+  // `res` directly and must still see a normal 'end', which destroying `res` would prevent.
+  let destroyedByCap = false;
 
   // Prevents an uncaught 'error' throw if `res` errors before the host has attached its own
   // 'error' listener (e.g. during an awaited gap) — degrades to a silent stall instead of
@@ -100,6 +105,7 @@ export function createResponseTee(
     // cap closes: bound it independently of `res`, which must never be touched by this ceiling.
     bufferedBeforeRead += buf.length;
     if (bufferedBeforeRead >= maxBufferedBytes) {
+      destroyedByCap = true;
       hostStream.destroy(new Error(
         `Coolhand: response tee exceeded ${maxBufferedBytes} buffered bytes before being read; ` +
         "destroying the tee to bound memory growth (the interceptor's own capture is unaffected)."
@@ -137,8 +143,13 @@ export function createResponseTee(
   // on every response, not just aborted ones — that's fine: `IncomingMessage.prototype._destroy`
   // only actually tears down the socket when the response didn't finish normally (`aborted`),
   // so calling `.destroy()` here on an already-fully-consumed `res` is a safe no-op.
+  // Excludes the cap-driven destroy above: that one fires on a still-in-flight `res` (more data
+  // yet to arrive), so propagating it here would abort `res` mid-response — cutting off the
+  // interceptor's own capture (`res.on('data'/'end', ...)`, attached separately by the caller)
+  // before it ever sees 'end', silently dropping the log entry. Only a host-initiated destroy
+  // (or one following the response's own normal/aborted completion) should reach `res`.
   hostStream.on('close', () => {
-    if (!res.destroyed) {
+    if (!destroyedByCap && !res.destroyed) {
       res.destroy();
     }
   });

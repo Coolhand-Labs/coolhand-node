@@ -22,7 +22,7 @@ export function patchResponseEmit<Req extends EmitLikeRequest, Res>(
   try {
     const originalEmit = req.emit.bind(req);
     let handled = false;
-    (req as any).emit = function (event: string, ...args: any[]): boolean {
+    req.emit = function (event: string, ...args: any[]): boolean {
       if (event === 'response' && !handled) {
         handled = true;
         return originalEmit('response', internalCapture(args[0]));

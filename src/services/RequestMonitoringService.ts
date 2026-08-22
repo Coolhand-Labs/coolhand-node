@@ -127,7 +127,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfEndpoint(options, 'https') || monitor.isExcluded(options, 'https')) {
+              if (monitor.isSelfOrExcluded(options, 'https')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
@@ -165,7 +165,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfEndpoint(options, 'https') || monitor.isExcluded(options, 'https')) {
+              if (monitor.isSelfOrExcluded(options, 'https')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               if (isNonInferenceURL(monitor.buildURL(options, 'https'), 'GET')) {
@@ -208,7 +208,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfEndpoint(options, 'http') || monitor.isExcluded(options, 'http')) {
+              if (monitor.isSelfOrExcluded(options, 'http')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
@@ -246,7 +246,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfEndpoint(options, 'http') || monitor.isExcluded(options, 'http')) {
+              if (monitor.isSelfOrExcluded(options, 'http')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               if (isNonInferenceURL(monitor.buildURL(options, 'http'), 'GET')) {
@@ -283,7 +283,7 @@ export class RequestMonitoringService {
         const matchedPattern = monitor.patternMatchingService.matchesAPIPatternFromURL(urlStr);
 
         if (matchedPattern) {
-          if (monitor.isSelfEndpoint(urlStr, 'https') || monitor.isExcluded(urlStr, 'https')) {
+          if (monitor.isSelfOrExcluded(urlStr, 'https')) {
             return originalFetch.call(this, url, options);
           }
           const method = (options as RequestInit)?.method || 'GET';
@@ -375,6 +375,11 @@ export class RequestMonitoringService {
 
       // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
       return (hostStream as unknown as IncomingMessage) || res;
+    }, () => {
+      // req.emit couldn't be patched (e.g. another library already made it non-writable) — the
+      // capture pipeline above will never run for this request. Surface that instead of silently
+      // dropping the log entry with no signal at all.
+      this.log(`⚠️ Could not intercept response for call #${callData.id}; this request will not be captured/logged`);
     });
 
     // Node's http.request(options, callback) is sugar for `req.once('response', callback)` — since
@@ -479,12 +484,19 @@ export class RequestMonitoringService {
     this.selfEndpoint = computeSelfEndpoint(apiEndpoint);
   }
 
-  private isSelfEndpoint(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
-    return isSelfEndpointURL(this.buildURL(options, protocol), this.selfEndpoint);
-  }
-
   private isExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
     return matchesExcludePattern(this.buildURL(options, protocol), this.excludeApiPatterns);
+  }
+
+  // Combines the self-endpoint and excludeApiPatterns checks behind a single buildURL() call —
+  // every patched request/get/fetch call site needs both checks together, and buildURL
+  // parses/reconstructs the URL each time it's called, so checking them separately would parse
+  // the same URL twice on every intercepted request. isExcluded is kept as its own method (used
+  // directly by test/exclude-api-patterns.test.ts); self-endpoint has no equivalent standalone
+  // caller, so it's inlined here rather than kept as a separate unused method.
+  private isSelfOrExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
+    const url = this.buildURL(options, protocol);
+    return isSelfEndpointURL(url, this.selfEndpoint) || matchesExcludePattern(url, this.excludeApiPatterns);
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {

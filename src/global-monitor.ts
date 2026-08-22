@@ -142,12 +142,12 @@ function getState(): CoolhandGlobalState {
   return g[COOLHAND_STATE_KEY] as CoolhandGlobalState;
 }
 
-function isExcluded(url: string): boolean {
-  return matchesExcludePattern(url, getState().excludeApiPatterns);
-}
-
-function isSelfEndpoint(url: string): boolean {
-  return isSelfEndpointURL(url, getState().selfEndpoint);
+// Combines the self-endpoint and excludeApiPatterns checks — every patched request/get/fetch
+// call site needs both together (see the identical rationale on RequestMonitoringService's
+// isSelfOrExcluded), rather than repeating `isSelfEndpoint(url) || isExcluded(url)` at each one.
+function isSelfOrExcluded(url: string): boolean {
+  const state = getState();
+  return isSelfEndpointURL(url, state.selfEndpoint) || matchesExcludePattern(url, state.excludeApiPatterns);
 }
 
 /** Reset all singleton state — for use in tests only. */
@@ -493,7 +493,7 @@ function patchHTTPS(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
-            return interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
+            return interceptRequest(originalGet, options, callback, 'https', matchedPattern);
           }
 
           return originalGet.call(this, options as any, callback as any);
@@ -603,7 +603,7 @@ function patchHTTP(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
-            return interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
+            return interceptRequest(originalGet, options, callback, 'http', matchedPattern);
           }
 
           return originalGet.call(this, options as any, callback as any);
@@ -749,6 +749,11 @@ function interceptRequest(
     });
 
     return hostStream || res;
+  }, () => {
+    // req.emit couldn't be patched (e.g. another library already made it non-writable) — the
+    // capture pipeline above will never run for this request. Surface that instead of silently
+    // dropping the log entry with no signal at all.
+    log(`⚠️ Could not intercept response for call #${callData.id}; this request will not be captured/logged`);
   });
 
   // Node's http.request(options, callback) is sugar for `req.once('response', callback)` — since
