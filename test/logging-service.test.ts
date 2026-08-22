@@ -180,6 +180,85 @@ describe('LoggingService', () => {
       expect(rawRequest.url).toBe('https://api.example.com/test');
     });
 
+    it('should include metadata in the payload when provided', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, status: 'success' }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, status: 'success' }))
+        };
+      });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await service.logRequestToAPI(callData, undefined, 'manual', undefined, { project_path: '/Users/me/my-project' });
+
+      expect(capturedRequestBody.llm_request_log.metadata).toEqual({ project_path: '/Users/me/my-project' });
+    });
+
+    it('should omit metadata from the payload when not provided', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, status: 'success' }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, status: 'success' }))
+        };
+      });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await service.logRequestToAPI(callData);
+
+      expect(capturedRequestBody.llm_request_log.metadata).toBeUndefined();
+    });
+
+    it('should include metadata alongside an explicit collector', async () => {
+      let capturedRequestBody: any;
+
+      (global as any).fetch = jest.fn().mockImplementation(async (input: any, options: any) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ id: 123, status: 'success' }),
+          text: jest.fn().mockResolvedValue(JSON.stringify({ id: 123, status: 'success' }))
+        };
+      });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+
+      await service.logRequestToAPI(callData, undefined, undefined, 'coolhand-cli', { project_path: '/tmp/proj' });
+
+      expect(capturedRequestBody.llm_request_log.collector).toBe('coolhand-cli');
+      expect(capturedRequestBody.llm_request_log.metadata).toEqual({ project_path: '/tmp/proj' });
+    });
+
     it('should set correct headers', async () => {
       let capturedHeaders: any;
 

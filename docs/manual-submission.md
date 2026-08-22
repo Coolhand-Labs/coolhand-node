@@ -12,7 +12,8 @@ const coolhand = new Coolhand({
 });
 
 const result = await coolhand.logRequest(rawRequest, {
-  collector: 'my-cli/1.0.0' // optional: overrides the default SDK collector string
+  collector: 'my-cli/1.0.0', // optional: overrides the default SDK collector string
+  metadata: { project_path: '/Users/me/my-project' } // optional: free-form, echoed back on the response
 });
 
 // result is CoolhandLogResponse | null
@@ -39,6 +40,8 @@ console.log(result?.id); // Coolhand log ID assigned by the API
 | `protocol` | `string` | Protocol identifier (e.g. `claudecode`) |
 
 **`options.collector?: string`** — overrides the default SDK collector string (e.g. `'coolhand-cli/claude-code'`). When omitted, the SDK derives the collector from the package name and version.
+
+**`options.metadata?: Record<string, unknown>`** — a free-form object attached to the log. The one convention the backend cares about is a `project_path` key (e.g. `{ project_path: '/Users/me/my-project' }`); anything else you include is stored and echoed back as-is. Omit it entirely to leave the field unset.
 
 ## Return value
 
