@@ -1,8 +1,9 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
+import { ClientFileService } from './services/ClientFileService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 
 export class Coolhand {
@@ -10,6 +11,7 @@ export class Coolhand {
   private requestMonitoringService: RequestMonitoringService;
   private loggingService: LoggingService;
   private feedbackService: FeedbackService;
+  private clientFileService: ClientFileService;
   private silent: boolean;
 
   constructor(options: CoolhandOptions) {
@@ -47,6 +49,7 @@ export class Coolhand {
 
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
+    this.clientFileService = new ClientFileService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
 
@@ -92,16 +95,18 @@ export class Coolhand {
    *
    * @param rawRequest The captured request/response payload.
    * @param options Optional settings. `collector` identifies the submission source and
-   *   overrides the default SDK collector string.
+   *   overrides the default SDK collector string. `metadata` is a free-form object; the one
+   *   convention the backend uses is `project_path` (e.g. `{ project_path: '/Users/me/my-project' }`
+   *   — see the Understanding an LLM Request Log guide's Metadata section).
    * @returns Promise resolving to the created log response, or null if submission failed
    *   or if the request was sent via the HTTPS fallback (Node.js < 18, where the response
    *   body is not parsed).
    */
   public async logRequest(
     rawRequest: CoolhandCallData,
-    options?: { collector?: string }
+    options?: { collector?: string; metadata?: Record<string, unknown> }
   ): Promise<CoolhandLogResponse | null> {
-    return this.loggingService.logRequestToAPI(rawRequest, undefined, 'manual', options?.collector);
+    return this.loggingService.logRequestToAPI(rawRequest, undefined, 'manual', options?.collector, options?.metadata);
   }
 
   /**
@@ -111,6 +116,22 @@ export class Coolhand {
    */
   public async createFeedback(feedback: LLMRequestLogFeedback): Promise<LLMRequestLogFeedbackResponse | null> {
     return this.feedbackService.createFeedback(feedback, 'manual');
+  }
+
+  /**
+   * Upload a file (slide deck, report, or document) to Coolhand.
+   *
+   * Requires the **private** API key — construct this `Coolhand` instance with `apiKey` set to
+   * your private key, not the public key used for `createFeedback`/`logRequest`, which 401s here.
+   *
+   * Uploads always land with `status: draft` — `status` is not settable via this method.
+   * Requires Node.js 18+ (uses global `fetch`/`FormData`; there is no fallback for pre-18 Node).
+   *
+   * @param payload The file to upload plus optional `file_type`, `description`, and `metadata`.
+   * @returns Promise resolving to the created client file response, or null if the upload failed.
+   */
+  public async uploadClientFile(payload: CoolhandClientFilePayload): Promise<CoolhandClientFileResponse | null> {
+    return this.clientFileService.createClientFile(payload);
   }
 
   /**

@@ -385,7 +385,6 @@ Example patterns file (`my-patterns.json`):
     {
       "name": "My Custom AI",
       "domains": ["api.mycustomai.com"],
-      "paths": ["/v1/generate", "/v1/chat"],
       "headers": {
         "authorization": "[REDACTED]",
         "api-key": "[REDACTED]"
@@ -394,6 +393,8 @@ Example patterns file (`my-patterns.json`):
   ]
 }
 ```
+
+A `domains` match applies to **every** path on that host — `paths` isn't a further restriction on top of it. `paths` only matters on its own, as a fallback for hosts that didn't match any pattern's `domains` at all, and only when the pattern explicitly opts in via `allowPathMatchAcrossDomains: true` (off by default, since a wrong opt-in lets unrelated hosts that happen to share a path fragment — e.g. `/v1/chat` — get captured and forwarded to Coolhand). Without that flag, a pattern's `paths` field (like `"My Custom AI"`'s above) has no effect.
 
 ## Monitoring Statistics
 
@@ -499,6 +500,12 @@ Write methods (`logRequest`, `createFeedback`) never throw — a failed API call
 network issue is logged to console and resolves to `null` instead of interrupting your
 application.
 
+`uploadClientFile` follows the same null-on-failure convention for API/network errors, but throws
+if global `fetch` is unavailable (Node.js < 18) — there's no fallback path for multipart uploads,
+unlike `logRequest`/`createFeedback`'s JSON requests. Unlike those two, it requires your **private**
+API key (the public key 401s) — same as the read methods below. See
+[docs/client-file-upload.md](./docs/client-file-upload.md).
+
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`) throw instead, since
 callers need to react to the result — a non-2xx response throws an `HttpError` with the status
 code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
@@ -516,6 +523,7 @@ code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
+- **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 
