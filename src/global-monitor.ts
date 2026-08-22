@@ -13,6 +13,7 @@ import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js'
 import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
+import { readCappedResponseText } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import type { PassThrough } from 'stream';
 
@@ -666,7 +667,11 @@ function interceptRequest(
     // since createResponseTee's backpressure guard only activates once *something* reads it.
     // Falls back to the raw `res` only if `stream` somehow failed to load, matching prior
     // (buggy) behavior rather than dropping the response.
-    const hostStream = (callback && PassThroughCtor) ? createResponseTee(res, PassThroughCtor) : null;
+    const hostStream = (callback && PassThroughCtor)
+      ? createResponseTee(res, PassThroughCtor, MAX_DECOMPRESSED_BYTES, () => {
+          log(`⚠️ Host response stream for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; destroying host copy`);
+        })
+      : null;
 
     res.on('data', (chunk: any) => {
       responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -779,8 +784,9 @@ async function interceptFetch(
     // background so a slow/streaming body doesn't delay the caller's fetch() —
     // same reasoning as the res.on('data')/'end' handling on the http/https side.
     const responseClone = response.clone();
-    responseClone
-      .text()
+    readCappedResponseText(responseClone, MAX_DECOMPRESSED_BYTES, () => {
+      log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+    })
       .then((responseText) => {
         callData.response_body = parseBody(responseText);
       })

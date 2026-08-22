@@ -40,6 +40,18 @@ const restoreHttpModules = () => {
 // microtask queue after awaiting fetch() before asserting on onRequestComplete.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+// A single flush() tick is enough to drain a small mocked body, but a many-chunk stream
+// (e.g. the MAX_DECOMPRESSED_BYTES truncation tests) can take more scheduler ticks to fully
+// drain on some Node versions' stream implementations than on others — poll instead of
+// asserting after exactly one tick.
+async function waitForMockCall(mockFn: jest.Mock, timeoutMs = 15000): Promise<void> {
+  const start = Date.now();
+  while (mockFn.mock.calls.length === 0) {
+    if (Date.now() - start > timeoutMs) { return; }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe('RequestMonitoringService', () => {
   let service: RequestMonitoringService;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
@@ -481,6 +493,41 @@ describe('RequestMonitoringService', () => {
 
       await expect(globalThis.fetch('https://api.test.com/test')).rejects.toThrow('Network error');
     });
+
+    it('should truncate the fetch response body once it exceeds MAX_DECOMPRESSED_BYTES (issue #171)', async () => {
+      // Uses a real Response/ReadableStream (unlike the other fetch tests' plain-object clone()
+      // mocks) so the capped-reader path in readCappedResponseText is actually exercised instead
+      // of falling back to response.text().
+      const chunkSize = 1024 * 1024; // 1 MB
+      const chunkCount = Math.ceil(MAX_DECOMPRESSED_BYTES / chunkSize) + 2;
+      let sent = 0;
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (sent++ < chunkCount) {
+            controller.enqueue(new Uint8Array(chunkSize).fill(97));
+          } else {
+            controller.close();
+          }
+        }
+      });
+
+      const originalFetch = jest.fn().mockResolvedValue(
+        new Response(stream, { status: 200, headers: { 'content-type': 'text/plain' } })
+      );
+      globalThis.fetch = originalFetch;
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch('https://api.test.com/v1/test');
+      await waitForMockCall(onRequestCompleteMock);
+
+      expect(onRequestCompleteMock).toHaveBeenCalled();
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(typeof callData.response_body).toBe('string');
+      expect((callData.response_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
+    }, 20000);
   });
 
   describe('Request Interception', () => {

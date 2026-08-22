@@ -259,4 +259,73 @@ describe('createResponseTee', () => {
     res.push(Buffer.alloc(64 * 1024, 'a'));
     res.push(null);
   });
+
+  it('destroys the host stream once it exceeds the byte cap, but still delivers the full response to the interceptor\'s own res listeners', (done) => {
+    const res = makeRes();
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 10, onCapExceeded);
+
+    // Registered separately from the tee, mimicking the interceptor's own (independently capped)
+    // capture listeners on `res` at the call sites — these must be unaffected by the host cap.
+    let received = 0;
+    res.on('data', (chunk: Buffer) => { received += chunk.length; });
+    res.on('end', () => {
+      try {
+        expect(hostStream.destroyed).toBe(true);
+        expect(received).toBe(20);
+        expect(onCapExceeded).toHaveBeenCalledTimes(1);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    res.push(Buffer.alloc(20, 'a'));
+    res.push(null);
+  });
+
+  it('does not destroy the real res when the host stream is destroyed due to the byte cap', (done) => {
+    // Same EventEmitter-double technique as the close-handler test above: a real Readable
+    // auto-destroys itself shortly after 'end' regardless of our code, so asserting against a
+    // real stream can't distinguish "our guard skipped the call" from Node's own auto-destroy.
+    const res = new EventEmitter() as any;
+    res.destroyed = false;
+    res.destroy = jest.fn();
+    res.headers = {};
+
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 10, onCapExceeded);
+
+    hostStream.on('close', () => {
+      try {
+        expect(res.destroy).not.toHaveBeenCalled();
+        expect(onCapExceeded).toHaveBeenCalledTimes(1);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    res.emit('data', Buffer.alloc(20, 'a'));
+  });
+
+  it('does not call onCapExceeded or destroy the host stream when it stays under the byte cap', (done) => {
+    const res = makeRes();
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 1024, onCapExceeded);
+    hostStream.resume(); // drain so 'end' fires
+
+    hostStream.on('end', () => {
+      try {
+        expect(onCapExceeded).not.toHaveBeenCalled();
+        expect(hostStream.destroyed).toBe(false);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    res.push(Buffer.alloc(20, 'a'));
+    res.push(null);
+  });
 });
