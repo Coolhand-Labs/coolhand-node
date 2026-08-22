@@ -33,6 +33,11 @@ function hostIsReading(hostStream: ResponseTee): boolean {
   return hostStream.readableFlowing !== null || hostStream.listenerCount('readable') > 0;
 }
 
+// Bounds how much a tee can buffer before any consumer has attached a listener (e.g. a host
+// callback that does `await something()` before reading) — see the cap in the `data` handler
+// below for why this can't just be "pause `res` on backpressure" like the read-in-progress case.
+export const MAX_TEE_BUFFERED_BYTES = 50 * 1024 * 1024; // 50MB, mirrors decompress.ts's MAX_DECOMPRESSED_BYTES
+
 /**
  * Tees an intercepted http/https response into an independent stream for the host callback.
  *
@@ -53,8 +58,13 @@ function hostIsReading(hostStream: ResponseTee): boolean {
  * `instanceof http.IncomingMessage` is `false` for the returned tee — it's a real `PassThrough`
  * with IncomingMessage-shaped metadata copied on, not a real instance of it.
  */
-export function createResponseTee(res: IncomingMessage, PassThroughCtor: new () => PassThrough): ResponseTee {
+export function createResponseTee(
+  res: IncomingMessage,
+  PassThroughCtor: new () => PassThrough,
+  maxBufferedBytes: number = MAX_TEE_BUFFERED_BYTES
+): ResponseTee {
   const hostStream = new PassThroughCtor() as ResponseTee;
+  let bufferedBeforeRead = 0;
 
   // Prevents an uncaught 'error' throw if `res` errors before the host has attached its own
   // 'error' listener (e.g. during an awaited gap) — degrades to a silent stall instead of
@@ -76,9 +86,24 @@ export function createResponseTee(res: IncomingMessage, PassThroughCtor: new () 
     // `res`, not on the tee), so pausing it when nobody is draining the tee would silently stall
     // the interceptor's own logging too — a callback that never touches the response body (or
     // isn't provided at all) must not be able to deadlock the request.
-    if (!hostStream.write(buf) && hostIsReading(hostStream)) {
+    if (hostStream.write(buf)) { return; }
+
+    if (hostIsReading(hostStream)) {
       res.pause();
       hostStream.once('drain', () => res.resume());
+      return;
+    }
+
+    // Nobody has attached a 'data'/'readable' listener yet (e.g. still inside an `await` before
+    // the host reads) — intentionally not pausing `res` here, for the reason above. But letting
+    // the tee's internal buffer grow unbounded during this window is exactly the regression this
+    // cap closes: bound it independently of `res`, which must never be touched by this ceiling.
+    bufferedBeforeRead += buf.length;
+    if (bufferedBeforeRead >= maxBufferedBytes) {
+      hostStream.destroy(new Error(
+        `Coolhand: response tee exceeded ${maxBufferedBytes} buffered bytes before being read; ` +
+        "destroying the tee to bound memory growth (the interceptor's own capture is unaffected)."
+      ));
     }
   });
 

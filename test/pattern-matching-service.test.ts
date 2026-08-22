@@ -462,6 +462,9 @@ describe('PatternMatchingService', () => {
         'cookie': 'session=abc',
         'set-cookie': 'sid=xyz',
         'proxy-authorization': 'Basic zzz',
+        'openai-api-key': 'sk-openai-secret',
+        'x-goog-api-key': 'g-key',
+        'cf-aig-authorization': 'Bearer gateway-secret',
         'content-type': 'application/json'
       };
 
@@ -471,6 +474,9 @@ describe('PatternMatchingService', () => {
       expect(sanitized['cookie']).toBe('[REDACTED]');
       expect(sanitized['set-cookie']).toBe('[REDACTED]');
       expect(sanitized['proxy-authorization']).toBe('[REDACTED]');
+      expect(sanitized['openai-api-key']).toBe('[REDACTED]');
+      expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
+      expect(sanitized['cf-aig-authorization']).toBe('[REDACTED]');
       expect(sanitized['content-type']).toBe('application/json');
     });
 
@@ -481,7 +487,9 @@ describe('PatternMatchingService', () => {
         'cookie': 'session=abc',
         'set-cookie': 'sid=xyz',
         'proxy-authorization': 'Basic zzz',
-        'x-goog-api-key': 'g-key'
+        'openai-api-key': 'sk-openai-secret',
+        'x-goog-api-key': 'g-key',
+        'cf-aig-authorization': 'Bearer gateway-secret'
       };
 
       // A pattern that doesn't declare these headers must not suppress the default redaction.
@@ -500,7 +508,9 @@ describe('PatternMatchingService', () => {
       expect(sanitized['cookie']).toBe('[REDACTED]');
       expect(sanitized['set-cookie']).toBe('[REDACTED]');
       expect(sanitized['proxy-authorization']).toBe('[REDACTED]');
-      expect(sanitized['x-goog-api-key']).toBe('g-key');
+      expect(sanitized['openai-api-key']).toBe('[REDACTED]');
+      expect(sanitized['x-goog-api-key']).toBe('[REDACTED]');
+      expect(sanitized['cf-aig-authorization']).toBe('[REDACTED]');
     });
 
     it('should redact mixed-case header keys against lowercase pattern rules (#110)', () => {

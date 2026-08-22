@@ -14,6 +14,10 @@ import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
+import { patchResponseEmit } from './utils/response-interceptor.js';
+import { matchesExcludePattern } from './utils/exclude-patterns.js';
+import { computeSelfEndpoint, isSelfEndpointURL, SelfEndpoint } from './utils/self-endpoint.js';
+import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -116,6 +120,8 @@ interface CoolhandGlobalState {
   interceptedCalls: number;
   silent: boolean;
   globalActiveRequests: Map<string, { timestamp: number; requestIds: Set<string> }>;
+  excludeApiPatterns: string[];
+  selfEndpoint: SelfEndpoint | null;
 }
 
 function getState(): CoolhandGlobalState {
@@ -129,9 +135,19 @@ function getState(): CoolhandGlobalState {
       interceptedCalls: 0,
       silent: true,
       globalActiveRequests: new Map(),
+      excludeApiPatterns: [],
+      selfEndpoint: null,
     } satisfies CoolhandGlobalState;
   }
   return g[COOLHAND_STATE_KEY] as CoolhandGlobalState;
+}
+
+function isExcluded(url: string): boolean {
+  return matchesExcludePattern(url, getState().excludeApiPatterns);
+}
+
+function isSelfEndpoint(url: string): boolean {
+  return isSelfEndpointURL(url, getState().selfEndpoint);
 }
 
 /** Reset all singleton state — for use in tests only. */
@@ -148,6 +164,7 @@ interface GlobalMonitorConfig {
   debug?: boolean;
   dryRun?: boolean;
   baseUrl?: string;
+  excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; this shim will be removed in a future release. */
   environment?: 'local' | 'production';
 }
@@ -194,6 +211,8 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
     dryRun: config.dryRun,
     baseUrl: resolvedBaseUrl
   });
+  state.excludeApiPatterns = [...(config.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
+  state.selfEndpoint = computeSelfEndpoint(state.globalLoggingService.getApiEndpoint());
 
   const hasNodeModules = loadNodeModulesSync();
   if (hasNodeModules) {
@@ -404,15 +423,20 @@ function patchHTTPS(): void {
           const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
+            const targetUrl = buildURL(options, 'https');
+            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+              return originalRequest.call(this, options as any, callback as any);
+            }
+
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
             const requestId = generateRequestId(options, `https-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTPS request: ${method} ${sanitizeForLog(buildURL(options, 'https'))}`);
+              log(`🔄 Skipping duplicate HTTPS request: ${method} ${sanitizeForLog(targetUrl)}`);
               return originalRequest.call(this, options as any, callback as any);
             }
 
-            if (isNonInferenceURL(buildURL(options, 'https'), method)) {
+            if (isNonInferenceURL(targetUrl, method)) {
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -452,14 +476,19 @@ function patchHTTPS(): void {
           const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
-            const requestId = generateRequestId(options, 'https-GET');
-
-            if (isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTPS GET: ${sanitizeForLog(buildURL(options, 'https'))}`);
+            const targetUrl = buildURL(options, 'https');
+            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
               return originalGet.call(this, options as any, callback as any);
             }
 
-            if (isNonInferenceURL(buildURL(options, 'https'), 'GET')) {
+            const requestId = generateRequestId(options, 'https-GET');
+
+            if (isRequestActive(requestId)) {
+              log(`🔄 Skipping duplicate HTTPS GET: ${sanitizeForLog(targetUrl)}`);
+              return originalGet.call(this, options as any, callback as any);
+            }
+
+            if (isNonInferenceURL(targetUrl, 'GET')) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -504,15 +533,20 @@ function patchHTTP(): void {
           const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
+            const targetUrl = buildURL(options, 'http');
+            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
+              return originalRequest.call(this, options as any, callback as any);
+            }
+
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
             const requestId = generateRequestId(options, `http-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTP request: ${method} ${sanitizeForLog(buildURL(options, 'http'))}`);
+              log(`🔄 Skipping duplicate HTTP request: ${method} ${sanitizeForLog(targetUrl)}`);
               return originalRequest.call(this, options as any, callback as any);
             }
 
-            if (isNonInferenceURL(buildURL(options, 'http'), method)) {
+            if (isNonInferenceURL(targetUrl, method)) {
               return originalRequest.call(this, options as any, callback as any);
             }
 
@@ -552,14 +586,19 @@ function patchHTTP(): void {
           const matchedPattern = globalPatternService.matchesAPIPatternSync(options);
 
           if (matchedPattern) {
-            const requestId = generateRequestId(options, 'http-GET');
-
-            if (isRequestActive(requestId)) {
-              log(`🔄 Skipping duplicate HTTP GET: ${sanitizeForLog(buildURL(options, 'http'))}`);
+            const targetUrl = buildURL(options, 'http');
+            if (isSelfEndpoint(targetUrl) || isExcluded(targetUrl)) {
               return originalGet.call(this, options as any, callback as any);
             }
 
-            if (isNonInferenceURL(buildURL(options, 'http'), 'GET')) {
+            const requestId = generateRequestId(options, 'http-GET');
+
+            if (isRequestActive(requestId)) {
+              log(`🔄 Skipping duplicate HTTP GET: ${sanitizeForLog(targetUrl)}`);
+              return originalGet.call(this, options as any, callback as any);
+            }
+
+            if (isNonInferenceURL(targetUrl, 'GET')) {
               return originalGet.call(this, options as any, callback as any);
             }
 
@@ -596,6 +635,10 @@ function patchFetch(): void {
       const matchedPattern = globalPatternService.matchesAPIPatternFromURL(urlStr);
 
       if (matchedPattern) {
+        if (isSelfEndpoint(urlStr) || isExcluded(urlStr)) {
+          return originalFetch.call(this, url, options);
+        }
+
         const method = getFetchMethod(url, options);
         const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
 
@@ -653,20 +696,30 @@ function interceptRequest(
 
   let requestBody = '';
 
-  const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
+  // No callback passed here — patchResponseEmit below substitutes the delivered response for
+  // every 'response' listener uniformly, whether registered via a callback passed to
+  // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
+  // a callback to originalRequest would make Node deliver the *raw* res to it directly, bypassing
+  // the substitution and reopening the starvation bug for that calling convention.
+  const req = originalRequest(options as any);
+
+  patchResponseEmit(req, (res: HttpIncomingMessage): HttpIncomingMessage => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
     const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
       log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
     });
 
-    // See createResponseTee: hands the host an independent stream so the interceptor's own
-    // capture below can't starve a host callback that consumes `res` asynchronously. Only
-    // created when there's a callback to hand it to — an unread tee must never be constructed,
-    // since createResponseTee's backpressure guard only activates once *something* reads it.
-    // Falls back to the raw `res` only if `stream` somehow failed to load, matching prior
-    // (buggy) behavior rather than dropping the response.
-    const hostStream = (callback && PassThroughCtor) ? createResponseTee(res, PassThroughCtor) : null;
+    // See createResponseTee: hands listeners an independent stream so the interceptor's own
+    // capture below can't starve a host callback that consumes `res` asynchronously.
+    // req.listenerCount('response') reflects both calling conventions at this point (the
+    // re-registered callback and/or any req.on('response', ...) a host attached directly) — an
+    // unread tee must never be constructed, since createResponseTee's backpressure guard only
+    // activates once *something* reads it. Falls back to the raw `res` only if `stream` somehow
+    // failed to load, matching prior (buggy) behavior rather than dropping the response.
+    const hostStream = (req.listenerCount('response') > 0 && PassThroughCtor)
+      ? createResponseTee(res, PassThroughCtor)
+      : null;
 
     res.on('data', (chunk: any) => {
       responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -695,8 +748,13 @@ function interceptRequest(
       unregisterActiveRequest(requestId, uniqueId);
     });
 
-    if (callback) { callback(hostStream || res); }
+    return hostStream || res;
   });
+
+  // Node's http.request(options, callback) is sugar for `req.once('response', callback)` — since
+  // we withheld callback from originalRequest above, register the equivalent ourselves so it goes
+  // through patchResponseEmit's substitution like any other 'response' listener.
+  if (callback) { req.once('response', callback); }
 
   // Intercept request body
   const originalWrite = req.write.bind(req);

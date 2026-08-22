@@ -11,6 +11,7 @@
  * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false') — enables verbose logging only
  * - COOLHAND_DRY_RUN (optional: 'true' | 'false', default: 'false') — suppresses all API submissions
  * - COOLHAND_BASE_URL (optional: self-hosted endpoint, e.g. 'https://feedback.example.com')
+ * - COOLHAND_EXCLUDE_API_PATTERNS (optional: comma-separated URL substrings to never intercept)
  *
  * Usage:
  * Just import this module at the very top of your main file:
@@ -33,6 +34,10 @@ if (apiKey) {
   const debug = process.env.COOLHAND_DEBUG === 'true'; // Default to false unless explicitly true
   const dryRun = process.env.COOLHAND_DRY_RUN === 'true'; // Default to false unless explicitly true
   const baseUrl = process.env.COOLHAND_BASE_URL;
+  const excludeApiPatternsEnv = process.env.COOLHAND_EXCLUDE_API_PATTERNS;
+  const excludeApiPatterns = excludeApiPatternsEnv
+    ? excludeApiPatternsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
   if (!isGlobalMonitoringActive()) {
     if (!silent) {
@@ -50,7 +55,8 @@ if (apiKey) {
         patternsFile,
         debug,
         dryRun,
-        baseUrl
+        baseUrl,
+        excludeApiPatterns
       });
 
       if (!silent) {

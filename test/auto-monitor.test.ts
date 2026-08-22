@@ -57,4 +57,24 @@ describe('auto-monitor', () => {
 
     expect(initMock).not.toHaveBeenCalled();
   });
+
+  it('parses COOLHAND_EXCLUDE_API_PATTERNS into a trimmed array', async () => {
+    process.env.COOLHAND_EXCLUDE_API_PATTERNS = '/foo/ , /bar/,/baz/';
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: ['/foo/', '/bar/', '/baz/']
+    }));
+  });
+
+  it('leaves excludeApiPatterns undefined when the env var is not set', async () => {
+    delete process.env.COOLHAND_EXCLUDE_API_PATTERNS;
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: undefined
+    }));
+  });
 });

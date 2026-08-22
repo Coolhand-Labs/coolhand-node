@@ -8,6 +8,9 @@ import { CappedBuffer } from '../utils/capped-buffer.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
 import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
+import { patchResponseEmit } from '../utils/response-interceptor.js';
+import { matchesExcludePattern } from '../utils/exclude-patterns.js';
+import { computeSelfEndpoint, isSelfEndpointURL, SelfEndpoint } from '../utils/self-endpoint.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -52,8 +55,9 @@ export class RequestMonitoringService {
   private interceptedCalls: number = 0;
   private silent: boolean;
   private patternMatchingService: PatternMatchingService;
-  private static isPatched: boolean = false;
+  private static activeOwner: RequestMonitoringService | null = null;
   public excludeApiPatterns: string[] = [];
+  private selfEndpoint: SelfEndpoint | null = null;
 
   constructor(
     patternMatchingService: PatternMatchingService,
@@ -64,7 +68,11 @@ export class RequestMonitoringService {
   }
 
   public setupMonitoring(): void {
-    if (!RequestMonitoringService.isPatched) {
+    const owner = RequestMonitoringService.activeOwner;
+
+    if (owner === null) {
+      RequestMonitoringService.activeOwner = this;
+
       if (loadNodeModules()) {
         // Patch HTTPS
         this.patchHTTPS();
@@ -77,9 +85,22 @@ export class RequestMonitoringService {
 
       // Patch fetch if available (Node 18+)
       this.patchFetch();
-
-      RequestMonitoringService.isPatched = true;
+    } else if (owner !== this) {
+      // Only one Coolhand instance's patches are ever live per process — the http/https/fetch
+      // replacements install once and close over whichever instance called setupMonitoring()
+      // first. Without this warning, a second instance's excludeApiPatterns/baseUrl/apiKey are
+      // silently never consulted, with no signal to the developer that it didn't work.
+      console.warn(
+        '⚠️  Coolhand: this instance was NOT able to start monitoring outbound requests. ' +
+        'Another Coolhand instance already owns HTTP/HTTPS/fetch interception in this process — ' +
+        "only one instance's configuration (excludeApiPatterns, baseUrl, apiKey) is ever active " +
+        "per process. This instance's excludeApiPatterns and logging destination will NOT be " +
+        'used for automatic interception. Construct only one Coolhand instance per process, or ' +
+        "use a single instance's excludeApiPatterns to control which traffic is logged."
+      );
     }
+    // owner === this: a re-entrant call on the instance that already owns the live patches —
+    // a harmless no-op.
 
     // Debug: Log when any request happens
     this.log('📡 Monitoring all outbound requests...');
@@ -106,7 +127,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isExcluded(options, 'https')) {
+              if (monitor.isSelfEndpoint(options, 'https') || monitor.isExcluded(options, 'https')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
@@ -144,7 +165,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isExcluded(options, 'https')) {
+              if (monitor.isSelfEndpoint(options, 'https') || monitor.isExcluded(options, 'https')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               if (isNonInferenceURL(monitor.buildURL(options, 'https'), 'GET')) {
@@ -187,7 +208,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isExcluded(options, 'http')) {
+              if (monitor.isSelfEndpoint(options, 'http') || monitor.isExcluded(options, 'http')) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
@@ -225,7 +246,7 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isExcluded(options, 'http')) {
+              if (monitor.isSelfEndpoint(options, 'http') || monitor.isExcluded(options, 'http')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               if (isNonInferenceURL(monitor.buildURL(options, 'http'), 'GET')) {
@@ -262,7 +283,7 @@ export class RequestMonitoringService {
         const matchedPattern = monitor.patternMatchingService.matchesAPIPatternFromURL(urlStr);
 
         if (matchedPattern) {
-          if (monitor.isExcluded(urlStr, 'https')) {
+          if (monitor.isSelfEndpoint(urlStr, 'https') || monitor.isExcluded(urlStr, 'https')) {
             return originalFetch.call(this, url, options);
           }
           const method = (options as RequestInit)?.method || 'GET';
@@ -309,18 +330,27 @@ export class RequestMonitoringService {
 
     let requestBody = '';
 
-    const req = originalRequest(options as any, (res: IncomingMessage) => {
+    // No callback passed here — patchResponseEmit below substitutes the delivered response for
+    // every 'response' listener uniformly, whether registered via a callback passed to
+    // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
+    // a callback to originalRequest would make Node deliver the *raw* res to it directly, bypassing
+    // the substitution and reopening the starvation bug for that calling convention.
+    const req = originalRequest(options as any);
+
+    patchResponseEmit(req, (res: IncomingMessage): IncomingMessage => {
       this.log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
 
       const responseBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
         this.log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
       });
 
-      // See createResponseTee: hands the host an independent stream so the interceptor's own
-      // capture below can't starve a host callback that consumes `res` asynchronously. Only
-      // created when there's a callback to hand it to — an unread tee must never be constructed,
-      // since createResponseTee's backpressure guard only activates once *something* reads it.
-      const hostStream = callback ? createResponseTee(res, PassThrough) : null;
+      // See createResponseTee: hands listeners an independent stream so the interceptor's own
+      // capture below can't starve a host callback that consumes `res` asynchronously.
+      // req.listenerCount('response') reflects both calling conventions at this point (the
+      // re-registered callback and/or any req.on('response', ...) a host attached directly) — an
+      // unread tee must never be constructed, since createResponseTee's backpressure guard only
+      // activates once *something* reads it.
+      const hostStream = req.listenerCount('response') > 0 ? createResponseTee(res, PassThrough) : null;
 
       res.on('data', (chunk: any) => {
         responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -344,8 +374,13 @@ export class RequestMonitoringService {
       });
 
       // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
-      if (callback) {callback(hostStream as unknown as IncomingMessage);}
+      return (hostStream as unknown as IncomingMessage) || res;
     });
+
+    // Node's http.request(options, callback) is sugar for `req.once('response', callback)` — since
+    // we withheld callback from originalRequest above, register the equivalent ourselves so it goes
+    // through patchResponseEmit's substitution like any other 'response' listener.
+    if (callback) { req.once('response', callback); }
 
     // Intercept request body
     const originalWrite = req.write.bind(req);
@@ -435,10 +470,21 @@ export class RequestMonitoringService {
     }
   }
 
+  /**
+   * Registers the SDK's own backend endpoint so it's never re-intercepted (see
+   * src/utils/self-endpoint.ts). Unlike excludeApiPatterns, this is unconditional and not
+   * user-overridable — it must hold even if a custom patternsFile entry matches this host.
+   */
+  public setSelfApiEndpoint(apiEndpoint: string): void {
+    this.selfEndpoint = computeSelfEndpoint(apiEndpoint);
+  }
+
+  private isSelfEndpoint(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
+    return isSelfEndpointURL(this.buildURL(options, protocol), this.selfEndpoint);
+  }
+
   private isExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
-    if (this.excludeApiPatterns.length === 0) { return false; }
-    const url = this.buildURL(options, protocol);
-    return this.excludeApiPatterns.some(p => url.includes(p));
+    return matchesExcludePattern(this.buildURL(options, protocol), this.excludeApiPatterns);
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {

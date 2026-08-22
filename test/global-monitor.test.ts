@@ -267,7 +267,7 @@ describe('Global Monitor', () => {
     it('sanitizes query-param secrets from the logged URL for https.request', async () => {
       const { EventEmitter } = require('events');
 
-      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
         const fakeReq: any = new EventEmitter();
         fakeReq.write = jest.fn();
         fakeReq.end = jest.fn();
@@ -277,7 +277,7 @@ describe('Global Monitor', () => {
         fakeRes.headers = { 'content-type': 'application/json' };
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -320,14 +320,19 @@ describe('Global Monitor', () => {
       realRes.statusCode = 200;
       realRes.headers = { 'content-type': 'application/json' };
 
-      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
         const fakeReq: any = new EventEmitter();
         fakeReq.write = jest.fn();
         fakeReq.end = jest.fn();
 
-        callback(realRes);
-        realRes.push('{"ok":true}');
-        realRes.push(null);
+        // Deferred (not synchronous): patchResponseEmit only wraps `req.emit` after
+        // originalRequest(options) returns, matching real Node — a response can never arrive
+        // synchronously inside .request() itself.
+        setImmediate(() => {
+          fakeReq.emit('response', realRes);
+          realRes.push('{"ok":true}');
+          realRes.push(null);
+        });
 
         return fakeReq;
       });
@@ -364,7 +369,7 @@ describe('Global Monitor', () => {
     it('preserves method/headers and invokes the real callback for the 3-arg request(url, options, callback) form (regression for #160)', async () => {
       const { EventEmitter } = require('events');
 
-      underlyingHttpsRequestMock.mockImplementationOnce((options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce((options: any) => {
         // The real options (method/headers) must reach the underlying request untouched —
         // previously they were dropped and the request silently went out as a bare GET.
         expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
@@ -378,7 +383,7 @@ describe('Global Monitor', () => {
         fakeRes.headers = { 'content-type': 'application/json' };
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -410,6 +415,100 @@ describe('Global Monitor', () => {
 
       expect(hostCallback).toHaveBeenCalledTimes(1);
       expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
+
+    it('protects a host using req.on("response", ...) with no callback passed to .request() (regression for tee/req.on gap)', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+        // A real http.IncomingMessage always has .destroy() (inherited from stream.Readable) —
+        // the tee's 'close' handler relies on it once the tee fully drains and closes.
+        fakeRes.destroyed = false;
+        fakeRes.destroy = jest.fn();
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('data', '{"ok":true}');
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const req = https.request('https://api.test.com/v1/test'); // no callback arg
+
+      let hostReceived = '';
+      let hostStatusCode: number | undefined;
+      req.on('response', (res: any) => {
+        hostStatusCode = res.statusCode;
+        res.on('data', (chunk: any) => { hostReceived += chunk.toString(); });
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(hostStatusCode).toBe(200);
+      expect(hostReceived).toBe('{"ok":true}');
+      // The interceptor's own capture (driven independently by patchResponseEmit's internal
+      // capture) must still have logged the request — this is what the tee protects.
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
+    });
+
+    it('delivers the same substituted response object to multiple req.on("response", ...) listeners', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = {};
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const req = https.request('https://api.test.com/v1/test');
+
+      let first: any;
+      let second: any;
+      req.on('response', (res: any) => { first = res; });
+      req.on('response', (res: any) => { second = res; });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(first).toBeDefined();
+      expect(first).toBe(second);
     });
   });
 

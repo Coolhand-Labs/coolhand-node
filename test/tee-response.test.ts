@@ -259,4 +259,83 @@ describe('createResponseTee', () => {
     res.push(Buffer.alloc(64 * 1024, 'a'));
     res.push(null);
   });
+
+  it('destroys the tee (never pausing res) once an unread tee exceeds the buffered-byte cap', (done) => {
+    // Regression test for the #115 fix's own regression: a host callback that does `await` before
+    // attaching a listener leaves the tee unread during that gap, so `hostIsReading()` is false and
+    // `res` is correctly never paused (see the test above) — but without a hard cap, the tee's
+    // internal buffer would then grow completely unbounded during that gap. This asserts the cap
+    // kicks in, `res` is still never touched, and `res`'s own direct listeners (standing in for the
+    // interceptor's own capture) still receive everything and see a normal 'end'.
+    class TinyPassThrough extends PassThrough {
+      constructor() { super({ highWaterMark: 1 }); }
+    }
+
+    const res = makeRes();
+    const hostStream = createResponseTee(res, TinyPassThrough, 100); // tiny cap, tee intentionally never read
+
+    let received = 0;
+    let sawPause = false;
+    const originalPause = res.pause.bind(res);
+    res.pause = (...args: any[]) => { sawPause = true; return originalPause(...args); };
+
+    res.on('data', (chunk: Buffer) => { received += chunk.length; });
+    res.on('end', () => {
+      try {
+        expect(received).toBe(1024);
+        expect(sawPause).toBe(false);
+        expect(hostStream.destroyed).toBe(true);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    res.push(Buffer.alloc(1024, 'a')); // far exceeds the 100-byte cap in one chunk
+    res.push(null);
+  });
+
+  it('does not destroy the tee when a genuinely-reading-but-slow host exceeds the same tiny cap', (done) => {
+    class TinyPassThrough extends PassThrough {
+      constructor() { super({ highWaterMark: 1 }); }
+    }
+
+    const res = makeRes();
+    const hostStream = createResponseTee(res, TinyPassThrough, 100);
+
+    let prematurelyDestroyed = false;
+    hostStream.on('error', () => { prematurelyDestroyed = true; });
+
+    hostStream.pause(); // engaged but not draining yet — puts it in "reading" state (see hostIsReading)
+
+    let received = '';
+    res.push(Buffer.alloc(1024, 'a')); // far exceeds the 100-byte cap, but the host IS reading
+
+    setImmediate(() => {
+      try {
+        expect(res.isPaused()).toBe(true);
+        expect(prematurelyDestroyed).toBe(false);
+      } catch (e) {
+        return done(e);
+      }
+
+      hostStream.on('data', (chunk: Buffer) => { received += chunk.toString(); });
+      hostStream.resume();
+      res.push(null);
+
+      setImmediate(() => {
+        try {
+          // A normally-completed stream also ends up `destroyed: true` (Node's autoDestroy
+          // fires once both sides finish) — that alone doesn't indicate the cap kicked in.
+          // What actually proves the cap was never hit: no error was emitted, and every byte
+          // made it through instead of being cut short by an early hostStream.destroy(err).
+          expect(prematurelyDestroyed).toBe(false);
+          expect(received).toHaveLength(1024);
+          done();
+        } catch (e) {
+          done(e);
+        }
+      });
+    });
+  });
 });
