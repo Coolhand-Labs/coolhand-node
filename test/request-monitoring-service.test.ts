@@ -40,6 +40,18 @@ const restoreHttpModules = () => {
 // microtask queue after awaiting fetch() before asserting on onRequestComplete.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+// A single flush() tick is enough to drain a small mocked body, but a many-chunk stream
+// (e.g. the MAX_DECOMPRESSED_BYTES truncation tests) can take more scheduler ticks to fully
+// drain on some Node versions' stream implementations than on others — poll instead of
+// asserting after exactly one tick.
+async function waitForMockCall(mockFn: jest.Mock, timeoutMs = 15000): Promise<void> {
+  const start = Date.now();
+  while (mockFn.mock.calls.length === 0) {
+    if (Date.now() - start > timeoutMs) { return; }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe('RequestMonitoringService', () => {
   let service: RequestMonitoringService;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
@@ -509,7 +521,7 @@ describe('RequestMonitoringService', () => {
       service.setupMonitoring();
 
       await globalThis.fetch('https://api.test.com/v1/test');
-      await flush();
+      await waitForMockCall(onRequestCompleteMock);
 
       expect(onRequestCompleteMock).toHaveBeenCalled();
       const [callData] = onRequestCompleteMock.mock.calls[0];

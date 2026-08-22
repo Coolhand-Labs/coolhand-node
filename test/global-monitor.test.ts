@@ -14,6 +14,18 @@ jest.mock('../src/services/LoggingService');
 // microtask queue after awaiting fetch() before asserting on the logged callData.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+// A single flush() tick is enough to drain a small mocked body, but a many-chunk stream
+// (e.g. the MAX_DECOMPRESSED_BYTES truncation tests) can take more scheduler ticks to fully
+// drain on some Node versions' stream implementations than on others — poll instead of
+// asserting after exactly one tick.
+async function waitForMockCall(mockFn: jest.Mock, timeoutMs = 15000): Promise<void> {
+  const start = Date.now();
+  while (mockFn.mock.calls.length === 0) {
+    if (Date.now() - start > timeoutMs) { return; }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
   let underlyingFetchMock: jest.Mock;
@@ -772,7 +784,7 @@ describe('Global Monitor', () => {
       );
 
       await globalThis.fetch('https://api.openai.com/v1/chat/completions');
-      await flush();
+      await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
       const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
