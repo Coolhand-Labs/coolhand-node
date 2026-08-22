@@ -361,6 +361,57 @@ describe('Global Monitor', () => {
       expect(hostReceived).toBe('{"ok":true}');
       expect(hostEnded).toBe(true);
     });
+
+    it('preserves method/headers and invokes the real callback for the 3-arg request(url, options, callback) form (regression for #160)', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce((options: any, callback: any) => {
+        // The real options (method/headers) must reach the underlying request untouched —
+        // previously they were dropped and the request silently went out as a bare GET.
+        expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
+
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          callback(fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const hostCallback = jest.fn();
+
+      // Previously this threw "callback is not a function" synchronously, since the real
+      // options object was misassigned into the callback parameter slot.
+      expect(() => {
+        https.request(
+          'https://api.test.com/v1/chat/completions',
+          { method: 'POST', headers: { 'content-type': 'application/json' } },
+          hostCallback
+        );
+      }).not.toThrow();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(hostCallback).toHaveBeenCalledTimes(1);
+      expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
   });
 
   describe('Fetch Patching', () => {

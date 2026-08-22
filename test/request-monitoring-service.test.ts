@@ -686,6 +686,54 @@ describe('RequestMonitoringService', () => {
     });
   });
 
+  describe('3-arg request(url, options, callback) form (regression for #160)', () => {
+    it('preserves method/headers and invokes the real callback through the live patched https.request', async () => {
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      fakeReq.end = jest.fn();
+
+      const fakeRes: any = new EventEmitter();
+      fakeRes.statusCode = 200;
+      fakeRes.headers = { 'content-type': 'application/json' };
+
+      // Stand in for the real https.request: this becomes patchHTTPS's `originalRequest`
+      // closure variable, i.e. the "real" underlying request the wrapper must forward to correctly.
+      nodeHttps.request = jest.fn((options: any, callback: any) => {
+        // The real options (method/headers) must reach the underlying request untouched —
+        // previously they were dropped and the request silently went out as a bare GET.
+        expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
+
+        queueMicrotask(() => {
+          callback(fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      (mockPatternMatchingService as any).matchesAPIPatternSync = jest.fn().mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      const hostCallback = jest.fn();
+
+      // Previously this threw "callback is not a function" synchronously, since the real
+      // options object was misassigned into the callback parameter slot.
+      expect(() => {
+        nodeHttps.request(
+          'https://api.test.com/v1/chat/completions',
+          { method: 'POST', headers: { 'content-type': 'application/json' } },
+          hostCallback
+        );
+      }).not.toThrow();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(hostCallback).toHaveBeenCalledTimes(1);
+      expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
+  });
+
   describe('URL Building', () => {
     it('should build URL from string', () => {
       const url = (service as any).buildURL('https://api.test.com/test', 'https');

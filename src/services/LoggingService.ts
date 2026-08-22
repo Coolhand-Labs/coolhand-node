@@ -40,12 +40,13 @@ export class LoggingService extends BaseService {
     callData: CoolhandCallData,
     matchedPattern?: CoolhandMatchedPattern,
     collectionMethod?: CollectionMethod,
-    collector?: string
+    collector?: string,
+    metadata?: Record<string, unknown>
   ): Promise<CoolhandLogResponse | null> {
     // An explicit collector string (e.g. from coolhand-cli) overrides the SDK-derived one.
     const logData = collector !== undefined
-      ? { raw_request: callData, collector }
-      : this.addCollectorToData({ raw_request: callData }, collectionMethod);
+      ? { raw_request: callData, collector, ...(metadata && { metadata }) }
+      : { ...this.addCollectorToData({ raw_request: callData }, collectionMethod), ...(metadata && { metadata }) };
 
     const payload: CoolhandLogPayload = {
       llm_request_log: logData

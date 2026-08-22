@@ -107,22 +107,70 @@ export abstract class BaseService {
     try {
       if (typeof fetch !== 'undefined') {
         const response = await fetch(this.apiEndpoint, requestOptions);
-
-        if (response.ok) {
-          const result = await response.json() as T;
-          this.log(successMessage);
-          return result;
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ Request failed: ${response.status} - ${errorText}`);
-          return null;
-        }
+        return await this.parseJsonResponse<T>(response, successMessage);
       } else {
         // Fallback to using https/http modules
         await this.sendWithHTTPS(payload);
         this.log(successMessage);
         return null; // HTTPS fallback doesn't return parsed response
       }
+    } catch (error) {
+      console.error(`❌ Request error:`, (error as Error).message);
+      return null;
+    }
+  }
+
+  /**
+   * Shared success/failure handling for a `fetch` response, used by both {@link sendRequest} and
+   * {@link sendMultipart}: JSON-parse and log on 2xx, log and resolve to `null` otherwise.
+   */
+  private async parseJsonResponse<T>(response: Response, successMessage: string): Promise<T | null> {
+    if (response.ok) {
+      const result = await response.json() as T;
+      this.log(successMessage);
+      return result;
+    } else {
+      const errorText = await response.text();
+      console.error(`❌ Request failed: ${response.status} - ${errorText}`);
+      return null;
+    }
+  }
+
+  /**
+   * POST a `FormData` body (multipart/form-data) — the upload counterpart to {@link sendRequest}.
+   * Omits `Content-Type` so `fetch` sets the multipart boundary itself. There is no
+   * `sendWithHTTPS`-style fallback for multipart, so this throws when global `fetch` is
+   * unavailable rather than silently returning `null`, which would otherwise be indistinguishable
+   * from a normal API failure. Non-2xx responses and network errors follow {@link sendRequest}'s
+   * convention instead: logged and resolved to `null`.
+   *
+   * @throws Error if global `fetch` is unavailable (requires Node.js 18+).
+   */
+  protected async sendMultipart<T>(formData: FormData, successMessage: string): Promise<T | null> {
+    if (this.dryRun) {
+      if (!this.silent) {
+        console.log(`🚫 DRY RUN: Skipping API call to ${this.apiEndpoint}`);
+      }
+      this.log(`🚫 DRY RUN: ${successMessage.replace('✅', '🚫')}`);
+      return null;
+    }
+
+    if (this.debug && !this.silent) {
+      console.log(`[coolhand-node] DEBUG: Sending multipart to ${this.apiEndpoint}`);
+    }
+
+    if (typeof fetch === 'undefined') {
+      throw new Error(`Upload failed: global fetch is unavailable (requires Node.js 18+)`);
+    }
+
+    try {
+      const response = await fetch(this.apiEndpoint, {
+        method: 'POST',
+        headers: { 'X-API-Key': this.apiKey },
+        body: formData
+      });
+
+      return await this.parseJsonResponse<T>(response, successMessage);
     } catch (error) {
       console.error(`❌ Request error:`, (error as Error).message);
       return null;

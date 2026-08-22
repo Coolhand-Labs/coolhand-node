@@ -339,7 +339,6 @@ Monitor additional AI APIs by providing a custom patterns file:
     {
       "name": "Custom AI Service",
       "domains": ["api.customai.com"],
-      "paths": ["/v1/generate", "/v1/chat"],
       "headers": {
         "authorization": "[REDACTED]",
         "x-api-key": "[REDACTED]"
@@ -355,6 +354,8 @@ initializeGlobalMonitoring({
   patternsFile: './custom-patterns.json'
 });
 ```
+
+A `domains` match applies to every path on that host, so `paths` isn't needed here — it only matters as a separate, domain-agnostic fallback for hosts that didn't match any pattern's `domains` at all (e.g. detecting a self-hosted proxy by its provider-shaped path alone), and only for a pattern that explicitly opts in via `allowPathMatchAcrossDomains: true`. That flag is off by default: a wrong opt-in would let unrelated hosts sharing a common path fragment (e.g. `/v1/chat`) get captured and forwarded to Coolhand.
 
 ### Conditional Initialization
 

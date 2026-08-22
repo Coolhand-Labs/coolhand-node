@@ -14,6 +14,7 @@ import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
 import { readCappedResponseText } from './utils/capped-fetch-body.js';
+import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -388,7 +389,12 @@ function patchHTTPS(): void {
     const requestDescriptor = Object.getOwnPropertyDescriptor(https, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(https, 'request', {
-        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(
+          urlOrOptions: CoolhandRequestOptions | string | URL,
+          optionsOrCallback?: CoolhandRequestOptions | ((res: HttpIncomingMessage) => void),
+          extraCallback?: (res: HttpIncomingMessage) => void
+        ) {
+          const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
           debugRequest('HTTPS REQUEST', options);
 
           const { globalPatternService } = getState();
@@ -431,7 +437,12 @@ function patchHTTPS(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(https, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(https, 'get', {
-        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(
+          urlOrOptions: CoolhandRequestOptions | string | URL,
+          optionsOrCallback?: CoolhandRequestOptions | ((res: HttpIncomingMessage) => void),
+          extraCallback?: (res: HttpIncomingMessage) => void
+        ) {
+          const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
           debugRequest('HTTPS GET', options);
 
           const { globalPatternService } = getState();
@@ -478,7 +489,12 @@ function patchHTTP(): void {
     const requestDescriptor = Object.getOwnPropertyDescriptor(http, 'request');
     if (!requestDescriptor || requestDescriptor.configurable !== false) {
       Object.defineProperty(http, 'request', {
-        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(
+          urlOrOptions: CoolhandRequestOptions | string | URL,
+          optionsOrCallback?: CoolhandRequestOptions | ((res: HttpIncomingMessage) => void),
+          extraCallback?: (res: HttpIncomingMessage) => void
+        ) {
+          const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
           debugRequest('HTTP REQUEST', options);
 
           const { globalPatternService } = getState();
@@ -521,7 +537,12 @@ function patchHTTP(): void {
     const getDescriptor = Object.getOwnPropertyDescriptor(http, 'get');
     if (!getDescriptor || getDescriptor.configurable !== false) {
       Object.defineProperty(http, 'get', {
-        value: function(options: CoolhandRequestOptions | string | URL, callback?: (res: HttpIncomingMessage) => void) {
+        value: function(
+          urlOrOptions: CoolhandRequestOptions | string | URL,
+          optionsOrCallback?: CoolhandRequestOptions | ((res: HttpIncomingMessage) => void),
+          extraCallback?: (res: HttpIncomingMessage) => void
+        ) {
+          const { options, callback } = normalizeRequestArgs(urlOrOptions, optionsOrCallback, extraCallback);
           debugRequest('HTTP GET', options);
 
           const { globalPatternService } = getState();

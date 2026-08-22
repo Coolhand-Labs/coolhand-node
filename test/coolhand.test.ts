@@ -280,5 +280,75 @@ describe('Coolhand Node Monitor', () => {
       expect(capture.body.llm_request_log.collector).toContain('coolhand-node');
       expect(capture.body.llm_request_log.collector).toContain('manual');
     });
+
+    it('includes metadata when provided', async () => {
+      const capture: { body?: any } = {};
+      mockFetch(capture, { id: 1 });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      await monitor.logRequest(buildRawRequest() as any, { metadata: { project_path: '/Users/me/my-project' } });
+
+      expect(capture.body.llm_request_log.metadata).toEqual({ project_path: '/Users/me/my-project' });
+    });
+
+    it('omits metadata when not provided', async () => {
+      const capture: { body?: any } = {};
+      mockFetch(capture, { id: 1 });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      await monitor.logRequest(buildRawRequest() as any);
+
+      expect(capture.body.llm_request_log.metadata).toBeUndefined();
+    });
+  });
+
+  describe('uploadClientFile', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    function mockMultipartFetch(capture: { formData?: FormData; headers?: any }, response: any) {
+      (global as any).fetch = jest.fn().mockImplementation(async (_input: any, options: any) => {
+        capture.formData = options.body;
+        capture.headers = options.headers;
+        return {
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue(response),
+          text: jest.fn().mockResolvedValue('')
+        };
+      });
+    }
+
+    it('delegates to ClientFileService and returns the API response', async () => {
+      const capture: { formData?: FormData; headers?: any } = {};
+      mockMultipartFetch(capture, {
+        id: 'cf_1',
+        name: 'deck.pdf',
+        file_type: 'slide_deck',
+        status: 'draft',
+        description: null,
+        metadata: {},
+        created_at: '2026-08-20T00:00:00Z'
+      });
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      const result = await monitor.uploadClientFile({
+        name: 'deck.pdf',
+        file_type: 'slide_deck',
+        file: Buffer.from('pdf-bytes'),
+        filename: 'deck.pdf',
+        metadata: { project_path: '/Users/me/my-project' }
+      });
+
+      expect(capture.formData!.get('client_file[name]')).toBe('deck.pdf');
+      expect(capture.formData!.get('client_file[file_type]')).toBe('slide_deck');
+      expect(capture.formData!.get('client_file[metadata][project_path]')).toBe('/Users/me/my-project');
+      expect(capture.headers['X-API-Key']).toBe('test-key');
+      expect(capture.headers['Content-Type']).toBeUndefined();
+      expect(result).toEqual(expect.objectContaining({ id: 'cf_1', status: 'draft' }));
+    });
   });
 });

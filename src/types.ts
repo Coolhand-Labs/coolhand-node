@@ -38,12 +38,14 @@ export interface CoolhandRequestOptions {
   headers?: Record<string, any>;
   href?: string;
   url?: string;
+  auth?: string;
 }
 
 export interface CoolhandLogPayload {
   llm_request_log: {
     raw_request: CoolhandCallData;
     collector?: string;
+    metadata?: Record<string, unknown>;
   };
 }
 
@@ -59,7 +61,27 @@ export interface CoolhandLogResponse {
   source_api_result?: string | null;
   llm_provider_unique_id?: string | null;
   warnings?: string[];
+  metadata?: Record<string, unknown> | null;
   [key: string]: unknown;
+}
+
+export interface CoolhandClientFilePayload {
+  name: string;
+  file_type?: 'slide_deck' | 'report' | 'document';
+  description?: string;
+  file: Buffer | Blob;
+  filename: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CoolhandClientFileResponse {
+  id: string;
+  name: string;
+  file_type: string;
+  status: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface CoolhandAPIPattern {
@@ -67,6 +89,10 @@ export interface CoolhandAPIPattern {
   name: string;
   domains: string[];
   paths?: string[];
+  /** Allow `paths` to match regardless of hostname (e.g. a self-hosted proxy under an
+   *  unrelated domain). Off by default — a wrong opt-in lets unrelated hosts sharing a
+   *  common path fragment (e.g. `/v1/models`) be captured and forwarded to Coolhand. */
+  allowPathMatchAcrossDomains?: boolean;
   headers?: Record<string, string>;
 }
 
