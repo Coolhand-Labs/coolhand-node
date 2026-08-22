@@ -508,6 +508,93 @@ describe('RequestMonitoringService', () => {
     });
   });
 
+  describe('3-arg request(url, options, callback) form (regression for #160)', () => {
+    beforeEach(() => {
+      // Mock Object.getOwnPropertyDescriptor to return configurable properties
+      jest.spyOn(Object, 'getOwnPropertyDescriptor').mockReturnValue({
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: jest.fn()
+      });
+
+      // Mock Object.defineProperty so patchHTTPS doesn't throw. `https.request`/`https.get`
+      // are getter-only namespace bindings under this file's `import * as https`, so the
+      // assignment inside this mock still can't actually replace them on the module — but
+      // patchHTTPS swallows that failure internally, and Jest still records the call (with the
+      // real wrapper function as `descriptor.value`) before the assignment throws, which is
+      // enough to retrieve and invoke the wrapper directly below.
+      jest.spyOn(Object, 'defineProperty').mockImplementation((obj, prop, descriptor) => {
+        try {
+          (obj as any)[prop] = descriptor.value;
+        } catch {
+          // expected for the real (frozen) https/http namespace objects; see comment above
+        }
+        return obj;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync = jest.fn().mockReturnValue(mockMatchedPattern);
+    });
+
+    it('preserves method/headers and invokes the real callback through the live patched https.request', async () => {
+      // Capture the pre-patch https.request mock — this becomes patchHTTPS's `originalRequest`
+      // closure variable, i.e. the "real" underlying request the wrapper must forward to correctly.
+      const originalRequestMock = https.request as unknown as jest.Mock;
+
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      fakeReq.end = jest.fn();
+
+      const fakeRes: any = new EventEmitter();
+      fakeRes.statusCode = 200;
+      fakeRes.headers = { 'content-type': 'application/json' };
+
+      originalRequestMock.mockImplementation((options: any, callback: any) => {
+        // The real options (method/headers) must reach the underlying request untouched —
+        // previously they were dropped and the request silently went out as a bare GET.
+        expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
+
+        queueMicrotask(() => {
+          callback(fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      service.setupMonitoring();
+
+      // TS's CJS interop (`import * as https from 'https'`) synthesizes a fresh namespace
+      // wrapper object per importing file, so `call[0]` here won't be reference-equal to this
+      // file's `https` import even though both wrap the same underlying mocked module. patchHTTPS
+      // runs before patchHTTP inside setupMonitoring(), so the first 'request' patch recorded is
+      // the https.request one.
+      const requestPatchCalls = (Object.defineProperty as jest.Mock).mock.calls.filter(
+        (call) => call[1] === 'request'
+      );
+      expect(requestPatchCalls.length).toBeGreaterThan(0);
+      const patchedRequest = requestPatchCalls[0][2].value;
+
+      const hostCallback = jest.fn();
+
+      // Previously this threw "callback is not a function" synchronously, since the real
+      // options object was misassigned into the callback parameter slot.
+      expect(() => {
+        patchedRequest.call(
+          undefined,
+          'https://api.test.com/v1/chat/completions',
+          { method: 'POST', headers: { 'content-type': 'application/json' } },
+          hostCallback
+        );
+      }).not.toThrow();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(hostCallback).toHaveBeenCalledTimes(1);
+      expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
+  });
+
   describe('URL Building', () => {
     it('should build URL from string', () => {
       const url = (service as any).buildURL('https://api.test.com/test', 'https');
