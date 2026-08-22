@@ -419,6 +419,53 @@ describe('PatternMatchingService', () => {
       expect(sanitized['api-key']).toBe('[REDACTED]');
     });
 
+    it('should redact credential-bearing headers by default without a pattern (#163)', () => {
+      const headers = {
+        'x-api-key': 'secret-key',
+        'cookie': 'session=abc',
+        'set-cookie': 'sid=xyz',
+        'proxy-authorization': 'Basic zzz',
+        'content-type': 'application/json'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['cookie']).toBe('[REDACTED]');
+      expect(sanitized['set-cookie']).toBe('[REDACTED]');
+      expect(sanitized['proxy-authorization']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+
+    it('should redact credential-bearing headers by default even when a mismatched pattern is passed (#163)', () => {
+      const headers = {
+        'authorization': 'Bearer sk-test123',
+        'x-api-key': 'secret-key',
+        'cookie': 'session=abc',
+        'set-cookie': 'sid=xyz',
+        'proxy-authorization': 'Basic zzz',
+        'x-goog-api-key': 'g-key'
+      };
+
+      // A pattern that doesn't declare these headers must not suppress the default redaction.
+      const mismatchedPattern: CoolhandAPIPattern = {
+        name: 'OpenAI',
+        domains: ['openai.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
+        }
+      };
+
+      const sanitized = service.sanitizeHeaders(headers, mismatchedPattern);
+
+      expect(sanitized['authorization']).toBe('Bearer [REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['cookie']).toBe('[REDACTED]');
+      expect(sanitized['set-cookie']).toBe('[REDACTED]');
+      expect(sanitized['proxy-authorization']).toBe('[REDACTED]');
+      expect(sanitized['x-goog-api-key']).toBe('g-key');
+    });
+
     it('should redact mixed-case header keys against lowercase pattern rules (#110)', () => {
       const headers = {
         'X-Api-Key': 'sk-openai123',
@@ -754,7 +801,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized.authorization).toBe('[REDACTED]');
-      expect(sanitized['x-api-key']).toBe('Bearer another-token-format'); // Not in default rules
+      expect(sanitized['x-api-key']).toBe('[REDACTED]'); // In default rules (#163)
     });
 
     it('should handle JWT tokens in authorization header', () => {
@@ -818,7 +865,7 @@ describe('PatternMatchingService', () => {
       const sanitized = service.sanitizeHeaders(headers);
 
       expect(sanitized['api-key']).toBe('[REDACTED]');
-      expect(sanitized['x-api-key']).toBe('sk-1234567890'); // Not in default rules
+      expect(sanitized['x-api-key']).toBe('[REDACTED]'); // In default rules (#163)
       expect(sanitized['auth-token']).toBe('pat_1234567890'); // Not in default rules
     });
 

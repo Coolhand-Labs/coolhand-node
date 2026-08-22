@@ -1,5 +1,17 @@
 import { CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 
+// Credential-bearing headers redacted unconditionally, regardless of which (if any)
+// pattern matched — closes the gap where an unmatched/misdetected request or a custom
+// patternsFile entry without a `headers` map would otherwise leak these unredacted.
+const DEFAULT_REDACTED_HEADERS = [
+  'authorization',
+  'api-key',
+  'x-api-key',
+  'cookie',
+  'set-cookie',
+  'proxy-authorization',
+];
+
 // Runtime detection utility
 const isEdgeRuntime = () => {
   return (typeof (globalThis as any).EdgeRuntime !== 'undefined') ||
@@ -460,12 +472,11 @@ export class PatternMatchingService {
       Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
     );
 
-    // Default sanitization rules
-    if (sanitized.authorization) {
-      sanitized.authorization = '[REDACTED]';
-    }
-    if (sanitized['api-key'] !== undefined) {
-      sanitized['api-key'] = '[REDACTED]';
+    // Default sanitization rules — applied unconditionally, independent of pattern match
+    for (const headerName of DEFAULT_REDACTED_HEADERS) {
+      if (sanitized[headerName] !== undefined) {
+        sanitized[headerName] = '[REDACTED]';
+      }
     }
 
     // Pattern-specific sanitization
