@@ -1,5 +1,5 @@
 import { DEFAULT_EXCLUDE_API_PATTERNS } from '../src/default-exclude-api-patterns';
-import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
+import { RequestMonitoringService, _resetActiveOwner } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { matchesExcludePattern } from '../src/utils/exclude-patterns';
@@ -43,6 +43,13 @@ describe('matchesExcludePattern (shared helper)', () => {
   it('is case sensitive', () => {
     expect(matchesExcludePattern('https://example.com/FOO/', ['/foo/'])).toBe(false);
   });
+
+  it('ignores an empty-string pattern instead of matching every URL', () => {
+    // url.includes('') is always true — an empty pattern (e.g. from a stray trailing comma in a
+    // config source) must not silently exclude all traffic from monitoring.
+    expect(matchesExcludePattern('https://example.com/foo/bar', [''])).toBe(false);
+    expect(matchesExcludePattern('https://example.com/foo/bar', ['', '/foo/'])).toBe(true);
+  });
 });
 
 describe('RequestMonitoringService excludeApiPatterns', () => {
@@ -80,7 +87,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
 
     service = new RequestMonitoringService(mockPatternMatchingService, true);
     service.onRequestComplete = jest.fn();
-    (RequestMonitoringService as any).activeOwner = null;
+    _resetActiveOwner();
   });
 
   afterEach(() => {
@@ -252,7 +259,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       });
 
       service.excludeApiPatterns = ['/batchPredictionJobs/'];
-      (RequestMonitoringService as any).activeOwner = null;
+      _resetActiveOwner();
 
       const originalFetch = jest.fn().mockResolvedValue(new Response('{}'));
       globalThis.fetch = originalFetch;
@@ -273,7 +280,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       });
 
       service.excludeApiPatterns = ['/batchPredictionJobs/'];
-      (RequestMonitoringService as any).activeOwner = null;
+      _resetActiveOwner();
 
       const originalFetch = jest.fn().mockResolvedValue(new Response('{}'));
       globalThis.fetch = originalFetch;

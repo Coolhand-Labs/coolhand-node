@@ -1,5 +1,5 @@
 import * as zlib from 'zlib';
-import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
+import { RequestMonitoringService, _resetActiveOwner, _getActiveOwner } from '../src/services/RequestMonitoringService';
 import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
@@ -103,8 +103,8 @@ describe('RequestMonitoringService', () => {
     onRequestCompleteMock = jest.fn();
     service.onRequestComplete = onRequestCompleteMock;
 
-    // Reset the static activeOwner
-    (RequestMonitoringService as any).activeOwner = null;
+    // Reset the process-wide active owner
+    _resetActiveOwner();
   });
 
   afterEach(() => {
@@ -134,7 +134,7 @@ describe('RequestMonitoringService', () => {
 
     it('should log monitoring setup in non-silent mode', () => {
       const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
-      (RequestMonitoringService as any).activeOwner = null;
+      _resetActiveOwner();
 
       nonSilentService.setupMonitoring();
 
@@ -152,7 +152,7 @@ describe('RequestMonitoringService', () => {
 
         expect(patchHTTPSSpy).not.toHaveBeenCalled();
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Another Coolhand instance already owns'));
-        expect((RequestMonitoringService as any).activeOwner).toBe(service);
+        expect(_getActiveOwner()).toBe(service);
       });
 
       it('does not warn when the owning instance calls setupMonitoring() again', () => {
@@ -162,6 +162,17 @@ describe('RequestMonitoringService', () => {
         service.setupMonitoring();
 
         expect(warnSpy).not.toHaveBeenCalled();
+      });
+
+      it('stores ownership on globalThis rather than a class-static field, so it is visible across duplicate module instances', () => {
+        // Simulates the dual CJS/ESM "two copies of this module in one process" hazard: a second
+        // module instance would have its own RequestMonitoringService class (own class-static
+        // fields), but still shares the same globalThis. Reading/writing the key directly (as a
+        // second module instance's compiled code would) must observe what setupMonitoring() wrote.
+        service.setupMonitoring();
+
+        const key = '__coolhand_node_request_monitoring_active_owner_v1__';
+        expect((globalThis as any)[key]).toBe(service);
       });
     });
   });

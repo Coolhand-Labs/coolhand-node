@@ -51,12 +51,35 @@ const loadNodeModules = (): boolean => {
   }
 };
 
+// Stored on globalThis, not a class-static field — a plain static would only be shared within a
+// single loaded copy of this module. If the host's dependency graph pulls in coolhand-node via
+// both `require()` and `import` (or two transitive deps resolve different build variants), each
+// gets its own module instance with its own class definition, and a class-static field can't see
+// across that boundary — two instances could each believe they're the sole owner and both patch
+// the shared https/http/fetch globals, double-logging every request. globalThis is shared
+// process-wide regardless of module instance, matching global-monitor.ts's identical rationale
+// for storing its own state there instead of module-level variables.
+const ACTIVE_OWNER_KEY = '__coolhand_node_request_monitoring_active_owner_v1__';
+
+/** Reads the current process-wide active owner — exported for use in tests only. */
+export function _getActiveOwner(): RequestMonitoringService | null {
+  return (globalThis as any)[ACTIVE_OWNER_KEY] ?? null;
+}
+
+function setActiveOwner(owner: RequestMonitoringService): void {
+  (globalThis as any)[ACTIVE_OWNER_KEY] = owner;
+}
+
+/** Clears the active-owner singleton — for use in tests only. */
+export function _resetActiveOwner(): void {
+  delete (globalThis as any)[ACTIVE_OWNER_KEY];
+}
+
 export class RequestMonitoringService {
   private callCounter: number = 0;
   private interceptedCalls: number = 0;
   private silent: boolean;
   private patternMatchingService: PatternMatchingService;
-  private static activeOwner: RequestMonitoringService | null = null;
   public excludeApiPatterns: string[] = [];
   private selfEndpoint: SelfEndpoint | null = null;
 
@@ -69,10 +92,10 @@ export class RequestMonitoringService {
   }
 
   public setupMonitoring(): void {
-    const owner = RequestMonitoringService.activeOwner;
+    const owner = _getActiveOwner();
 
     if (owner === null) {
-      RequestMonitoringService.activeOwner = this;
+      setActiveOwner(this);
 
       if (loadNodeModules()) {
         // Patch HTTPS
@@ -128,11 +151,12 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfOrExcluded(options, 'https')) {
+              const targetUrl = monitor.buildURL(options, 'https');
+              if (monitor.isSelfOrExcludedURL(targetUrl)) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
-              if (isNonInferenceURL(monitor.buildURL(options, 'https'), method)) {
+              if (isNonInferenceURL(targetUrl, method)) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
@@ -166,10 +190,11 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfOrExcluded(options, 'https')) {
+              const targetUrl = monitor.buildURL(options, 'https');
+              if (monitor.isSelfOrExcludedURL(targetUrl)) {
                 return originalGet.call(this, options as any, callback as any);
               }
-              if (isNonInferenceURL(monitor.buildURL(options, 'https'), 'GET')) {
+              if (isNonInferenceURL(targetUrl, 'GET')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
@@ -209,11 +234,12 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfOrExcluded(options, 'http')) {
+              const targetUrl = monitor.buildURL(options, 'http');
+              if (monitor.isSelfOrExcludedURL(targetUrl)) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               const method = typeof options === 'object' && 'method' in options ? (options as any).method || 'GET' : 'GET';
-              if (isNonInferenceURL(monitor.buildURL(options, 'http'), method)) {
+              if (isNonInferenceURL(targetUrl, method)) {
                 return originalRequest.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
@@ -247,10 +273,11 @@ export class RequestMonitoringService {
             const matchedPattern = monitor.patternMatchingService.matchesAPIPatternSync(options);
 
             if (matchedPattern) {
-              if (monitor.isSelfOrExcluded(options, 'http')) {
+              const targetUrl = monitor.buildURL(options, 'http');
+              if (monitor.isSelfOrExcludedURL(targetUrl)) {
                 return originalGet.call(this, options as any, callback as any);
               }
-              if (isNonInferenceURL(monitor.buildURL(options, 'http'), 'GET')) {
+              if (isNonInferenceURL(targetUrl, 'GET')) {
                 return originalGet.call(this, options as any, callback as any);
               }
               monitor.log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
@@ -284,7 +311,7 @@ export class RequestMonitoringService {
         const matchedPattern = monitor.patternMatchingService.matchesAPIPatternFromURL(urlStr);
 
         if (matchedPattern) {
-          if (monitor.isSelfOrExcluded(urlStr, 'https')) {
+          if (monitor.isSelfOrExcludedURL(urlStr)) {
             return originalFetch.call(this, url, options);
           }
           const method = (options as RequestInit)?.method || 'GET';
@@ -494,14 +521,13 @@ export class RequestMonitoringService {
     return matchesExcludePattern(this.buildURL(options, protocol), this.excludeApiPatterns);
   }
 
-  // Combines the self-endpoint and excludeApiPatterns checks behind a single buildURL() call —
-  // every patched request/get/fetch call site needs both checks together, and buildURL
-  // parses/reconstructs the URL each time it's called, so checking them separately would parse
-  // the same URL twice on every intercepted request. isExcluded is kept as its own method (used
-  // directly by test/exclude-api-patterns.test.ts); self-endpoint has no equivalent standalone
-  // caller, so it's inlined here rather than kept as a separate unused method.
-  private isSelfOrExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
-    const url = this.buildURL(options, protocol);
+  // Combines the self-endpoint and excludeApiPatterns checks against an already-built URL —
+  // callers also need that same URL for isNonInferenceURL right afterward, so this takes the
+  // built string directly rather than (options, protocol), letting each patched call site build
+  // the URL once and reuse it for both checks instead of parsing it twice. isExcluded is kept as
+  // its own method (used directly by test/exclude-api-patterns.test.ts); self-endpoint has no
+  // equivalent standalone caller, so it's inlined here rather than kept as a separate unused method.
+  private isSelfOrExcludedURL(url: string): boolean {
     return isSelfEndpointURL(url, this.selfEndpoint) || matchesExcludePattern(url, this.excludeApiPatterns);
   }
 

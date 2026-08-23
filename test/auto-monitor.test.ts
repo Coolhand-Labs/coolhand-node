@@ -77,4 +77,19 @@ describe('auto-monitor', () => {
       excludeApiPatterns: undefined
     }));
   });
+
+  it('falls back to undefined (not []) when the env var parses to zero usable entries', async () => {
+    // A degenerate value like ",", " ", or " , , " is a non-empty string, so naively it would
+    // take the parse branch and yield [] — which downstream (global-monitor.ts's
+    // `config.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS`) is NOT equivalent to "unset":
+    // an explicit [] opts out of the built-in /batchPredictionJobs/ exclusion entirely. A
+    // malformed env var must not silently trigger that same opt-out.
+    process.env.COOLHAND_EXCLUDE_API_PATTERNS = ' , , ';
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: undefined
+    }));
+  });
 });

@@ -288,8 +288,10 @@ export function isGlobalMonitoringActive(): boolean {
   return getState().isGloballyPatched;
 }
 
-function generateRequestId(options: CoolhandRequestOptions | string | URL, method: string): string {
-  const url = buildURL(options, method.includes('https') ? 'https' : 'http');
+// Takes the already-built URL rather than (options, protocol): every call site already has it
+// on hand (from the same `buildURL`/`targetUrl` it needs for isSelfOrExcluded/isNonInferenceURL),
+// so this avoids re-parsing `options` into a URL string a second time per request.
+function generateRequestId(url: string, method: string): string {
   return `${method.toUpperCase()}:${url}`;
 }
 
@@ -430,7 +432,7 @@ function patchHTTPS(): void {
             }
 
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
-            const requestId = generateRequestId(options, `https-${method}`);
+            const requestId = generateRequestId(targetUrl, `https-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTPS request: ${method} ${sanitizeForLog(targetUrl)}`);
@@ -482,7 +484,7 @@ function patchHTTPS(): void {
               return originalGet.call(this, options as any, callback as any);
             }
 
-            const requestId = generateRequestId(options, 'https-GET');
+            const requestId = generateRequestId(targetUrl, 'https-GET');
 
             if (isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTPS GET: ${sanitizeForLog(targetUrl)}`);
@@ -540,7 +542,7 @@ function patchHTTP(): void {
             }
 
             const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
-            const requestId = generateRequestId(options, `http-${method}`);
+            const requestId = generateRequestId(targetUrl, `http-${method}`);
 
             if (isIdempotentMethod(method) && isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTP request: ${method} ${sanitizeForLog(targetUrl)}`);
@@ -592,7 +594,7 @@ function patchHTTP(): void {
               return originalGet.call(this, options as any, callback as any);
             }
 
-            const requestId = generateRequestId(options, 'http-GET');
+            const requestId = generateRequestId(targetUrl, 'http-GET');
 
             if (isRequestActive(requestId)) {
               log(`🔄 Skipping duplicate HTTP GET: ${sanitizeForLog(targetUrl)}`);
@@ -641,7 +643,7 @@ function patchFetch(): void {
         }
 
         const method = getFetchMethod(url, options);
-        const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
+        const requestId = generateRequestId(urlStr, `fetch-${method}`);
 
         if (isIdempotentMethod(method) && isRequestActive(requestId)) {
           log(`🔄 Skipping duplicate FETCH: ${method} ${sanitizeForLog(urlStr)}`);
@@ -674,7 +676,7 @@ function interceptRequest(
 
   const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
   const url = buildURL(options, protocol);
-  const requestId = generateRequestId(options, `${protocol}-${method}`);
+  const requestId = generateRequestId(url, `${protocol}-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
   const callData: CoolhandCallData = {
@@ -754,9 +756,11 @@ function interceptRequest(
     return hostStream || res;
   }, () => {
     // req.emit couldn't be patched (e.g. another library already made it non-writable) — the
-    // capture pipeline above will never run for this request. Surface that instead of silently
-    // dropping the log entry with no signal at all.
+    // capture pipeline above will never run for this request, including its unregisterActiveRequest
+    // cleanup. Do it here instead of leaving the dedup entry to sit until DEDUP_WINDOW_MS's natural
+    // expiry, so a burst of idempotent requests to the same URL isn't spuriously deduped meanwhile.
     log(`⚠️ Could not intercept response for call #${callData.id}; this request will not be captured/logged`);
+    unregisterActiveRequest(requestId, uniqueId);
   });
 
   // Node's http.request(options, callback) is sugar for `req.once('response', callback)` — since
@@ -803,7 +807,7 @@ async function interceptFetch(
 
   const method = getFetchMethod(url, options);
   const urlStr = getFetchURL(url);
-  const requestId = generateRequestId({ url: urlStr }, `fetch-${method}`);
+  const requestId = generateRequestId(urlStr, `fetch-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
   const callData: CoolhandCallData = {
