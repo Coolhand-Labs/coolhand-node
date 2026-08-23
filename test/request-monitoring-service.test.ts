@@ -1219,6 +1219,55 @@ describe('RequestMonitoringService', () => {
     }, 20000);
   });
 
+  describe('Request body capping (issue #166)', () => {
+    it('should truncate outbound request body buffering once it exceeds MAX_DECOMPRESSED_BYTES', (done) => {
+      // Feed more chunk bytes into req.write() than the cap allows; the interceptor
+      // should stop accumulating rather than growing requestBody unbounded, and still
+      // complete the call (with a bounded request_body) instead of hanging or crashing.
+      const chunkSize = 1024 * 1024; // 1 MB
+      const chunkCount = Math.ceil(MAX_DECOMPRESSED_BYTES / chunkSize) + 2;
+      const chunk = Buffer.alloc(chunkSize, 'a');
+
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = 200;
+      mockRes.headers = { 'content-type': 'application/json' };
+
+      const originalRequest = jest.fn().mockImplementation(() => {
+        const mockReq = new EventEmitter() as any;
+        mockReq.write = jest.fn().mockReturnValue(true);
+        mockReq.end = jest.fn();
+        setTimeout(() => {
+          mockReq.emit('response', mockRes);
+          mockRes.emit('end');
+        }, 0);
+        return mockReq;
+      });
+
+      onRequestCompleteMock.mockImplementationOnce((callData: any) => {
+        try {
+          expect(typeof callData.request_body).toBe('string');
+          expect((callData.request_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
+          done();
+        } catch (e: any) {
+          done(e);
+        }
+      });
+
+      const req: any = (service as any).interceptRequest(
+        originalRequest,
+        { hostname: 'api.test.com', path: '/test', method: 'POST' },
+        jest.fn(),
+        'https',
+        mockMatchedPattern
+      );
+
+      for (let i = 0; i < chunkCount; i++) {
+        req.write(chunk);
+      }
+      req.end();
+    }, 20000);
+  });
+
   describe('Edge Cases and Error Handling', () => {
     it('should handle undefined options in pattern matching', () => {
       expect(() => {

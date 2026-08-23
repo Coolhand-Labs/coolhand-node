@@ -523,6 +523,53 @@ describe('Global Monitor', () => {
       expect(first).toBeDefined();
       expect(first).toBe(second);
     });
+
+    it('truncates outbound request body buffering once it exceeds MAX_DECOMPRESSED_BYTES (issue #166)', async () => {
+      const { EventEmitter } = require('events');
+
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn().mockReturnValue(true);
+      fakeReq.end = jest.fn();
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const req: any = https.request('https://api.test.com/v1/files', { method: 'POST' }, jest.fn());
+
+      // Feed more chunk bytes into req.write() than the cap allows; the interceptor
+      // should stop accumulating rather than growing requestBody unbounded, and still
+      // complete the call (with a bounded request_body) instead of hanging or crashing.
+      const chunkSize = 1024 * 1024; // 1 MB
+      const chunkCount = Math.ceil(MAX_DECOMPRESSED_BYTES / chunkSize) + 2;
+      const chunk = Buffer.alloc(chunkSize, 'a');
+      for (let i = 0; i < chunkCount; i++) { req.write(chunk); }
+      req.end();
+
+      await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(typeof callData.request_body).toBe('string');
+      expect((callData.request_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
+    }, 20000);
   });
 
   describe('Fetch Patching', () => {
