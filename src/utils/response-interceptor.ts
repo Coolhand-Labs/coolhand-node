@@ -1,4 +1,7 @@
 export interface EmitLikeRequest {
+  // Mirrors Node's own EventEmitter#emit signature (also `any[]`) rather than `unknown[]` — every
+  // arg past the first is only ever re-forwarded via `originalEmit(event, ...args)` below, never
+  // inspected, so there's no type information to preserve by narrowing it.
   emit: (event: string, ...args: any[]) => boolean;
   listenerCount: (event: string) => number;
 }
@@ -25,7 +28,17 @@ export function patchResponseEmit<Req extends EmitLikeRequest, Res>(
     req.emit = function (event: string, ...args: any[]): boolean {
       if (event === 'response' && !handled) {
         handled = true;
-        return originalEmit('response', internalCapture(args[0]));
+        // internalCapture runs from inside Node's own http internals (whatever calls
+        // req.emit('response', res)), not from a call site this module controls — if it throws,
+        // let the raw response through rather than letting the exception escape into Node's
+        // internals uncaught. Every other patch point in this codebase degrades the same way.
+        let delivered: Res = args[0];
+        try {
+          delivered = internalCapture(args[0]);
+        } catch {
+          onPatchFailure?.();
+        }
+        return originalEmit('response', delivered);
       }
       return originalEmit(event, ...args);
     };

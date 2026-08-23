@@ -434,6 +434,44 @@ describe('RequestMonitoringService', () => {
       expect(onRequestCompleteMock).toHaveBeenCalled();
     });
 
+    it('intercepts and logs a fetch(new Request(...)) call (regression: Request.toString() is "[object Request]", not the URL)', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockResolvedValue('{"result": "success"}')
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      const url = 'https://api.test.com/v1/test';
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch(new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer token' },
+        body: '{"prompt":"a"}'
+      }));
+      await flush();
+
+      // Before the fix, matchesAPIPatternFromURL was called with "[object Request]" — no pattern
+      // could ever match, so the request silently fell through unintercepted and unlogged.
+      expect(mockPatternMatchingService.matchesAPIPatternFromURL).toHaveBeenCalledWith(url);
+      expect(onRequestCompleteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          url,
+          headers: expect.objectContaining({ authorization: 'Bearer token' }),
+          request_body: { prompt: 'a' }
+        }),
+        mockMatchedPattern
+      );
+    });
+
     it('should sanitize response headers on the fetch path', async () => {
       const mockResponse = {
         status: 200,
@@ -565,6 +603,44 @@ describe('RequestMonitoringService', () => {
       expect(typeof callData.response_body).toBe('string');
       expect((callData.response_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
     }, 20000);
+
+    it('fires originalFetch before awaiting a slow Request body', async () => {
+      // Regression test for interceptFetch's request_body extraction: it must run concurrently
+      // with the outbound request (via Promise.all), not sequentially await the body first —
+      // see global-monitor.ts's identical test for the sibling auto-monitor code path.
+      const events: string[] = [];
+
+      const originalFetch = jest.fn().mockImplementation(async () => {
+        events.push('fetch-called');
+        return {
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          clone: () => ({ text: () => Promise.resolve('{}') })
+        };
+      });
+      globalThis.fetch = originalFetch;
+
+      const slowReq = {
+        url: 'https://api.test.com/v1/test',
+        method: 'POST',
+        headers: new Headers(),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockImplementation(async () => {
+            await Promise.resolve(); // one microtask — yields after getFetchRequestBody suspends
+            events.push('body-resolved');
+            return '{"prompt":"slow"}';
+          })
+        })
+      };
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch(slowReq as any);
+
+      expect(events).toEqual(['fetch-called', 'body-resolved']);
+    });
   });
 
   describe('Request Interception', () => {

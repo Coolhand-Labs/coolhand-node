@@ -1,4 +1,4 @@
-import { computeSelfEndpoint, isSelfEndpointURL } from '../src/utils/self-endpoint';
+import { computeSelfEndpoint, isSelfEndpointURL, isSelfOrExcluded } from '../src/utils/self-endpoint';
 
 describe('computeSelfEndpoint', () => {
   it('infers the default HTTPS port when none is specified', () => {
@@ -28,6 +28,13 @@ describe('computeSelfEndpoint', () => {
 
   it('returns null for an invalid URL', () => {
     expect(computeSelfEndpoint('not a url')).toBeNull();
+  });
+
+  it('strips a trailing FQDN dot from the hostname', () => {
+    // `new URL(...).hostname` does not normalize a trailing-dot FQDN — without stripping it here,
+    // a baseUrl written without the dot would never match an intercepted request whose hostname
+    // arrives with one (or vice versa), silently bypassing the self-endpoint exclusion.
+    expect(computeSelfEndpoint('https://coolhandlabs.com./api/v2/llm_request_logs')?.hostname).toBe('coolhandlabs.com');
   });
 });
 
@@ -66,5 +73,31 @@ describe('isSelfEndpointURL', () => {
   it('returns false for an unparseable URL', () => {
     const self = computeSelfEndpoint('http://localhost:3000/api/v2/llm_request_logs');
     expect(isSelfEndpointURL('not a url', self)).toBe(false);
+  });
+
+  it('matches a self endpoint configured without a trailing dot against a request hostname that arrives with one', () => {
+    const self = computeSelfEndpoint('https://coolhandlabs.com/api/v2/llm_request_logs');
+    expect(isSelfEndpointURL('https://coolhandlabs.com./anything', self)).toBe(true);
+  });
+
+  it('matches a self endpoint configured with a trailing dot against a request hostname that arrives without one', () => {
+    const self = computeSelfEndpoint('https://coolhandlabs.com./api/v2/llm_request_logs');
+    expect(isSelfEndpointURL('https://coolhandlabs.com/anything', self)).toBe(true);
+  });
+});
+
+describe('isSelfOrExcluded', () => {
+  it('returns true when the URL matches the self endpoint, regardless of excludePatterns', () => {
+    const self = computeSelfEndpoint('http://localhost:3000/api/v2/llm_request_logs');
+    expect(isSelfOrExcluded('http://localhost:3000/anything', self, [])).toBe(true);
+  });
+
+  it('returns true when the URL matches an exclude pattern, regardless of self endpoint', () => {
+    expect(isSelfOrExcluded('https://example.com/foo/bar', null, ['/foo/'])).toBe(true);
+  });
+
+  it('returns false when neither the self endpoint nor any exclude pattern matches', () => {
+    const self = computeSelfEndpoint('http://localhost:3000/api/v2/llm_request_logs');
+    expect(isSelfOrExcluded('https://example.com/bar', self, ['/foo/'])).toBe(false);
   });
 });

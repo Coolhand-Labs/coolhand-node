@@ -10,8 +10,8 @@ import { createResponseTee } from '../utils/tee-response.js';
 import { readCappedResponseText } from '../utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
 import { patchResponseEmit } from '../utils/response-interceptor.js';
-import { matchesExcludePattern } from '../utils/exclude-patterns.js';
-import { computeSelfEndpoint, isSelfEndpointURL, SelfEndpoint } from '../utils/self-endpoint.js';
+import { computeSelfEndpoint, isSelfOrExcluded, SelfEndpoint } from '../utils/self-endpoint.js';
+import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -304,7 +304,11 @@ export class RequestMonitoringService {
       const monitor = this;
 
       globalThis.fetch = async function(url: string | URL | Request, options: RequestInit = {}) {
-        const urlStr = typeof url === 'string' ? url : url.toString();
+        // getFetchURL/getFetchMethod handle both fetch() calling conventions — `fetch(url, init)`
+        // and `fetch(new Request(...))` — the latter of which `url.toString()` alone would render
+        // as the useless "[object Request]" (Request doesn't override toString, unlike URL),
+        // silently failing every pattern match below instead of throwing.
+        const urlStr = getFetchURL(url);
 
         monitor.debugRequest('FETCH', { url: urlStr, ...options });
 
@@ -314,7 +318,7 @@ export class RequestMonitoringService {
           if (monitor.isSelfOrExcludedURL(urlStr)) {
             return originalFetch.call(this, url, options);
           }
-          const method = (options as RequestInit)?.method || 'GET';
+          const method = getFetchMethod(url, options);
           if (isNonInferenceURL(urlStr, method)) {
             return originalFetch.call(this, url, options);
           }
@@ -457,15 +461,13 @@ export class RequestMonitoringService {
     const callData: CoolhandCallData = {
       id: this.interceptedCalls,
       timestamp: new Date().toISOString(),
-      method: options.method || 'GET',
-      url: this.patternMatchingService.sanitizeURL(url.toString()),
+      method: getFetchMethod(url, options),
+      url: this.patternMatchingService.sanitizeURL(getFetchURL(url)),
       headers: this.patternMatchingService.sanitizeHeaders(
-        options.headers instanceof Headers
-          ? Object.fromEntries(options.headers.entries())
-          : (options.headers || {}),
+        getFetchHeaders(url, options),
         matchedPattern?.pattern
       ),
-      request_body: options.body ? parseBody(options.body as string) : null,
+      request_body: null,
       response_body: null,
       response_headers: null,
       status_code: null,
@@ -475,8 +477,20 @@ export class RequestMonitoringService {
     this.log(`📞 Starting FETCH call #${callData.id} to ${url}`);
 
     try {
-      const response = await originalFetch.call(globalThis, url, options);
+      // Body capture and the outbound request run concurrently (see global-monitor.ts's
+      // identical interceptFetch) — a Request-object body read (clone().text()) is not
+      // guaranteed to be instantaneous, and awaiting it before dispatching the real request
+      // would delay every intercepted fetch() behind request-body capture, or hang it
+      // indefinitely if that read never settles. Using Promise.all also keeps the fetch
+      // rejection inside this try/catch from the moment it is created, closing the
+      // unhandledRejection window that would exist if fetchPromise were started outside
+      // the guarded block.
+      const [requestBody, response] = await Promise.all([
+        getFetchRequestBody(url, options),
+        originalFetch.call(globalThis, url, options)
+      ]);
 
+      callData.request_body = parseBody(requestBody);
       callData.status_code = response.status;
       callData.response_headers = this.patternMatchingService.sanitizeHeaders(
         Object.fromEntries(response.headers.entries()),
@@ -517,18 +531,14 @@ export class RequestMonitoringService {
     this.selfEndpoint = computeSelfEndpoint(apiEndpoint);
   }
 
-  private isExcluded(options: CoolhandRequestOptions | string | URL, protocol: string): boolean {
-    return matchesExcludePattern(this.buildURL(options, protocol), this.excludeApiPatterns);
-  }
-
   // Combines the self-endpoint and excludeApiPatterns checks against an already-built URL —
   // callers also need that same URL for isNonInferenceURL right afterward, so this takes the
   // built string directly rather than (options, protocol), letting each patched call site build
-  // the URL once and reuse it for both checks instead of parsing it twice. isExcluded is kept as
-  // its own method (used directly by test/exclude-api-patterns.test.ts); self-endpoint has no
-  // equivalent standalone caller, so it's inlined here rather than kept as a separate unused method.
+  // the URL once and reuse it for both checks instead of parsing it twice. Delegates to the
+  // shared isSelfOrExcluded in self-endpoint.ts (also used by global-monitor.ts) so both
+  // interception paths honor identical semantics.
   private isSelfOrExcludedURL(url: string): boolean {
-    return isSelfEndpointURL(url, this.selfEndpoint) || matchesExcludePattern(url, this.excludeApiPatterns);
+    return isSelfOrExcluded(url, this.selfEndpoint, this.excludeApiPatterns);
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {

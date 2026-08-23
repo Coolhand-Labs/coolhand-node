@@ -117,12 +117,17 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
   });
 
   describe('isExcluded logic', () => {
+    // Exercises the shared matchesExcludePattern() helper (see 'matchesExcludePattern (shared
+    // helper)' above) against service.excludeApiPatterns directly — isSelfOrExcludedURL, the
+    // only production caller of this behavior, inlines the same matchesExcludePattern() call
+    // rather than delegating to a private isExcluded() method, so there's nothing on the
+    // instance left to reach into via reflection.
     const batchJobUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/batchPredictionJobs/123';
     const inferenceUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-pro:generateContent';
     const tuningJobUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/tuningJobs/456';
 
     function isExcluded(svc: RequestMonitoringService, url: string): boolean {
-      return (svc as any).isExcluded({ href: url }, 'https');
+      return matchesExcludePattern(url, svc.excludeApiPatterns);
     }
 
     it('returns true when URL contains an exclude pattern', () => {

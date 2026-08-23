@@ -16,9 +16,9 @@ import { createResponseTee } from './utils/tee-response.js';
 import { readCappedResponseText } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
-import { matchesExcludePattern } from './utils/exclude-patterns.js';
-import { computeSelfEndpoint, isSelfEndpointURL, SelfEndpoint } from './utils/self-endpoint.js';
+import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared, SelfEndpoint } from './utils/self-endpoint.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
+import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -144,11 +144,12 @@ function getState(): CoolhandGlobalState {
 }
 
 // Combines the self-endpoint and excludeApiPatterns checks — every patched request/get/fetch
-// call site needs both together (see the identical rationale on RequestMonitoringService's
-// isSelfOrExcluded), rather than repeating `isSelfEndpoint(url) || isExcluded(url)` at each one.
+// call site needs both together, rather than repeating `isSelfEndpoint(url) || isExcluded(url)`
+// at each one. Delegates to the shared isSelfOrExcluded in self-endpoint.ts (also used by
+// RequestMonitoringService) so both interception paths honor identical semantics.
 function isSelfOrExcluded(url: string): boolean {
   const state = getState();
-  return isSelfEndpointURL(url, state.selfEndpoint) || matchesExcludePattern(url, state.excludeApiPatterns);
+  return isSelfOrExcludedShared(url, state.selfEndpoint, state.excludeApiPatterns);
 }
 
 /** Reset all singleton state — for use in tests only. */
@@ -343,65 +344,6 @@ function isIdempotentMethod(method: string): boolean {
   return normalized === 'GET' || normalized === 'HEAD';
 }
 
-function isRequestLike(value: unknown): value is Request {
-  if (!value || typeof value !== 'object') { return false; }
-  const request = value as Partial<Request>;
-  return typeof request.url === 'string' && typeof request.method === 'string';
-}
-
-function headersToRecord(headers: any): Record<string, any> {
-  if (!headers) { return {}; }
-
-  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
-  }
-
-  if (typeof headers.entries === 'function') {
-    return Object.fromEntries(headers.entries());
-  }
-
-  if (Array.isArray(headers)) {
-    return Object.fromEntries(headers);
-  }
-
-  return { ...headers };
-}
-
-function getFetchURL(url: string | URL | Request): string {
-  if (typeof url === 'string') { return url; }
-  if (isRequestLike(url)) { return url.url; }
-  return url.toString();
-}
-
-function getFetchMethod(url: string | URL | Request, options: RequestInit): string {
-  return options.method || (isRequestLike(url) ? url.method : 'GET');
-}
-
-function getFetchHeaders(url: string | URL | Request, options: RequestInit): Record<string, any> {
-  // init.headers replaces request headers entirely per the fetch spec —
-  // merging would log headers the caller intentionally dropped.
-  if (options.headers !== undefined) {
-    return headersToRecord(options.headers);
-  }
-  return isRequestLike(url) ? headersToRecord(url.headers) : {};
-}
-
-async function getFetchRequestBody(url: string | URL | Request, options: RequestInit): Promise<string | null> {
-  if (options.body !== undefined) {
-    return options.body !== null ? options.body.toString() : null;
-  }
-
-  if (isRequestLike(url) && typeof url.clone === 'function') {
-    try {
-      return await url.clone().text();
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
 function patchHTTPS(): void {
   const originalRequest = https.request;
   const originalGet = https.get;
@@ -444,7 +386,7 @@ function patchHTTPS(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS call`);
-            return interceptRequest(originalRequest, options, callback, 'https', matchedPattern);
+            return interceptRequest(originalRequest, options, targetUrl, callback, 'https', matchedPattern);
           }
 
           return originalRequest.call(this, options as any, callback as any);
@@ -496,7 +438,7 @@ function patchHTTPS(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTPS GET`);
-            return interceptRequest(originalGet, options, callback, 'https', matchedPattern);
+            return interceptRequest(originalGet, options, targetUrl, callback, 'https', matchedPattern);
           }
 
           return originalGet.call(this, options as any, callback as any);
@@ -554,7 +496,7 @@ function patchHTTP(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP call`);
-            return interceptRequest(originalRequest, options, callback, 'http', matchedPattern);
+            return interceptRequest(originalRequest, options, targetUrl, callback, 'http', matchedPattern);
           }
 
           return originalRequest.call(this, options as any, callback as any);
@@ -606,7 +548,7 @@ function patchHTTP(): void {
             }
 
             log(`🎯 INTERCEPTING ${matchedPattern.pattern.name} HTTP GET`);
-            return interceptRequest(originalGet, options, callback, 'http', matchedPattern);
+            return interceptRequest(originalGet, options, targetUrl, callback, 'http', matchedPattern);
           }
 
           return originalGet.call(this, options as any, callback as any);
@@ -667,6 +609,7 @@ function patchFetch(): void {
 function interceptRequest(
   originalRequest: any,
   options: CoolhandRequestOptions | string | URL,
+  url: string,
   callback?: (res: HttpIncomingMessage) => void,
   protocol: 'https' | 'http' = 'https',
   matchedPattern?: CoolhandMatchedPattern
@@ -675,7 +618,6 @@ function interceptRequest(
   state.interceptedCalls++;
 
   const method = typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET';
-  const url = buildURL(options, protocol);
   const requestId = generateRequestId(url, `${protocol}-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
