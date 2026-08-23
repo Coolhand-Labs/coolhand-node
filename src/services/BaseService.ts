@@ -73,7 +73,8 @@ export abstract class BaseService {
         'Content-Type': 'application/json',
         'X-API-Key': this.apiKey
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      redirect: 'error'
     };
   }
 
@@ -167,7 +168,8 @@ export abstract class BaseService {
       const response = await fetch(this.apiEndpoint, {
         method: 'POST',
         headers: { 'X-API-Key': this.apiKey },
-        body: formData
+        body: formData,
+        redirect: 'error'
       });
 
       return await this.parseJsonResponse<T>(response, successMessage);
@@ -218,6 +220,10 @@ export abstract class BaseService {
    * shared fetch/error/status-throwing primitive both {@link fetchOrThrow} (discards the headers)
    * and {@link getJsonWithHeaders} (JSON-parses the body, keeps the headers — e.g. for
    * `LoggingService#searchLogs` reading pagination totals off X-Total-Count/etc.) sit on top of.
+   * Always sent with `redirect: 'error'` (overriding anything in `init`) so a 3xx from `url`
+   * throws instead of being followed — `url` is derived from the validated `apiEndpoint`, and
+   * following a redirect would carry the `X-API-Key` header to a host `validateBaseUrl` never
+   * approved.
    *
    * @param errorPrefix Prefixes thrown error messages, e.g. `"MCP request failed"` or
    *   `"Feedback request failed"`, so each caller keeps its own established message wording.
@@ -235,7 +241,7 @@ export abstract class BaseService {
 
     let res: Response;
     try {
-      res = await fetch(url, init);
+      res = await fetch(url, { ...init, redirect: 'error' });
     } catch (err) {
       throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
     }
