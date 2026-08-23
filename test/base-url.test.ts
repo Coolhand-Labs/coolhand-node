@@ -1,6 +1,7 @@
 import { Coolhand } from '../src/index';
 import { LoggingService } from '../src/services/LoggingService';
 import { FeedbackService } from '../src/services/FeedbackService';
+import { ClientFileService } from '../src/services/ClientFileService';
 import { CoolhandCallData } from '../src/types';
 import { _resetGlobalState } from '../src/global-monitor';
 
@@ -189,6 +190,101 @@ describe('baseUrl configuration', () => {
         );
       } finally {
         globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('redirect handling', () => {
+    it('sends redirect: "error" on the sendRequest (JSON POST) path', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 42 })
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        const svc = new LoggingService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        await svc.logRequestToAPI(fakeCallData);
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ redirect: 'error' })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('sends redirect: "error" on the sendMultipart (upload) path', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 })
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        const svc = new ClientFileService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        await svc.createClientFile({ name: 'test.txt', filename: 'test.txt', file: Buffer.from('hi') });
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ redirect: 'error' })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('sends redirect: "error" on the getJson (fetchWithHeaders) path', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('{}'),
+        headers: new Headers()
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        const svc = new FeedbackService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        await svc.getFeedback('123');
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ redirect: 'error' })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('a followed-redirect TypeError from fetch fails closed instead of leaking the request', async () => {
+      const mockFetch = jest.fn().mockRejectedValue(
+        new TypeError('fetch failed: unexpected redirect')
+      );
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+      try {
+        const svc = new LoggingService({
+          apiKey: 'k',
+          silent: true,
+          baseUrl: 'https://self-hosted.example.com'
+        });
+        const result = await svc.logRequestToAPI(fakeCallData);
+        expect(result).toBeNull();
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        globalThis.fetch = originalFetch;
+        errorSpy.mockRestore();
       }
     });
   });
