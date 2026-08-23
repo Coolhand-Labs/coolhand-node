@@ -652,7 +652,9 @@ function interceptRequest(
 
   log(`📞 Starting API call #${callData.id} to ${callData.url}`);
 
-  let requestBody = '';
+  const requestBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
+    log(`⚠️ Request body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
+  });
 
   const req = originalRequest(options as any, (res: HttpIncomingMessage) => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);
@@ -709,16 +711,16 @@ function interceptRequest(
 
   req.write = function(chunk: any, encoding?: any, callback?: any) {
     if (chunk) {
-      requestBody += chunk.toString();
+      requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
     return originalWrite(chunk, encoding, callback);
   };
 
   req.end = ((chunk?: any, encoding?: any, callback?: any) => {
     if (chunk) {
-      requestBody += chunk.toString();
+      requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    callData.request_body = parseBody(requestBody);
+    callData.request_body = parseBody(requestBuffer.concat().toString('utf-8'));
     log(`📤 Request complete for call #${callData.id}`);
     return originalEnd(chunk, encoding, callback);
   });
