@@ -100,7 +100,12 @@ describe('PatternMatchingService', () => {
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('API patterns file not found')
       );
-      expect(service.getPatternsCountSync()).toBe(0);
+      // Should fall back to default Edge runtime patterns (7 patterns) — see #167
+      expect(service.getPatternsCountSync()).toBe(7);
+
+      // The service must remain usable/monitoring must still work after falling back.
+      const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
+      expect(result).toMatchObject({ pattern: expect.objectContaining({ name: 'OpenAI' }) });
     });
 
     it('should handle invalid JSON in patterns file', () => {
@@ -598,11 +603,11 @@ describe('PatternMatchingService', () => {
       expect(service.getPatternsCountSync()).toBe(4);
     });
 
-    it('should return zero count when no patterns loaded', () => {
+    it('should fall back to default patterns count when patterns file is missing', () => {
       mockFs.existsSync.mockReturnValue(false);
-      const emptyService = new PatternMatchingService();
+      const fallbackService = new PatternMatchingService();
 
-      expect(emptyService.getPatternsCountSync()).toBe(0);
+      expect(fallbackService.getPatternsCountSync()).toBe(7);
     });
   });
 
