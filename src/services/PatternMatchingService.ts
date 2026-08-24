@@ -320,11 +320,8 @@ export class PatternMatchingService {
         this.apiPatterns = this.validatePatternsShape(patternsData, patternsFile);
         if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} API patterns from ${customPatternsFile ? 'custom' : 'default'} patterns file`); }
       } else {
-        if (customPatternsFile) {
-          if (!this.silent) { console.warn(`⚠️  API patterns file not found: ${patternsFile}`); }
-        } else {
-          if (!this.silent) { console.warn(`⚠️  API patterns file not found: ${patternsFile}`); }
-        }
+        if (!this.silent) { console.warn(`⚠️  API patterns file not found: ${patternsFile}. Falling back to default patterns.`); }
+        this.loadDefaultPatternsForEdge();
       }
 
     } catch (error) {

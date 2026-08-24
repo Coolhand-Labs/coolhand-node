@@ -472,6 +472,37 @@ describe('RequestMonitoringService', () => {
       );
     });
 
+    // Regression test for issue #164: the "Starting FETCH call" log used the raw `url`
+    // param instead of `callData.url`, bypassing sanitizeURL() the same way the http/https
+    // path did.
+    it('logs the sanitized URL, not the raw one, in the "Starting FETCH call" message (issue #164)', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockResolvedValue('{"result": "success"}')
+        })
+      };
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
+      (nonSilentService as any).patternMatchingService = mockPatternMatchingService;
+      globalThis.fetch = originalFetch;
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+      const rawUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSecret';
+      const cleanUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=REDACTED';
+      mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
+
+      nonSilentService.setupMonitoring();
+
+      await globalThis.fetch(rawUrl, { method: 'GET' });
+      await flush();
+
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining(cleanUrl));
+      const loggedCalls = (console.log as jest.Mock).mock.calls.map((c) => c.join(' '));
+      expect(loggedCalls.some((msg) => msg.includes(rawUrl))).toBe(false);
+    });
+
     it('should sanitize response headers on the fetch path', async () => {
       const mockResponse = {
         status: 200,
@@ -681,6 +712,25 @@ describe('RequestMonitoringService', () => {
 
       expect(result).toBe(mockReq);
       expect(service.getStats().interceptedCalls).toBe(1);
+    });
+
+    // Regression test for issue #164: the "Starting API call" log used the raw local `url`
+    // instead of `callData.url`, bypassing sanitizeURL() and leaking query-string secrets
+    // (e.g. Gemini's `?key=...`) even though the stored callData.url was correctly sanitized.
+    it('logs the sanitized URL, not the raw one, in the "Starting API call" message (issue #164)', () => {
+      const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
+      const rawUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSecret';
+      const cleanUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=REDACTED';
+      mockPatternMatchingService.sanitizeURL.mockReturnValueOnce(cleanUrl);
+
+      const originalRequest = jest.fn().mockReturnValue(mockReq);
+      const options = { hostname: 'generativelanguage.googleapis.com', path: '/v1beta/models/gemini-pro:generateContent?key=AIzaSecret' };
+
+      (nonSilentService as any).interceptRequest(originalRequest, options, jest.fn(), 'https', mockMatchedPattern);
+
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining(cleanUrl));
+      const loggedCalls = (console.log as jest.Mock).mock.calls.map((c) => c.join(' '));
+      expect(loggedCalls.some((msg) => msg.includes(rawUrl))).toBe(false);
     });
 
     it('should handle request body collection', () => {
@@ -997,6 +1047,45 @@ describe('RequestMonitoringService', () => {
       (service as any).debugRequest('TEST', { url: 'https://api.test.com' });
 
       expect(service.getStats().totalRequests).toBe(3);
+    });
+
+    // Regression tests for issue #164: debugRequest used to print the entire raw URL
+    // (path + query string) under a "hostname" label, leaking query-string secrets like
+    // API keys into logs whenever debug/non-silent mode was on.
+    describe('debugRequest hostname extraction (issue #164)', () => {
+      it('logs only the hostname, not the query string, for a raw string URL', () => {
+        const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
+
+        (nonSilentService as any).debugRequest(
+          'HTTPS REQUEST',
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSecret'
+        );
+
+        expect(console.log).toHaveBeenCalledWith('🌐 HTTPS REQUEST to: generativelanguage.googleapis.com');
+        const loggedCalls = (console.log as jest.Mock).mock.calls.map((c) => c.join(' '));
+        expect(loggedCalls.some((msg) => msg.includes('AIzaSecret'))).toBe(false);
+      });
+
+      it('logs only the hostname, not the query string, for the fetch-shaped { url } options object', () => {
+        const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
+
+        (nonSilentService as any).debugRequest(
+          'FETCH',
+          { url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSecret' }
+        );
+
+        expect(console.log).toHaveBeenCalledWith('🌐 FETCH to: generativelanguage.googleapis.com');
+        const loggedCalls = (console.log as jest.Mock).mock.calls.map((c) => c.join(' '));
+        expect(loggedCalls.some((msg) => msg.includes('AIzaSecret'))).toBe(false);
+      });
+
+      it('falls back to "unknown" for an unparseable string instead of echoing it raw', () => {
+        const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
+
+        (nonSilentService as any).debugRequest('TEST', 'not a valid url ?key=secret');
+
+        expect(console.log).toHaveBeenCalledWith('🌐 TEST to: unknown');
+      });
     });
 
     it('should not log in silent mode', () => {

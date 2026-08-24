@@ -253,9 +253,10 @@ describe('PatternMatchingService path resolution in loadAPIPatternsSync', () => 
     });
   });
 
-  it('should handle missing api-patterns.json without crashing', () => {
+  it('should fall back to default patterns when api-patterns.json is missing', () => {
     // When the default patterns file is not found on disk, the service
-    // initializes without crashing and remains usable (with 0 patterns).
+    // falls back to the built-in default patterns instead of silently
+    // disabling monitoring — see #167.
     jest.isolateModules(() => {
       jest.unmock('../src/services/PatternMatchingService');
 
@@ -268,9 +269,11 @@ describe('PatternMatchingService path resolution in loadAPIPatternsSync', () => 
       const { PatternMatchingService: RealService } = require('../src/services/PatternMatchingService');
       const svc = new RealService({ silent: true });
 
-      // Service should be usable — matchesAPIPatternSync returns null, no crash
-      expect(svc.matchesAPIPatternSync({ hostname: 'api.openai.com', path: '/' })).toBeNull();
-      expect(typeof svc.getPatternsCountSync()).toBe('number');
+      // Service should be usable and still match known providers via the fallback patterns
+      expect(svc.matchesAPIPatternSync({ hostname: 'api.openai.com', path: '/' })).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenAI' })
+      });
+      expect(svc.getPatternsCountSync()).toBe(7);
     });
   });
 });

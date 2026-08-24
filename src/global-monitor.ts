@@ -19,6 +19,7 @@ import { patchResponseEmit } from './utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared, SelfEndpoint } from './utils/self-endpoint.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
+import { extractRequestHostname } from './utils/extract-hostname.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -842,18 +843,8 @@ function sanitizeForLog(url: string): string {
   return getState().globalPatternService?.sanitizeURL(url) ?? url;
 }
 
-function extractHostname(value: string): string {
-  try {
-    return new URL(value).hostname;
-  } catch {
-    return 'unknown';
-  }
-}
-
 function debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
-  const hostname = typeof options === 'string' ? extractHostname(options) :
-                  options instanceof URL ? options.hostname :
-                  options.hostname || options.host || (typeof options.url === 'string' ? extractHostname(options.url) : undefined) || 'unknown';
+  const hostname = extractRequestHostname(options);
   log(`🌐 ${type} to: ${hostname}`);
 
   // Count all requests
