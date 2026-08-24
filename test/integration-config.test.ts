@@ -323,6 +323,48 @@ describe('Global monitoring configuration', () => {
     const msgs = logSpy.mock.calls.map((c: any[]) => c[0]);
     expect(msgs.some((m: string) => typeof m === 'string' && m.includes('Coolhand'))).toBe(true);
   });
+
+  // Regression test for issue #169: a failed core init (e.g. LoggingService's baseUrl
+  // validation throwing) must not leave http/https patched with no logging service to
+  // send data to, and must not block a later successful retry from patching normally.
+  it('does not patch http/https and leaves state uninitialized when a fallible constructor throws', async () => {
+    const mod = await import('../src/global-monitor');
+    const https = require('https');
+    const requestBeforeFailedInit = https.request;
+
+    expect(() =>
+      mod.initGlobalMonitoringCore({ apiKey: 'k', silent: true, baseUrl: 'not-a-url' })
+    ).toThrow('Invalid baseUrl');
+
+    expect(mod.isGlobalMonitoringActive()).toBe(false);
+    expect(mod.getGlobalStats().apiEndpoint).toBe('Not initialized');
+    // The failed init must not have patched http/https.
+    expect(https.request).toBe(requestBeforeFailedInit);
+
+    // A subsequent successful init proceeds normally and patches exactly once.
+    expect(() => mod.initGlobalMonitoringCore({ apiKey: 'k', silent: true })).not.toThrow();
+    expect(mod.isGlobalMonitoringActive()).toBe(true);
+    expect(https.request).not.toBe(requestBeforeFailedInit);
+  });
+
+  // Companion regression test for the public async entry point: initializeGlobalMonitoring()
+  // calls initGlobalMonitoringCore() with no try/catch of its own, so a synchronous throw
+  // there must reject the returned promise and never reach loadAndPatchNodeModulesIfNeeded().
+  // Pins that behavior so a future refactor (e.g. adding a try/catch here to mirror
+  // auto-monitor.ts's friendlier logging) can't silently reintroduce issue #169 for direct
+  // callers of this public API.
+  it('rejects and does not patch http/https when initializeGlobalMonitoring core init throws', async () => {
+    const mod = await import('../src/global-monitor');
+    const https = require('https');
+    const requestBeforeFailedInit = https.request;
+
+    await expect(
+      mod.initializeGlobalMonitoring({ apiKey: 'k', silent: true, baseUrl: 'not-a-url' })
+    ).rejects.toThrow('Invalid baseUrl');
+
+    expect(mod.isGlobalMonitoringActive()).toBe(false);
+    expect(https.request).toBe(requestBeforeFailedInit);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -342,7 +384,7 @@ describe('Auto-monitor environment variable configuration', () => {
     jest.spyOn(console, 'error').mockImplementation();
 
     // Back up env
-    for (const key of ['COOLHAND_API_KEY', 'COOLHAND_SILENT', 'COOLHAND_PATTERNS_FILE', 'COOLHAND_DEBUG', 'COOLHAND_DRY_RUN', 'NODE_ENV']) {
+    for (const key of ['COOLHAND_API_KEY', 'COOLHAND_SILENT', 'COOLHAND_PATTERNS_FILE', 'COOLHAND_DEBUG', 'COOLHAND_DRY_RUN', 'COOLHAND_BASE_URL', 'NODE_ENV']) {
       envBackup[key] = process.env[key];
     }
 
@@ -447,6 +489,22 @@ describe('Auto-monitor environment variable configuration', () => {
     expect(typeof mod.initializeGlobalMonitoring).toBe('function');
     expect(typeof mod.getGlobalStats).toBe('function');
     expect(typeof mod.isGlobalMonitoringActive).toBe('function');
+  });
+
+  // Regression test for issue #169: an invalid COOLHAND_BASE_URL makes core init throw;
+  // auto-monitor must surface the error and stay uninitialized rather than patching
+  // http/https with no logging service attached.
+  it('logs an error and stays uninitialized when COOLHAND_BASE_URL is invalid', async () => {
+    process.env.COOLHAND_API_KEY = 'auto-test-key';
+    process.env.COOLHAND_BASE_URL = 'not-a-url';
+
+    const errorSpy = console.error as jest.Mock;
+    const mod = await import('../src/auto-monitor');
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(mod.isGlobalMonitoringActive()).toBe(false);
+    const msgs = errorSpy.mock.calls.map((c: any[]) => c[0]);
+    expect(msgs.some((m: string) => typeof m === 'string' && m.includes('Failed to initialize global monitoring'))).toBe(true);
   });
 });
 

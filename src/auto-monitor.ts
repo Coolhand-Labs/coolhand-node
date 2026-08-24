@@ -76,9 +76,17 @@ if (apiKey) {
 
   // Async tail: loads http/https modules in native ESM builds where the synchronous
   // createRequire path is unavailable. No-op in CJS (modules loaded synchronously above).
-  loadAndPatchNodeModulesIfNeeded().catch((error: Error) => {
-    console.error('❌ Failed to complete global monitoring initialization:', error.message);
-  });
+  // Skipped when core init just failed above — otherwise this would patch http/https
+  // with no logging service attached (silent data loss), and leave isGloballyPatched
+  // false so a later successful retry double-patches. initGlobalMonitoringCore only
+  // sets isGloballyPatched once construction and patching both succeed, so re-checking
+  // isGlobalMonitoringActive() here (rather than tracking a separate failure flag)
+  // is exactly the "did init actually finish" signal we need.
+  if (isGlobalMonitoringActive()) {
+    loadAndPatchNodeModulesIfNeeded().catch((error: Error) => {
+      console.error('❌ Failed to complete global monitoring initialization:', error.message);
+    });
+  }
 } else {
   // Only warn if not in production to avoid noise
   if (process.env.NODE_ENV !== 'production') {
