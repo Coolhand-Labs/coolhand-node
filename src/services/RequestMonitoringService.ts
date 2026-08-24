@@ -9,6 +9,7 @@ import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
 import { readCappedResponseText } from '../utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
+import { extractRequestHostname } from '../utils/extract-hostname.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -306,7 +307,7 @@ export class RequestMonitoringService {
       protocol: protocol
     };
 
-    this.log(`📞 Starting API call #${callData.id} to ${url}`);
+    this.log(`📞 Starting API call #${callData.id} to ${callData.url}`);
 
     const requestBuffer = new CappedBuffer(MAX_DECOMPRESSED_BYTES, () => {
       this.log(`⚠️ Request body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
@@ -407,7 +408,7 @@ export class RequestMonitoringService {
       protocol: 'fetch'
     };
 
-    this.log(`📞 Starting FETCH call #${callData.id} to ${url}`);
+    this.log(`📞 Starting FETCH call #${callData.id} to ${callData.url}`);
 
     try {
       const response = await originalFetch.call(globalThis, url, options);
@@ -468,9 +469,7 @@ export class RequestMonitoringService {
   }
 
   private debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {
-    const hostname = typeof options === 'string' ? options :
-                    options instanceof URL ? options.hostname :
-                    options.hostname || options.host || options.url || 'unknown';
+    const hostname = extractRequestHostname(options);
     this.log(`🌐 ${type} to: ${hostname}`);
 
     // Count all requests
