@@ -279,6 +279,26 @@ const content = await coolhand.getLogContent(logs[0].id);
 See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling
 (`section`/`maxChars`/`searchQuery`), current backend deployment status, and error handling.
 
+## Reading Templates
+
+`searchTemplates` and `getTemplate` read back the templates your logs are matched against. Like
+the other read methods, these require your **private** API key (the public key 401s):
+
+```typescript
+const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
+
+const { templates } = await coolhand.searchTemplates({ search: 'summar', status: 'published' });
+
+const template = await coolhand.getTemplate(templates[0].id);
+```
+
+Search is a parameter on the list endpoint, not a route of its own. The `Unmatched` /
+`Ignored API Calls` system buckets are hidden unless you pass `includeSystem: true`, and prompt
+patterns come from `getTemplate` only.
+
+See [docs/template-search.md](./docs/template-search.md) for the full filter reference, pagination,
+and error handling (including the retryable `504` on the `log_count` aggregate).
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -506,10 +526,11 @@ unlike `logRequest`/`createFeedback`'s JSON requests. Unlike those two, it requi
 API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
-Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`) throw instead, since
-callers need to react to the result — a non-2xx response throws an `HttpError` with the status
-code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
-[docs/log-search.md](./docs/log-search.md) for details.
+Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
+`getTemplate`) throw instead, since callers need to react to the result — a non-2xx response throws
+an `HttpError` with the status code attached; see
+[docs/feedback-search.md](./docs/feedback-search.md), [docs/log-search.md](./docs/log-search.md)
+and [docs/template-search.md](./docs/template-search.md) for details.
 
 ## Security
 
@@ -526,6 +547,7 @@ code attached; see [docs/feedback-search.md](./docs/feedback-search.md) and
 - **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
+- **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 
 ## Related Packages
 

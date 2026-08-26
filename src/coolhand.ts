@@ -1,8 +1,9 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
+import { TemplateService } from './services/TemplateService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 
@@ -11,6 +12,7 @@ export class Coolhand {
   private requestMonitoringService: RequestMonitoringService;
   private loggingService: LoggingService;
   private feedbackService: FeedbackService;
+  private templateService: TemplateService;
   private clientFileService: ClientFileService;
   private silent: boolean;
 
@@ -49,6 +51,7 @@ export class Coolhand {
 
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
+    this.templateService = new TemplateService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
@@ -201,6 +204,44 @@ export class Coolhand {
    */
   public async searchLogs(params?: SearchLogsParams): Promise<SearchLogsResponse> {
     return this.loggingService.searchLogs(params);
+  }
+
+  /**
+   * List LLM request templates, optionally filtered by `search`, `workloadId`, `status`,
+   * `includeDeprecated` and `includeSystem`.
+   *
+   * Search is a parameter on the list endpoint, not a route of its own, so there is one method
+   * rather than a separate list/search pair. Requires the **private** API key, same as
+   * {@link searchLogs}.
+   *
+   * The `Unmatched`/`Ignored API Calls` system buckets are hidden unless `includeSystem: true`, so
+   * a client with no templates of its own gets an empty array rather than those two rows.
+   *
+   * @returns `{ templates, pagination }` — newest first. `pagination` always comes from the
+   *   endpoint's response headers. See `TemplateService#searchTemplates`/`docs/template-search.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code — including `504` when the `log_count`
+   *   aggregate exceeds the backend's statement timeout, which is retryable rather than a bug.
+   */
+  public async searchTemplates(params?: SearchTemplatesParams): Promise<SearchTemplatesResponse> {
+    return this.templateService.searchTemplates(params);
+  }
+
+  /**
+   * Get a single template by hashid, including `user_prompt_pattern`/`system_prompt_pattern` —
+   * the full regexes {@link searchTemplates} omits.
+   *
+   * Requires the **private** API key, same as {@link searchTemplates}. Deprecated and system
+   * templates are reachable here by id with no opt-in flag.
+   *
+   * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
+   * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`). Error on
+   *   network failure or a non-JSON body. A non-2xx response throws an error whose `status`
+   *   property holds the HTTP status code (`404` for an unknown id or one belonging to another
+   *   client; `504` on the `log_count` timeout).
+   */
+  public async getTemplate(id: string): Promise<LlmRequestTemplateDetail> {
+    return this.templateService.getTemplate(id);
   }
 
   /**
