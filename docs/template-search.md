@@ -184,6 +184,13 @@ npm run test:live
 ```
 
 Every request it makes is read-only, so it is safe against a shared development database. Give it a
-generous timeout budget if the server is behind Docker port forwarding — that can add 15-20s per
-round trip on top of the server's own response time, which is why `jest.live.config.cjs` sets a
-much longer `testTimeout` than the unit suite needs.
+generous timeout budget: a Rails server running in development mode adds a large flat overhead to
+**every** request, measured at 13-15s here even for `GET /up`, which does no auth and touches no
+database. That cost shows up inside the server's own `X-Runtime` header, so it is the server, not
+the network. The template query itself only adds ~2-3s on top. This is why `jest.live.config.cjs`
+sets a much longer `testTimeout` than the unit suite needs.
+
+Do not read that latency as an impending `504`. The two are unrelated: `504` comes from a
+*per-statement* 10-second bound on the `log_count` aggregate, and a slow response is not evidence
+you are approaching it. Set client timeouts from the measured round trip (60s+ against a dev
+server), not from the 10s figure.

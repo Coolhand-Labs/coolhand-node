@@ -6,9 +6,10 @@ const base = require('./jest.config.cjs');
 module.exports = {
   ...base,
   testMatch: ['**/*.live.ts'],
-  // Round trips to a containerised local server go through the host's port forwarding, which on
-  // Windows adds ~15-20s per request even when the server itself answers in ~400ms. The default
-  // 5s timeout would fail every one of these for environmental reasons.
+  // A Rails server in development mode adds a large flat overhead to every request: measured at
+  // 13-15s here even for GET /up, which does no auth and no database work, and visible inside the
+  // server's own X-Runtime header rather than in transport. The default 5s timeout would fail all
+  // of these for reasons that have nothing to do with the wrapper.
   testTimeout: 300000,
   // Coverage thresholds are calibrated for the full unit suite; this suite exercises one service.
   collectCoverage: false,
