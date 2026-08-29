@@ -165,7 +165,9 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
   const state = getState();
   if (state.isGloballyPatched) { return; }
 
-  state.silent = config.silent !== false;
+  // Kept local (not written to `state` yet) so a throw below leaves state fully
+  // untouched, not just the service fields — see the construct-then-commit comment below.
+  const silent = config.silent !== false;
   let resolvedBaseUrl = config.baseUrl;
 
   // TODO: remove after v1.x.x — backward-compat shim for deprecated `environment` option
@@ -188,14 +190,22 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
     );
   }
 
-  state.globalPatternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent: state.silent });
-  state.globalLoggingService = new LoggingService({
+  // Construct into locals first — only assign to state once both fallible constructors
+  // (LoggingService validates baseUrl and can throw) succeed, so a failed init never
+  // leaves globalPatternService set without a matching globalLoggingService, and never
+  // reaches the patching below.
+  const patternService = new PatternMatchingService({ customPatternsFile: config.patternsFile, silent });
+  const loggingService = new LoggingService({
     apiKey: config.apiKey,
-    silent: state.silent,
+    silent,
     debug: config.debug,
     dryRun: config.dryRun,
     baseUrl: resolvedBaseUrl
   });
+
+  state.silent = silent;
+  state.globalPatternService = patternService;
+  state.globalLoggingService = loggingService;
 
   const hasNodeModules = loadNodeModulesSync();
   if (hasNodeModules) {
