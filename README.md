@@ -2,7 +2,7 @@
 
 [![npm version](https://badge.fury.io/js/coolhand-node.svg)](https://badge.fury.io/js/coolhand-node)
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, Cloudflare AI Gateway, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
@@ -358,6 +358,7 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - GitHub Models (via OpenAI SDK pointed at `models.github.ai` or `models.inference.ai.azure.com`)
 - Vertex AI (native Gemini and OpenAI-compatible endpoints on `aiplatform.googleapis.com`)
 - OpenRouter (`openrouter.ai`, unified access to 200+ models)
+- OpenCode (`opencode.ai`, OpenCode Zen model gateway)
 - Cloudflare AI Gateway (`gateway.ai.cloudflare.com`, proxying any upstream provider)
 - LangChain
 - Direct `fetch()` calls
