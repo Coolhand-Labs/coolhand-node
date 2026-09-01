@@ -404,3 +404,82 @@ export interface SearchLogsResponse {
   logs: LlmRequestLogSummary[];
   pagination: Pagination;
 }
+// The `status` values GET /api/v2/llm_request_templates accepts as a filter — enumerated on that
+// query parameter in the API definition, and anything else non-empty is a 422. Deliberately NOT
+// reused for LlmRequestTemplateSummary#status below: the definition types the *response* field as
+// a plain nullable string, and narrowing it here would break callers the day the server adds a
+// fourth status.
+export type LlmRequestTemplateStatus = 'draft' | 'published' | 'failure';
+
+// Filters for searchTemplates, applied by GET /api/v2/llm_request_templates. All named filters
+// rather than raw Ransack `q[...]` predicates, like SearchLogsParams and unlike
+// SearchFeedbackParams. There is deliberately no `clientId`: the client is always derived from the
+// authenticating API key and cannot be supplied by the caller.
+export interface SearchTemplatesParams {
+  /** Case-insensitive *literal* substring match against the template name. `%` and `_` are escaped
+   *  server-side so they match themselves — don't escape them again here. */
+  search?: string;
+  /** Workload hashid. One that doesn't decode, or that belongs to another client, returns 422
+   *  rather than an empty list. */
+  workloadId?: string;
+  /** Filter by status. Any other non-empty value returns 422; omit for no filter. */
+  status?: LlmRequestTemplateStatus;
+  /** Include templates with a non-null `deprecated_at`. Defaults to false server-side. */
+  includeDeprecated?: boolean;
+  /** Include the `Unmatched`/`Ignored API Calls` system buckets every client is created with.
+   *  Defaults to false server-side, which is why a client with no templates of its own returns an
+   *  empty array rather than those two rows. */
+  includeSystem?: boolean;
+  /** Page number, 1-based. */
+  page?: number;
+  /** Page size (default 25, max 100 — enforced server-side; `per_page` is accepted on the wire as
+   *  an alias but this SDK only sends `per`, same as searchLogs). */
+  per?: number;
+}
+
+// A template as rendered by the list endpoint. Prompt patterns are NOT here — they come from
+// getTemplate only.
+export interface LlmRequestTemplateSummary {
+  /** Hashid, never the integer primary key. */
+  id: string;
+  /** Never null (NOT NULL column), but may be blank on a draft. */
+  name: string;
+  /** `draft`, `published` or `failure` — see LlmRequestTemplateStatus for why this isn't narrowed
+   *  to that union. */
+  status: string | null;
+  version: string | null;
+  /** Known values: `chat`, `user_prompt`, `user_prompt_with_system_prompt`, `embedding`, `other`.
+   *  Left as a plain string because the API definition doesn't enumerate it on the response. */
+  group: string | null;
+  /** Workload hashid; never null (NOT NULL column). */
+  workload_id: string;
+  workload_name: string;
+  /** True for the `Unmatched` / `Ignored API Calls` buckets, so callers don't have to match on
+   *  those names. */
+  system_template: boolean;
+  /** ISO-8601 UTC. Non-null means this template has been superseded. */
+  deprecated_at: string | null;
+  /** Directly-collected client logs only — the same records `searchLogs({ templateId })` returns,
+   *  so the two numbers agree. Excludes evals, bakeoff comparisons and synthetic logs, which is
+   *  why it can be lower than the count the `search_templates` MCP tool reports. */
+  log_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// A single template from getTemplate: every list field plus the full untruncated regexes the list
+// omits.
+export interface LlmRequestTemplateDetail extends LlmRequestTemplateSummary {
+  user_prompt_pattern: string | null;
+  system_prompt_pattern: string | null;
+}
+
+// searchTemplates' backing endpoint renders a bare array on the wire (same shape decision as
+// searchLogs, not searchFeedback's `{ feedback:, pagination: }` envelope) and always exposes
+// pagination via X-Page/X-Per-Page/X-Total-Count/X-Total-Pages response headers — it has no
+// `include_total` opt-out, because counting a client's templates is cheap. TemplateService reads
+// those headers into the same Pagination shape the other two search methods return.
+export interface SearchTemplatesResponse {
+  templates: LlmRequestTemplateSummary[];
+  pagination: Pagination;
+}
