@@ -1,6 +1,19 @@
 import * as https from 'https';
 import * as http from 'http';
+import { Pagination } from '../types.js';
 import { getCollectorString, CollectionMethod } from '../utils/collector.js';
+
+// Treats a missing or non-integer header value (empty string, decimals, hex, negative, garbage
+// text) as absent, falling back rather than propagating a nonsensical value into a response type
+// callers assume is always a valid non-negative integer. Deliberately stricter than `Number(...)`
+// — e.g. `Number('')` is `0`, which would otherwise silently look like a legitimate zero count.
+function parseHeaderInt(value: string | null, fallback: number): number {
+  if (value === null) {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : fallback;
+}
 
 export interface BaseServiceConfig {
   apiKey: string;
@@ -328,6 +341,109 @@ export abstract class BaseService {
       throw new Error(errorMessage);
     }
     return url;
+  }
+
+  /**
+   * Build a {@link Pagination} from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages`
+   * response headers the paginated v2 list endpoints set, for endpoints that render a bare array
+   * on the wire and carry pagination in headers rather than a body envelope — currently
+   * `LoggingService#searchLogs` and `TemplateService#searchTemplates`.
+   *
+   * `/llm_request_templates` always sends these headers. `/llm_request_logs` sends `X-Total-Count`/
+   * `X-Total-Pages` only when the caller opts in with `include_total`, so the header-less branches
+   * below derive a defensible result from `items`/`params` instead of falsely reporting zero.
+   *
+   * @param items The page of results actually returned, used as evidence for the fallbacks below.
+   * @param params The caller's requested `page`/`per`, used only as fallback values.
+   */
+  protected paginationFromHeaders(
+    headers: Headers,
+    items: readonly unknown[],
+    params: { page?: number; per?: number }
+  ): Pagination {
+    // DEFAULT_PER_PAGE/MAX_PER_PAGE on the v2 list controllers (25/100 on both
+    // /llm_request_logs and /llm_request_templates) — mirrored here only for the fallback below;
+    // once X-Total-Count is present, the server's real values are used directly instead.
+    const DEFAULT_PER_PAGE = 25;
+    const MAX_PER_PAGE = 100;
+
+    // Math.trunc (not Math.floor) on `per` to match how the server coerces it — `per_page` does
+    // `(params[:per] || params[:per_page]).to_i`, and Ruby's String#to_i truncates toward zero
+    // (e.g. "-5.5" -> -5, not -6). `page` gets no equivalent server-side coercion — will_paginate
+    // raises on a non-positive/non-integer page rather than clamping it — so `requestedPage` below
+    // is truncated/clamped purely to keep this SDK's own fallback `Pagination` object sane, not to
+    // mirror server behavior. `params.page`/`params.per` are typed `number`, so a caller-supplied
+    // `NaN` is type-legal; `Math.max(1, NaN)` is `NaN`, not `1`, so that's guarded explicitly
+    // rather than relying on the clamp.
+    const truncatedPage = Math.trunc(params.page ?? 1);
+    const requestedPage = Number.isFinite(truncatedPage) ? Math.max(1, truncatedPage) : 1;
+    const truncatedPer = Math.trunc(params.per ?? 0);
+    const requestedPer = truncatedPer > 0 ? Math.min(truncatedPer, MAX_PER_PAGE) : DEFAULT_PER_PAGE;
+    const hasTotalCount = headers.get('x-total-count') !== null;
+
+    const currentPage = Math.max(1, parseHeaderInt(headers.get('x-page'), requestedPage));
+    const perPage = parseHeaderInt(headers.get('x-per-page'), requestedPer);
+
+    let totalCount: number;
+    let totalPages: number;
+    let hasNextPage: boolean;
+    let hasPrevPage: boolean;
+
+    if (hasTotalCount) {
+      totalCount = parseHeaderInt(headers.get('x-total-count'), items.length);
+      // Fall back to a value derived from totalCount (not e.g. currentPage) if X-Total-Pages is
+      // itself missing/malformed — a fallback unrelated to the real count could under-report the
+      // page count and truncate a caller's pagination loop, exactly what totalCount's own
+      // fallback (items.length above) exists to avoid on the sibling header.
+      totalPages = parseHeaderInt(
+        headers.get('x-total-pages'),
+        perPage > 0 ? Math.ceil(totalCount / perPage) : (totalCount > 0 ? 1 : 0)
+      );
+      hasNextPage = currentPage < totalPages;
+      // These backends paginate via will_paginate (not Kaminari — ActiveRecord::Relation#page is
+      // will_paginate's; Kaminari is only used elsewhere, on plain arrays), whose `previous_page`
+      // has no out-of-range check: `current_page > 1 ? ... : nil`. Match that exactly (no
+      // `&& currentPage <= totalPages` guard) for genuine parity with searchFeedback's
+      // `previous_page.present?`, rather than inventing stricter semantics no backend here
+      // actually implements.
+      hasPrevPage = currentPage > 1;
+    } else if (items.length > 0) {
+      // Rather than let a missing/malformed header silently report total_count: 0 alongside a
+      // non-empty page, total_count/total_pages fall back to a lower-bound estimate: every prior
+      // page assumed full, plus this page's actual result count. This bound is sound specifically
+      // *because* `items` is non-empty — offset-based pagination (`OFFSET (page-1)*per LIMIT per`)
+      // can only return rows if that many preceding rows exist, so a real result at `currentPage`
+      // proves at least `(currentPage - 1) * perPage` prior rows exist regardless of how large
+      // `currentPage` is. It's still only ever a lower bound though — NOT reliable enough to
+      // derive has_next_page/has_prev_page from (a full page doesn't prove there's nothing beyond
+      // it), so has_next_page is derived independently: a full page implies there may be more.
+      totalCount = perPage > 0 ? (currentPage - 1) * perPage + items.length : items.length;
+      totalPages = perPage > 0 ? Math.ceil(totalCount / perPage) : currentPage;
+      hasNextPage = perPage > 0 && items.length >= perPage;
+      hasPrevPage = currentPage > 1;
+    } else {
+      // An EMPTY page proves the opposite of a non-empty one: it means `currentPage` is at or past
+      // the end (or the search matched nothing at all), not that `(currentPage - 1) * perPage`
+      // prior rows exist — extrapolating from `currentPage` here would fabricate a total governed
+      // entirely by whatever `page` the caller happened to pass (e.g. `page: 1000000` -> a
+      // fictitious ~25M-row total). With no evidence of how many real rows exist, report what we
+      // can actually confirm: none, on this page.
+      totalCount = 0;
+      totalPages = 0;
+      hasNextPage = false;
+      // Still page-relative, not result-relative: a caller can always step back toward page 1
+      // regardless of whether this specific page happened to come back empty.
+      hasPrevPage = currentPage > 1;
+    }
+
+    return {
+      current_page: currentPage,
+      per_page: perPage,
+      total_count: totalCount,
+      total_pages: totalPages,
+      has_next_page: hasNextPage,
+      has_prev_page: hasPrevPage
+    };
   }
 
   protected log(...args: any[]): void {

@@ -210,6 +210,66 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('TemplateService integration', () => {
+    it('should expose searchTemplates and getTemplate functions', () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+
+      expect(typeof monitor.searchTemplates).toBe('function');
+      expect(typeof monitor.getTemplate).toBe('function');
+    });
+  });
+
+  describe('searchTemplates / getTemplate', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates searchTemplates to TemplateService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return {
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify([])),
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '1', 'X-Page': '1', 'X-Per-Page': '25' })
+        };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.searchTemplates({ search: 'summar', includeSystem: true });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_request_templates');
+      expect(url.searchParams.get('search')).toBe('summar');
+      expect(url.searchParams.get('include_system')).toBe('true');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result.templates).toEqual([]);
+      expect(result.pagination.total_count).toBe(0);
+    });
+
+    it('delegates getTemplate to TemplateService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 'aaa' })), headers: new Headers() };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.getTemplate('aaa');
+
+      expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/llm_request_templates/aaa');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ id: 'aaa' });
+    });
+  });
+
   describe('logRequest', () => {
     const savedFetch = (global as any).fetch;
 
