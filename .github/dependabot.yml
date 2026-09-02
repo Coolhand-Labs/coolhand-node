@@ -5,11 +5,6 @@ updates:
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "npm"
-    directory: "/examples/fastify-openai-unbundled"
-    schedule:
-      interval: "weekly"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
