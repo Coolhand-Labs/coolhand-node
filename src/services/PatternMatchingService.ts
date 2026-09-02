@@ -149,6 +149,14 @@ export class PatternMatchingService {
         }
       },
       {
+        name: 'OpenCode',
+        domains: ['opencode.ai', 'api.opencode.ai'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]',
+          'x-api-key': '[REDACTED]'
+        }
+      },
+      {
         name: 'Cloudflare AI Gateway',
         domains: ['gateway.ai.cloudflare.com'],
         headers: {

@@ -100,8 +100,8 @@ describe('PatternMatchingService', () => {
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('API patterns file not found')
       );
-      // Should fall back to default Edge runtime patterns (7 patterns) — see #167
-      expect(service.getPatternsCountSync()).toBe(7);
+      // Should fall back to default Edge runtime patterns (8 patterns) — see #167
+      expect(service.getPatternsCountSync()).toBe(8);
 
       // The service must remain usable/monitoring must still work after falling back.
       const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
@@ -118,8 +118,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.any(String)
       );
-      // Should fallback to default Edge runtime patterns (7 patterns)
-      expect(service.getPatternsCountSync()).toBe(7);
+      // Should fallback to default Edge runtime patterns (8 patterns)
+      expect(service.getPatternsCountSync()).toBe(8);
     });
 
     it('should handle file system errors', () => {
@@ -133,8 +133,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         'File system error'
       );
-      // Should fallback to default Edge runtime patterns (7 patterns)
-      expect(service.getPatternsCountSync()).toBe(7);
+      // Should fallback to default Edge runtime patterns (8 patterns)
+      expect(service.getPatternsCountSync()).toBe(8);
     });
   });
 
@@ -158,7 +158,7 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.stringContaining('not shaped correctly')
       );
-      expect(service.getPatternsCountSync()).toBe(7);
+      expect(service.getPatternsCountSync()).toBe(8);
 
       // The service must remain usable after falling back — no throw on the next request.
       const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
@@ -171,7 +171,7 @@ describe('PatternMatchingService', () => {
 
       service = new PatternMatchingService('./custom-patterns.json');
 
-      expect(service.getPatternsCountSync()).toBe(7);
+      expect(service.getPatternsCountSync()).toBe(8);
       expect(() => service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).not.toThrow();
       expect(() => service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).not.toThrow();
     });
@@ -607,7 +607,7 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(false);
       const fallbackService = new PatternMatchingService();
 
-      expect(fallbackService.getPatternsCountSync()).toBe(7);
+      expect(fallbackService.getPatternsCountSync()).toBe(8);
     });
   });
 
@@ -1084,9 +1084,9 @@ describe('PatternMatchingService', () => {
       service = new PatternMatchingService();
 
       // ...and since one entry is missing `domains`, the whole file is treated as
-      // malformed and the service falls back to the 7 built-in default patterns,
+      // malformed and the service falls back to the 8 built-in default patterns,
       // rather than silently loading the entries that happen to be well-formed.
-      expect(service.getPatternsCountSync()).toBe(7);
+      expect(service.getPatternsCountSync()).toBe(8);
 
       // Nor should the very next request throw — this is the actual crash #116 describes.
       expect(() => service.matchesAPIPatternSync('https://valid.com/test')).not.toThrow();
@@ -1504,6 +1504,72 @@ describe('PatternMatchingService', () => {
       const headers = {
         authorization: 'Bearer sk-or-secret',
         'x-api-key': 'sk-or-key',
+        'content-type': 'application/json'
+      };
+      const sanitized = service.sanitizeHeaders(headers, pattern);
+      expect(sanitized['authorization']).toBe('[REDACTED]');
+      expect(sanitized['x-api-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
+  });
+
+  describe('OpenCode Pattern Matching', () => {
+    const mockPatternsWithOpenCode = {
+      patterns: [
+        ...mockPatterns.patterns,
+        {
+          name: 'OpenCode',
+          domains: ['opencode.ai', 'api.opencode.ai'],
+          paths: [],
+          headers: {
+            authorization: '[REDACTED]',
+            'x-api-key': '[REDACTED]'
+          }
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithOpenCode));
+      service = new PatternMatchingService();
+    });
+
+    it('should match OpenCode Zen chat completions URL by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://opencode.ai/zen/v1/chat/completions'
+      );
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenCode' }),
+        matchType: 'domain',
+        matchValue: 'opencode.ai'
+      });
+    });
+
+    it('should match misconfigured api.opencode.ai host by domain', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://api.opencode.ai/v1/chat/completions'
+      );
+      // api.opencode.ai matches as a subdomain of the first listed domain, opencode.ai
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'OpenCode' }),
+        matchType: 'domain',
+        matchValue: 'opencode.ai'
+      });
+    });
+
+    it('should redact authorization and x-api-key headers for OpenCode', () => {
+      const pattern: CoolhandAPIPattern = {
+        name: 'OpenCode',
+        domains: ['opencode.ai', 'api.opencode.ai'],
+        headers: {
+          authorization: '[REDACTED]',
+          'x-api-key': '[REDACTED]'
+        }
+      };
+      const headers = {
+        authorization: 'Bearer sk-oc-secret',
+        'x-api-key': 'sk-oc-key',
         'content-type': 'application/json'
       };
       const sanitized = service.sanitizeHeaders(headers, pattern);
