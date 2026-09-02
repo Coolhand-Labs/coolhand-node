@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.12.0] - 2026-09-02
 
 ### ✨ New Features
 - **`Coolhand#searchTemplates(params)` / `Coolhand#getTemplate(id)` + new `TemplateService`** — read back the LLM request templates your logs are matched against, via the new `GET /api/v2/llm_request_templates` and `GET /api/v2/llm_request_templates/{id}` endpoints. Requires the **private** API key (the public key is write-only on this API and is rejected exactly like an invalid key). `searchTemplates` filters on `search`/`workloadId`/`status`/`includeDeprecated`/`includeSystem` plus `page`/`per`, returns `{ templates, pagination }` newest-first, and sources `pagination` from the endpoint's `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages` response headers — unlike `searchLogs` there is no `includeTotal` opt-out, because those headers are always sent. `getTemplate` adds `user_prompt_pattern`/`system_prompt_pattern`, which the list omits, and reaches deprecated and system templates by id with no opt-in flag. Search is a *parameter* on the list endpoint rather than a route of its own, so this is one method, not a list/search pair. New exported types: `SearchTemplatesParams`, `SearchTemplatesResponse`, `LlmRequestTemplateSummary`, `LlmRequestTemplateDetail`, `LlmRequestTemplateStatus`, `TemplateService`, `TemplateServiceConfig`. See `docs/template-search.md`. ([#185](https://github.com/Coolhand-Labs/coolhand-node/issues/185))
 
 ### ⚠️ Upgrade Notes
-- **The template endpoints depend on a backend change that may not yet be live in production.** They ship in [Coolhand-Labs/coolhand#1376](https://github.com/Coolhand-Labs/coolhand/pull/1376); against a backend that hasn't deployed it, `searchTemplates`/`getTemplate` will 404. Confirm your target Coolhand backend before relying on them.
+- **The template endpoints need a backend carrying [Coolhand-Labs/coolhand#1376](https://github.com/Coolhand-Labs/coolhand/pull/1376)**, deployed to production on 2026-09-01. A self-hosted backend that predates it answers `404` to `searchTemplates`/`getTemplate`.
 - **`searchTemplates` is not a port of the `search_templates` MCP tool and does not match its numbers.** `log_count` here counts only directly-collected client logs — the same records `searchLogs({ templateId })` returns — so it excludes evals, bakeoff comparisons and synthetic logs, and is often lower than the MCP tool's count. Templates on archived workloads are also returned rather than hidden, so the list agrees with `getTemplate`.
 - **A `504` from either template method is expected and retryable, not a server fault.** `log_count` aggregates over `llm_request_logs` and is bounded by a 10-second statement timeout, so the `Unmatched` bucket in particular can exceed it. It arrives as an `HttpError` with `status: 504`; narrow with `workloadId`/`search`/a smaller `per` and retry.
 
