@@ -10,6 +10,9 @@ const DEFAULT_REDACTED_HEADERS = [
   'cookie',
   'set-cookie',
   'proxy-authorization',
+  'openai-api-key',
+  'x-goog-api-key',
+  'cf-aig-authorization',
 ];
 
 // Runtime detection utility

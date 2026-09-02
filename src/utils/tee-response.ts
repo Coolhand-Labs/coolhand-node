@@ -87,6 +87,9 @@ export function createResponseTee(
 
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 
+    // Bounds the tee's total lifetime buffering regardless of read state — a host that never
+    // reads (or reads too slowly to keep up) can't grow it past `maxBytes`, whether that's during
+    // an async gap before the first listener attaches or an indefinitely-slow drain afterward.
     hostBytesWritten += buf.length;
     if (hostBytesWritten > maxBytes) {
       onCapExceeded?.();
@@ -99,10 +102,15 @@ export function createResponseTee(
     // `res`, not on the tee), so pausing it when nobody is draining the tee would silently stall
     // the interceptor's own logging too — a callback that never touches the response body (or
     // isn't provided at all) must not be able to deadlock the request.
-    if (!hostStream.write(buf) && hostIsReading(hostStream)) {
+    if (hostStream.write(buf)) { return; }
+
+    if (hostIsReading(hostStream)) {
       res.pause();
       hostStream.once('drain', () => res.resume());
     }
+    // else: nobody has attached a 'data'/'readable' listener yet (e.g. still inside an `await`
+    // before the host reads) — intentionally not pausing `res` here, for the reason above. The
+    // byte cap above already bounds worst-case growth during this window independently of `res`.
   });
 
   res.on('end', () => {
@@ -135,6 +143,11 @@ export function createResponseTee(
   // on every response, not just aborted ones — that's fine: `IncomingMessage.prototype._destroy`
   // only actually tears down the socket when the response didn't finish normally (`aborted`),
   // so calling `.destroy()` here on an already-fully-consumed `res` is a safe no-op.
+  // Excludes the cap-driven destroy above: that one fires on a still-in-flight `res` (more data
+  // yet to arrive), so propagating it here would abort `res` mid-response — cutting off the
+  // interceptor's own capture (`res.on('data'/'end', ...)`, attached separately by the caller)
+  // before it ever sees 'end', silently dropping the log entry. Only a host-initiated destroy
+  // (or one following the response's own normal/aborted completion) should reach `res`.
   hostStream.on('close', () => {
     // A cap-triggered destroy only abandons the host's copy — `res` and the interceptor's own
     // (independently capped) capture listeners on it must keep running to completion.

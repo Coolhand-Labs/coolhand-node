@@ -55,6 +55,7 @@ export class Coolhand {
     this.clientFileService = new ClientFileService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
+    this.requestMonitoringService.setSelfApiEndpoint(this.loggingService.getApiEndpoint());
 
     // Set up the callback for when requests are completed
     this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {

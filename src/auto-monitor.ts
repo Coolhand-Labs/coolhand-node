@@ -11,6 +11,7 @@
  * - COOLHAND_DEBUG (optional: 'true' | 'false', default: 'false') — enables verbose logging only
  * - COOLHAND_DRY_RUN (optional: 'true' | 'false', default: 'false') — suppresses all API submissions
  * - COOLHAND_BASE_URL (optional: self-hosted endpoint, e.g. 'https://feedback.example.com')
+ * - COOLHAND_EXCLUDE_API_PATTERNS (optional: comma-separated URL substrings to never intercept)
  *
  * Usage:
  * Just import this module at the very top of your main file:
@@ -33,6 +34,16 @@ if (apiKey) {
   const debug = process.env.COOLHAND_DEBUG === 'true'; // Default to false unless explicitly true
   const dryRun = process.env.COOLHAND_DRY_RUN === 'true'; // Default to false unless explicitly true
   const baseUrl = process.env.COOLHAND_BASE_URL;
+  const excludeApiPatternsEnv = process.env.COOLHAND_EXCLUDE_API_PATTERNS;
+  // A degenerate value (e.g. ",", " ", " , , ") parses to an empty array after filtering, which
+  // is NOT the same as "unset" downstream: `excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS` in
+  // global-monitor.ts only falls back to the defaults on `undefined`, not on `[]` — an explicit `[]`
+  // is how the direct API opts out of the defaults entirely (see coolhand.ts). A malformed env var
+  // must not accidentally trigger that same opt-out, so fall back to `undefined` ourselves here.
+  const parsedExcludeApiPatterns = excludeApiPatternsEnv
+    ? excludeApiPatternsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const excludeApiPatterns = parsedExcludeApiPatterns.length > 0 ? parsedExcludeApiPatterns : undefined;
 
   if (!isGlobalMonitoringActive()) {
     if (!silent) {
@@ -50,7 +61,8 @@ if (apiKey) {
         patternsFile,
         debug,
         dryRun,
-        baseUrl
+        baseUrl,
+        excludeApiPatterns
       });
 
       if (!silent) {

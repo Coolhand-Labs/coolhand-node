@@ -1,5 +1,5 @@
 import * as zlib from 'zlib';
-import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
+import { RequestMonitoringService, _resetActiveOwner, _getActiveOwner } from '../src/services/RequestMonitoringService';
 import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
@@ -103,8 +103,8 @@ describe('RequestMonitoringService', () => {
     onRequestCompleteMock = jest.fn();
     service.onRequestComplete = onRequestCompleteMock;
 
-    // Reset the static isPatched flag
-    (RequestMonitoringService as any).isPatched = false;
+    // Reset the process-wide active owner
+    _resetActiveOwner();
   });
 
   afterEach(() => {
@@ -123,20 +123,57 @@ describe('RequestMonitoringService', () => {
 
     it('should setup monitoring only once', () => {
       const setupSpy = jest.spyOn(service as any, 'patchHTTPS');
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       service.setupMonitoring();
       service.setupMonitoring();
 
       expect(setupSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
     });
 
     it('should log monitoring setup in non-silent mode', () => {
       const nonSilentService = new RequestMonitoringService(mockPatternMatchingService, false);
-      (RequestMonitoringService as any).isPatched = false;
+      _resetActiveOwner();
 
       nonSilentService.setupMonitoring();
 
       expect(console.log).toHaveBeenCalledWith('📡 Monitoring all outbound requests...');
+    });
+
+    describe('multi-instance ownership warning', () => {
+      it('warns and does not patch again when a second instance calls setupMonitoring() while another instance owns interception', () => {
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+        const secondService = new RequestMonitoringService(mockPatternMatchingService, true);
+        const patchHTTPSSpy = jest.spyOn(secondService as any, 'patchHTTPS');
+
+        service.setupMonitoring(); // becomes the owner
+        secondService.setupMonitoring(); // should not patch again, should warn
+
+        expect(patchHTTPSSpy).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Another Coolhand instance already owns'));
+        expect(_getActiveOwner()).toBe(service);
+      });
+
+      it('does not warn when the owning instance calls setupMonitoring() again', () => {
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+        service.setupMonitoring();
+        service.setupMonitoring();
+
+        expect(warnSpy).not.toHaveBeenCalled();
+      });
+
+      it('stores ownership on globalThis rather than a class-static field, so it is visible across duplicate module instances', () => {
+        // Simulates the dual CJS/ESM "two copies of this module in one process" hazard: a second
+        // module instance would have its own RequestMonitoringService class (own class-static
+        // fields), but still shares the same globalThis. Reading/writing the key directly (as a
+        // second module instance's compiled code would) must observe what setupMonitoring() wrote.
+        service.setupMonitoring();
+
+        const key = '__coolhand_node_request_monitoring_active_owner_v1__';
+        expect((globalThis as any)[key]).toBe(service);
+      });
     });
   });
 
@@ -397,6 +434,44 @@ describe('RequestMonitoringService', () => {
       expect(onRequestCompleteMock).toHaveBeenCalled();
     });
 
+    it('intercepts and logs a fetch(new Request(...)) call (regression: Request.toString() is "[object Request]", not the URL)', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockResolvedValue('{"result": "success"}')
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      const url = 'https://api.test.com/v1/test';
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch(new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer token' },
+        body: '{"prompt":"a"}'
+      }));
+      await flush();
+
+      // Before the fix, matchesAPIPatternFromURL was called with "[object Request]" — no pattern
+      // could ever match, so the request silently fell through unintercepted and unlogged.
+      expect(mockPatternMatchingService.matchesAPIPatternFromURL).toHaveBeenCalledWith(url);
+      expect(onRequestCompleteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          url,
+          headers: expect.objectContaining({ authorization: 'Bearer token' }),
+          request_body: { prompt: 'a' }
+        }),
+        mockMatchedPattern
+      );
+    });
+
     // Regression test for issue #164: the "Starting FETCH call" log used the raw `url`
     // param instead of `callData.url`, bypassing sanitizeURL() the same way the http/https
     // path did.
@@ -559,6 +634,44 @@ describe('RequestMonitoringService', () => {
       expect(typeof callData.response_body).toBe('string');
       expect((callData.response_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
     }, 20000);
+
+    it('fires originalFetch before awaiting a slow Request body', async () => {
+      // Regression test for interceptFetch's request_body extraction: it must run concurrently
+      // with the outbound request (via Promise.all), not sequentially await the body first —
+      // see global-monitor.ts's identical test for the sibling auto-monitor code path.
+      const events: string[] = [];
+
+      const originalFetch = jest.fn().mockImplementation(async () => {
+        events.push('fetch-called');
+        return {
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          clone: () => ({ text: () => Promise.resolve('{}') })
+        };
+      });
+      globalThis.fetch = originalFetch;
+
+      const slowReq = {
+        url: 'https://api.test.com/v1/test',
+        method: 'POST',
+        headers: new Headers(),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockImplementation(async () => {
+            await Promise.resolve(); // one microtask — yields after getFetchRequestBody suspends
+            events.push('body-resolved');
+            return '{"prompt":"slow"}';
+          })
+        })
+      };
+
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch(slowReq as any);
+
+      expect(events).toEqual(['fetch-called', 'body-resolved']);
+    });
   });
 
   describe('Request Interception', () => {
@@ -573,6 +686,10 @@ describe('RequestMonitoringService', () => {
       mockRes = new EventEmitter();
       mockRes.statusCode = 200;
       mockRes.headers = { 'content-type': 'application/json' };
+      // A real http.IncomingMessage always has .destroy() (inherited from stream.Readable) —
+      // the tee's 'close' handler relies on it to tear down `res` once the tee closes.
+      mockRes.destroyed = false;
+      mockRes.destroy = jest.fn();
     });
 
     it('should create CallData for intercepted requests', () => {
@@ -639,8 +756,8 @@ describe('RequestMonitoringService', () => {
     });
 
     it('should handle response collection', (done) => {
-      const originalRequest = jest.fn().mockImplementation((options, callback) => {
-        setTimeout(() => callback(mockRes), 0);
+      const originalRequest = jest.fn().mockImplementation(() => {
+        setTimeout(() => mockReq.emit('response', mockRes), 0);
         return mockReq;
       });
 
@@ -684,10 +801,15 @@ describe('RequestMonitoringService', () => {
       realRes.statusCode = 200;
       realRes.headers = { 'content-type': 'application/json' };
 
-      const originalRequest = jest.fn().mockImplementation((options, callback) => {
-        callback(realRes);
-        realRes.push('{"ok":true}');
-        realRes.push(null);
+      const originalRequest = jest.fn().mockImplementation(() => {
+        // Deferred (not synchronous): patchResponseEmit only wraps `req.emit` after
+        // originalRequest(options) returns, matching real Node — a response can never arrive
+        // synchronously inside .request() itself.
+        setImmediate(() => {
+          mockReq.emit('response', realRes);
+          realRes.push('{"ok":true}');
+          realRes.push(null);
+        });
         return mockReq;
       });
 
@@ -727,6 +849,83 @@ describe('RequestMonitoringService', () => {
       );
     });
 
+    it('protects a host using req.on("response", ...) with no callback passed to interceptRequest (regression for tee/req.on gap)', (done) => {
+      const originalRequest = jest.fn().mockImplementation(() => {
+        setImmediate(() => {
+          mockReq.emit('response', mockRes);
+          mockRes.emit('data', '{"ok":true}');
+          mockRes.emit('end');
+        });
+        return mockReq;
+      });
+
+      const options = { hostname: 'api.test.com', path: '/test' };
+
+      // No callback passed (undefined) — the host instead attaches via req.on('response', ...)
+      // on the returned request, exactly like the documented Node calling convention this fix covers.
+      const req = (service as any).interceptRequest(
+        originalRequest,
+        options,
+        undefined,
+        'https',
+        mockMatchedPattern
+      );
+
+      let hostReceived = '';
+      let hostStatusCode: number | undefined;
+      req.on('response', (res: any) => {
+        hostStatusCode = res.statusCode;
+        res.on('data', (chunk: any) => { hostReceived += chunk.toString(); });
+      });
+
+      setTimeout(() => {
+        try {
+          expect(hostStatusCode).toBe(200);
+          expect(hostReceived).toBe('{"ok":true}');
+          // The interceptor's own capture must still have fired independently of the host listener.
+          expect(onRequestCompleteMock).toHaveBeenCalled();
+          done();
+        } catch (e) {
+          done(e);
+        }
+      }, 20);
+    });
+
+    it('delivers the same substituted response object to multiple req.on("response", ...) listeners', (done) => {
+      const originalRequest = jest.fn().mockImplementation(() => {
+        setImmediate(() => {
+          mockReq.emit('response', mockRes);
+          mockRes.emit('end');
+        });
+        return mockReq;
+      });
+
+      const options = { hostname: 'api.test.com', path: '/test' };
+
+      const req = (service as any).interceptRequest(
+        originalRequest,
+        options,
+        undefined,
+        'https',
+        mockMatchedPattern
+      );
+
+      let first: any;
+      let second: any;
+      req.on('response', (res: any) => { first = res; });
+      req.on('response', (res: any) => { second = res; });
+
+      setTimeout(() => {
+        try {
+          expect(first).toBeDefined();
+          expect(first).toBe(second);
+          done();
+        } catch (e) {
+          done(e);
+        }
+      }, 20);
+    });
+
     it('should handle request errors', () => {
       const originalRequest = jest.fn().mockReturnValue(mockReq);
 
@@ -760,13 +959,15 @@ describe('RequestMonitoringService', () => {
 
       // Stand in for the real https.request: this becomes patchHTTPS's `originalRequest`
       // closure variable, i.e. the "real" underlying request the wrapper must forward to correctly.
-      nodeHttps.request = jest.fn((options: any, callback: any) => {
+      // No callback arg is forwarded to this mock anymore (see interceptRequest's patchResponseEmit
+      // restructuring) — the response is delivered via `fakeReq.emit('response', ...)` instead.
+      nodeHttps.request = jest.fn((options: any) => {
         // The real options (method/headers) must reach the underlying request untouched —
         // previously they were dropped and the request silently went out as a bare GET.
         expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -933,10 +1134,12 @@ describe('RequestMonitoringService', () => {
       const mockRes = new EventEmitter() as any;
       mockRes.statusCode = 200;
       mockRes.headers = headers;
+      mockRes.destroyed = false;
+      mockRes.destroy = jest.fn();
 
-      const originalRequest = jest.fn().mockImplementation((_opts: any, callback: any) => {
+      const originalRequest = jest.fn().mockImplementation(() => {
         setTimeout(() => {
-          callback(mockRes);
+          mockReq.emit('response', mockRes);
           for (const chunk of chunks) { mockRes.emit('data', chunk); }
           mockRes.emit('end');
         }, 0);
@@ -1118,12 +1321,12 @@ describe('RequestMonitoringService', () => {
       mockRes.statusCode = 200;
       mockRes.headers = { 'content-type': 'application/json' };
 
-      const originalRequest = jest.fn().mockImplementation((_opts: any, callback: any) => {
+      const originalRequest = jest.fn().mockImplementation(() => {
         const mockReq = new EventEmitter() as any;
         mockReq.write = jest.fn().mockReturnValue(true);
         mockReq.end = jest.fn();
         setTimeout(() => {
-          callback(mockRes);
+          mockReq.emit('response', mockRes);
           mockRes.emit('end');
         }, 0);
         return mockReq;
@@ -1185,13 +1388,15 @@ describe('RequestMonitoringService', () => {
       mockReq.write = jest.fn().mockReturnValue(true);
       mockReq.end = jest.fn();
 
-      const originalRequest = jest.fn().mockImplementation((options, callback) => {
+      const originalRequest = jest.fn().mockImplementation(() => {
         const res = new EventEmitter() as any;
         res.headers = {};
+        res.destroyed = false;
+        res.destroy = jest.fn();
         // No statusCode set
 
         setTimeout(() => {
-          callback(res);
+          mockReq.emit('response', res);
           res.emit('data', '{}');
           res.emit('end');
         }, 0);
