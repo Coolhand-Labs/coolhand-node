@@ -78,6 +78,26 @@ describe('patchResponseEmit', () => {
     expect(onPatchFailure).toHaveBeenCalledTimes(1);
   });
 
+  it('returns true from the patched emit even when req has no real "response" listener', () => {
+    // Regression test: Node's http client internals do
+    // `if (req.aborted || !req.emit('response', res)) res._dump();` — a `false` return means
+    // "nobody consumed this response," so Node discards the body via res._dump(), racing with
+    // (and beating) the 'data' listener internalCapture attaches directly on the response object.
+    // A caller that relies purely on internalCapture's own listeners (no callback passed to
+    // .request()/.get(), no separate req.on('response', ...)) must still see `true` here, or its
+    // response body is silently dropped to nothing.
+    const req = new EventEmitter() as any;
+    const rawRes = { tag: 'raw' };
+
+    patchResponseEmit(req, (res: any) => res);
+
+    // No 'response' listener registered at all — EventEmitter.emit() would natively return
+    // `false` in this scenario, which is exactly the case that must be overridden.
+    const result = req.emit('response', rawRes);
+
+    expect(result).toBe(true);
+  });
+
   it('calls onPatchFailure when req.emit itself cannot be reassigned', () => {
     const req: any = {
       listenerCount: () => 0,
