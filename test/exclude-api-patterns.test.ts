@@ -1,7 +1,8 @@
 import { DEFAULT_EXCLUDE_API_PATTERNS } from '../src/default-exclude-api-patterns';
-import { RequestMonitoringService } from '../src/services/RequestMonitoringService';
+import { RequestMonitoringService, _resetActiveOwner } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
+import { matchesExcludePattern } from '../src/utils/exclude-patterns';
 
 jest.mock('https');
 jest.mock('http');
@@ -19,6 +20,35 @@ describe('DEFAULT_EXCLUDE_API_PATTERNS', () => {
   it('is a non-empty array', () => {
     expect(Array.isArray(DEFAULT_EXCLUDE_API_PATTERNS)).toBe(true);
     expect(DEFAULT_EXCLUDE_API_PATTERNS.length).toBeGreaterThan(0);
+  });
+});
+
+describe('matchesExcludePattern (shared helper)', () => {
+  it('returns false for an empty pattern list', () => {
+    expect(matchesExcludePattern('https://example.com/foo', [])).toBe(false);
+  });
+
+  it('returns true when the URL contains a pattern', () => {
+    expect(matchesExcludePattern('https://example.com/foo/bar', ['/foo/'])).toBe(true);
+  });
+
+  it('returns false when no pattern matches', () => {
+    expect(matchesExcludePattern('https://example.com/foo/bar', ['/baz/'])).toBe(false);
+  });
+
+  it('checks all patterns in the list', () => {
+    expect(matchesExcludePattern('https://example.com/baz/', ['/foo/', '/baz/'])).toBe(true);
+  });
+
+  it('is case sensitive', () => {
+    expect(matchesExcludePattern('https://example.com/FOO/', ['/foo/'])).toBe(false);
+  });
+
+  it('ignores an empty-string pattern instead of matching every URL', () => {
+    // url.includes('') is always true — an empty pattern (e.g. from a stray trailing comma in a
+    // config source) must not silently exclude all traffic from monitoring.
+    expect(matchesExcludePattern('https://example.com/foo/bar', [''])).toBe(false);
+    expect(matchesExcludePattern('https://example.com/foo/bar', ['', '/foo/'])).toBe(true);
   });
 });
 
@@ -57,7 +87,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
 
     service = new RequestMonitoringService(mockPatternMatchingService, true);
     service.onRequestComplete = jest.fn();
-    (RequestMonitoringService as any).isPatched = false;
+    _resetActiveOwner();
   });
 
   afterEach(() => {
@@ -87,12 +117,17 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
   });
 
   describe('isExcluded logic', () => {
+    // Exercises the shared matchesExcludePattern() helper (see 'matchesExcludePattern (shared
+    // helper)' above) against service.excludeApiPatterns directly — isSelfOrExcludedURL, the
+    // only production caller of this behavior, inlines the same matchesExcludePattern() call
+    // rather than delegating to a private isExcluded() method, so there's nothing on the
+    // instance left to reach into via reflection.
     const batchJobUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/batchPredictionJobs/123';
     const inferenceUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-pro:generateContent';
     const tuningJobUrl = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/tuningJobs/456';
 
     function isExcluded(svc: RequestMonitoringService, url: string): boolean {
-      return (svc as any).isExcluded({ href: url }, 'https');
+      return matchesExcludePattern(url, svc.excludeApiPatterns);
     }
 
     it('returns true when URL contains an exclude pattern', () => {
@@ -133,6 +168,47 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       expect(isExcluded(service, batchJobUrl)).toBe(true);
       expect(isExcluded(service, tuningJobUrl)).toBe(true);
       expect(isExcluded(service, inferenceUrl)).toBe(false);
+    });
+  });
+
+  describe('self-endpoint exclusion (unconditional, not overridable via excludeApiPatterns)', () => {
+    beforeEach(() => {
+      const httpsModule = require('https');
+      const { EventEmitter } = require('events');
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      fakeReq.end = jest.fn();
+      httpsModule.request = jest.fn().mockReturnValue(fakeReq);
+      httpsModule.get = jest.fn().mockReturnValue(fakeReq);
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockImplementation((options: any) => {
+        const host = typeof options === 'string' ? options :
+                     options instanceof URL ? options.hostname :
+                     (options as any).hostname || (options as any).host || '';
+        return host.includes('localhost') ? mockMatchedPattern : null;
+      });
+    });
+
+    it('never intercepts a request to the configured self endpoint, even with an empty excludeApiPatterns', () => {
+      service.excludeApiPatterns = [];
+      service.setSelfApiEndpoint('http://localhost:3000/api/v2/llm_request_logs');
+      service.setupMonitoring();
+
+      const httpsModule = require('https');
+      httpsModule.request({ hostname: 'localhost', port: 3000, path: '/anything', method: 'POST' }, jest.fn());
+
+      expect(service.getStats().interceptedCalls).toBe(0);
+    });
+
+    it('still intercepts a matched request to the same hostname on a different port', () => {
+      service.excludeApiPatterns = [];
+      service.setSelfApiEndpoint('http://localhost:3000/api/v2/llm_request_logs');
+      service.setupMonitoring();
+
+      const httpsModule = require('https');
+      httpsModule.request({ hostname: 'localhost', port: 11434, path: '/api/generate', method: 'POST' }, jest.fn());
+
+      expect(service.getStats().interceptedCalls).toBe(1);
     });
   });
 
@@ -188,7 +264,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       });
 
       service.excludeApiPatterns = ['/batchPredictionJobs/'];
-      (RequestMonitoringService as any).isPatched = false;
+      _resetActiveOwner();
 
       const originalFetch = jest.fn().mockResolvedValue(new Response('{}'));
       globalThis.fetch = originalFetch;
@@ -209,7 +285,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       });
 
       service.excludeApiPatterns = ['/batchPredictionJobs/'];
-      (RequestMonitoringService as any).isPatched = false;
+      _resetActiveOwner();
 
       const originalFetch = jest.fn().mockResolvedValue(new Response('{}'));
       globalThis.fetch = originalFetch;

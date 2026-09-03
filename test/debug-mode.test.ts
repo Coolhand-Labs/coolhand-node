@@ -18,6 +18,7 @@ jest.mock('../src/services/RequestMonitoringService.js', () => {
   return {
     RequestMonitoringService: jest.fn().mockImplementation(() => ({
       setupMonitoring: jest.fn(),
+      setSelfApiEndpoint: jest.fn(),
       getStats: jest.fn().mockReturnValue({
         totalRequests: 0,
         interceptedCalls: 0

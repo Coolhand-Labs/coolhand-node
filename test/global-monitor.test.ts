@@ -30,6 +30,8 @@ describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
   let underlyingFetchMock: jest.Mock;
   let underlyingHttpsRequestMock: jest.Mock;
+  let underlyingHttpsGetMock: jest.Mock;
+  let underlyingHttpGetMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -57,7 +59,7 @@ describe('Global Monitor', () => {
     } as any;
 
     mockLoggingService = {
-      logRequestToAPI: jest.fn(),
+      logRequestToAPI: jest.fn().mockResolvedValue(null),
       getApiEndpoint: jest.fn().mockReturnValue('https://api.coolhand.dev')
     } as any;
 
@@ -97,6 +99,8 @@ describe('Global Monitor', () => {
     // Capture the https.request automock reference before global-monitor patches it,
     // so tests can control the "original" request behavior it wraps.
     underlyingHttpsRequestMock = require('https').request as jest.Mock;
+    underlyingHttpsGetMock = require('https').get as jest.Mock;
+    underlyingHttpGetMock = require('http').get as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -280,7 +284,7 @@ describe('Global Monitor', () => {
     it('sanitizes query-param secrets from the logged URL for https.request', async () => {
       const { EventEmitter } = require('events');
 
-      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
         const fakeReq: any = new EventEmitter();
         fakeReq.write = jest.fn();
         fakeReq.end = jest.fn();
@@ -290,7 +294,7 @@ describe('Global Monitor', () => {
         fakeRes.headers = { 'content-type': 'application/json' };
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -333,14 +337,19 @@ describe('Global Monitor', () => {
       realRes.statusCode = 200;
       realRes.headers = { 'content-type': 'application/json' };
 
-      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
         const fakeReq: any = new EventEmitter();
         fakeReq.write = jest.fn();
         fakeReq.end = jest.fn();
 
-        callback(realRes);
-        realRes.push('{"ok":true}');
-        realRes.push(null);
+        // Deferred (not synchronous): patchResponseEmit only wraps `req.emit` after
+        // originalRequest(options) returns, matching real Node — a response can never arrive
+        // synchronously inside .request() itself.
+        setImmediate(() => {
+          fakeReq.emit('response', realRes);
+          realRes.push('{"ok":true}');
+          realRes.push(null);
+        });
 
         return fakeReq;
       });
@@ -377,7 +386,7 @@ describe('Global Monitor', () => {
     it('preserves method/headers and invokes the real callback for the 3-arg request(url, options, callback) form (regression for #160)', async () => {
       const { EventEmitter } = require('events');
 
-      underlyingHttpsRequestMock.mockImplementationOnce((options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce((options: any) => {
         // The real options (method/headers) must reach the underlying request untouched —
         // previously they were dropped and the request silently went out as a bare GET.
         expect(options).toMatchObject({ method: 'POST', headers: { 'content-type': 'application/json' } });
@@ -391,7 +400,7 @@ describe('Global Monitor', () => {
         fakeRes.headers = { 'content-type': 'application/json' };
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -425,6 +434,168 @@ describe('Global Monitor', () => {
       expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
     });
 
+    it.each([
+      ['https', 'api.get-test.com'] as const,
+      ['http', 'api.httpget-test.com'] as const
+    ])('completes an intercepted %s.get() call without the caller needing to call req.end() (regression for #202)', async (protocol, domain) => {
+      // Regression test: the .get() patch used to hand interceptRequest() the
+      // `.request` reference instead of `.get`. interceptRequest() never calls
+      // req.end() itself (callers of .request() are expected to end the request themselves),
+      // but callers of .get() never call .end() either — that's .get()'s whole contract, since
+      // the real .get() ends the request for you. Passing the wrong original meant every
+      // intercepted .get() call to a matched API pattern hung forever. Covers both protocols,
+      // since patchHTTPS()'s and patchHTTP()'s .get() wiring are separate code paths in
+      // global-monitor.ts that can regress independently.
+      const { EventEmitter } = require('events');
+
+      const mockEndFn = jest.fn();
+      const underlyingGetMock = protocol === 'https' ? underlyingHttpsGetMock : underlyingHttpGetMock;
+      underlyingGetMock.mockImplementationOnce(() => {
+        // Stand in for the real .get(): build the request and call .end() on it
+        // immediately, before returning — this auto-end is .get()'s entire contract, and
+        // the one thing that distinguishes it from .request(). interceptRequest() only
+        // gets a hold of (and wraps) req.end() *after* this returns, so calling it here
+        // reproduces what the real originalGet does before the interceptor ever sees it.
+        const fakeReq: any = new EventEmitter();
+        // req.write must exist (even though GET sends no body) because interceptRequest
+        // unconditionally does `req.write.bind(req)` before wrapping it.
+        fakeReq.write = jest.fn();
+        fakeReq.end = mockEndFn;
+        fakeReq.end();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+        // A real http.IncomingMessage always has .destroy() (inherited from stream.Readable) —
+        // the response tee's 'close' handler relies on it once the tee fully drains and closes.
+        fakeRes.destroyed = false;
+        fakeRes.destroy = jest.fn();
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: [domain] },
+        matchType: 'domain',
+        matchValue: domain
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      require(protocol).get({ hostname: domain, path: '/v1/test' }, jest.fn());
+
+      // mockEndFn is invoked synchronously inside the mock above, so the regression this
+      // test guards against is already provable here — no need to wait for anything first.
+      expect(mockEndFn).toHaveBeenCalled();
+
+      // Flush the queued response/end and confirm the call was actually logged. This is
+      // what makes the test prove interceptRequest()'s matched-pattern path ran end-to-end,
+      // not just that the mocked .get() (which every branch, including a pass-through,
+      // would also reach) was invoked — and it's also what unregisters the request's dedup
+      // entry so it doesn't bleed into later tests.
+      await flush();
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
+    });
+
+    it('protects a host using req.on("response", ...) with no callback passed to .request() (regression for tee/req.on gap)', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+        // A real http.IncomingMessage always has .destroy() (inherited from stream.Readable) —
+        // the tee's 'close' handler relies on it once the tee fully drains and closes.
+        fakeRes.destroyed = false;
+        fakeRes.destroy = jest.fn();
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('data', '{"ok":true}');
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const req = https.request('https://api.test.com/v1/test'); // no callback arg
+
+      let hostReceived = '';
+      let hostStatusCode: number | undefined;
+      req.on('response', (res: any) => {
+        hostStatusCode = res.statusCode;
+        res.on('data', (chunk: any) => { hostReceived += chunk.toString(); });
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(hostStatusCode).toBe(200);
+      expect(hostReceived).toBe('{"ok":true}');
+      // The interceptor's own capture (driven independently by patchResponseEmit's internal
+      // capture) must still have logged the request — this is what the tee protects.
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
+    });
+
+    it('delivers the same substituted response object to multiple req.on("response", ...) listeners', async () => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = {};
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      const req = https.request('https://api.test.com/v1/test');
+
+      let first: any;
+      let second: any;
+      req.on('response', (res: any) => { first = res; });
+      req.on('response', (res: any) => { second = res; });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(first).toBeDefined();
+      expect(first).toBe(second);
+    });
+
     it('truncates outbound request body buffering once it exceeds MAX_DECOMPRESSED_BYTES (issue #166)', async () => {
       const { EventEmitter } = require('events');
 
@@ -432,13 +603,13 @@ describe('Global Monitor', () => {
       fakeReq.write = jest.fn().mockReturnValue(true);
       fakeReq.end = jest.fn();
 
-      underlyingHttpsRequestMock.mockImplementationOnce((_options: any, callback: any) => {
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
         const fakeRes: any = new EventEmitter();
         fakeRes.statusCode = 200;
         fakeRes.headers = { 'content-type': 'application/json' };
 
         queueMicrotask(() => {
-          callback(fakeRes);
+          fakeReq.emit('response', fakeRes);
           fakeRes.emit('end');
         });
 
@@ -881,6 +1052,80 @@ describe('Global Monitor', () => {
       }
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Unhandled rejection safety', () => {
+    let capturedRejections: unknown[];
+    let onUnhandledRejection: (reason: unknown) => void;
+
+    beforeEach(() => {
+      capturedRejections = [];
+      onUnhandledRejection = (reason: unknown) => { capturedRejections.push(reason); };
+      process.on('unhandledRejection', onUnhandledRejection);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandledRejection);
+    });
+
+    it('does not produce an unhandledRejection when logRequestToAPI rejects (http path)', async () => {
+      const { EventEmitter } = require('events');
+
+      (mockLoggingService.logRequestToAPI as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      https.request('https://api.test.com/v1/test', jest.fn());
+
+      // Let the queued microtask (response/end) run, then let the rejected
+      // logRequestToAPI promise settle and its .catch() attach.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await flush();
+
+      expect(capturedRejections).toEqual([]);
+    });
+
+    it('does not produce an unhandledRejection when logRequestToAPI rejects (fetch path)', async () => {
+      const mockPattern = {
+        pattern: { name: 'OpenAI', domains: ['api.openai.com'] },
+        matchType: 'domain' as const,
+        matchValue: 'api.openai.com'
+      };
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockPattern);
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => ({ ...headers }));
+      (mockLoggingService.logRequestToAPI as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{}' });
+      await flush();
+
+      expect(capturedRejections).toEqual([]);
     });
   });
 });

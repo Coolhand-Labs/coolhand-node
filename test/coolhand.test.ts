@@ -1,4 +1,21 @@
 import { Coolhand, CoolhandOptions } from '../src/index';
+import { CoolhandCallData } from '../src/types';
+
+function createMockCallData(overrides: Partial<CoolhandCallData> = {}): CoolhandCallData {
+  return {
+    id: 1,
+    timestamp: '2023-01-01T00:00:00Z',
+    method: 'POST',
+    url: 'https://api.openai.com/v1/chat/completions',
+    headers: { 'Content-Type': 'application/json' },
+    request_body: { model: 'gpt-4', messages: [{ role: 'user', content: 'Hello' }] },
+    response_body: { choices: [{ message: { content: 'Hi there!' } }] },
+    response_headers: { 'Content-Type': 'application/json' },
+    status_code: 200,
+    protocol: 'https',
+    ...overrides
+  };
+}
 
 describe('Coolhand Node Monitor', () => {
   describe('Constructor validation', () => {
@@ -360,6 +377,18 @@ describe('Coolhand Node Monitor', () => {
 
       expect(capture.body.llm_request_log.metadata).toBeUndefined();
     });
+
+    it('resolves to null (not reject) when the raw request contains a circular reference', async () => {
+      (global as any).fetch = jest.fn();
+
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      const rawRequest = buildRawRequest() as any;
+      const circular: any = { note: 'circular' };
+      circular.self = circular;
+      rawRequest.response_body = circular;
+
+      await expect(monitor.logRequest(rawRequest)).resolves.toBeNull();
+    });
   });
 
   describe('uploadClientFile', () => {
@@ -409,6 +438,31 @@ describe('Coolhand Node Monitor', () => {
       expect(capture.headers['X-API-Key']).toBe('test-key');
       expect(capture.headers['Content-Type']).toBeUndefined();
       expect(result).toEqual(expect.objectContaining({ id: 'cf_1', status: 'draft' }));
+    });
+  });
+
+  describe('Monitoring callback safety', () => {
+    it('does not throw when logRequestToAPI rejects via onRequestComplete, and logs the failure unless silent', async () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: false });
+      (monitor as any).loggingService.logRequestToAPI = jest.fn().mockRejectedValue(new Error('boom'));
+
+      expect(() => {
+        (monitor as any).requestMonitoringService.onRequestComplete(createMockCallData(), undefined);
+      }).not.toThrow();
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(console.error).toHaveBeenCalledWith('❌ Failed to log request to API:', 'boom');
+    });
+
+    it('suppresses the failure log when silent', async () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      (monitor as any).loggingService.logRequestToAPI = jest.fn().mockRejectedValue(new Error('boom'));
+      (console.error as jest.Mock).mockClear();
+
+      (monitor as any).requestMonitoringService.onRequestComplete(createMockCallData(), undefined);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(console.error).not.toHaveBeenCalledWith('❌ Failed to log request to API:', 'boom');
     });
   });
 });

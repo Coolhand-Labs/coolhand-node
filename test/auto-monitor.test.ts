@@ -74,6 +74,41 @@ describe('auto-monitor', () => {
     expect(initMock).not.toHaveBeenCalled();
   });
 
+  it('parses COOLHAND_EXCLUDE_API_PATTERNS into a trimmed array', async () => {
+    process.env.COOLHAND_EXCLUDE_API_PATTERNS = '/foo/ , /bar/,/baz/';
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: ['/foo/', '/bar/', '/baz/']
+    }));
+  });
+
+  it('leaves excludeApiPatterns undefined when the env var is not set', async () => {
+    delete process.env.COOLHAND_EXCLUDE_API_PATTERNS;
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: undefined
+    }));
+  });
+
+  it('falls back to undefined (not []) when the env var parses to zero usable entries', async () => {
+    // A degenerate value like ",", " ", or " , , " is a non-empty string, so naively it would
+    // take the parse branch and yield [] — which downstream (global-monitor.ts's
+    // `config.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS`) is NOT equivalent to "unset":
+    // an explicit [] opts out of the built-in /batchPredictionJobs/ exclusion entirely. A
+    // malformed env var must not silently trigger that same opt-out.
+    process.env.COOLHAND_EXCLUDE_API_PATTERNS = ' , , ';
+    const { initMock } = loadIsolated(false, 'test-key');
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(initMock).toHaveBeenCalledWith(expect.objectContaining({
+      excludeApiPatterns: undefined
+    }));
+  });
+
   // Regression test for issue #169: when initGlobalMonitoringCore throws (e.g. an
   // invalid COOLHAND_BASE_URL), auto-monitor must not proceed to
   // loadAndPatchNodeModulesIfNeeded() — that would patch http/https with no logging

@@ -10,6 +10,9 @@ const DEFAULT_REDACTED_HEADERS = [
   'cookie',
   'set-cookie',
   'proxy-authorization',
+  'openai-api-key',
+  'x-goog-api-key',
+  'cf-aig-authorization',
 ];
 
 // Runtime detection utility
@@ -143,6 +146,14 @@ export class PatternMatchingService {
       {
         name: 'OpenRouter',
         domains: ['openrouter.ai'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]',
+          'x-api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'OpenCode',
+        domains: ['opencode.ai', 'api.opencode.ai'],
         headers: {
           'authorization': 'Bearer [REDACTED]',
           'x-api-key': '[REDACTED]'

@@ -2,6 +2,7 @@ import * as https from 'https';
 import * as http from 'http';
 import { Pagination } from '../types.js';
 import { getCollectorString, CollectionMethod } from '../utils/collector.js';
+import { formatErrorMessage } from '../utils/format-error.js';
 
 // Treats a missing or non-integer header value (empty string, decimals, hex, negative, garbage
 // text) as absent, falling back rather than propagating a nonsensical value into a response type
@@ -105,20 +106,24 @@ export abstract class BaseService {
     if (this.dryRun) {
       if (!this.silent) {
         console.log(`🚫 DRY RUN: Skipping API call to ${this.apiEndpoint}`);
-        console.log(`🚫 DRY RUN: Would send payload:`, JSON.stringify(payload, null, 2));
+        try {
+          console.log(`🚫 DRY RUN: Would send payload:`, JSON.stringify(payload, null, 2));
+        } catch (error) {
+          console.error(`❌ Failed to stringify payload for dry-run log:`, formatErrorMessage(error));
+        }
       }
       this.log(`🚫 DRY RUN: ${successMessage.replace('✅', '🚫')}`);
       return null;
     }
 
-    if (this.debug && !this.silent) {
-      console.log(`[coolhand-node] DEBUG: Sending to ${this.apiEndpoint}`);
-      console.log(`[coolhand-node] DEBUG: Payload size: ${JSON.stringify(payload).length} bytes`);
-    }
-
-    const requestOptions = this.createRequestOptions(payload);
-
     try {
+      if (this.debug && !this.silent) {
+        console.log(`[coolhand-node] DEBUG: Sending to ${this.apiEndpoint}`);
+        console.log(`[coolhand-node] DEBUG: Payload size: ${JSON.stringify(payload).length} bytes`);
+      }
+
+      const requestOptions = this.createRequestOptions(payload);
+
       if (typeof fetch !== 'undefined') {
         const response = await fetch(this.apiEndpoint, requestOptions);
         return await this.parseJsonResponse<T>(response, successMessage);

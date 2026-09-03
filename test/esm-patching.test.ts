@@ -33,7 +33,7 @@ function makeMockServices() {
   } as any;
 
   const mockLoggingService = {
-    logRequestToAPI: jest.fn(),
+    logRequestToAPI: jest.fn().mockResolvedValue(null),
     getApiEndpoint: jest.fn().mockReturnValue('https://api.coolhand.dev'),
   } as any;
 
@@ -273,7 +273,7 @@ describe('PatternMatchingService path resolution in loadAPIPatternsSync', () => 
       expect(svc.matchesAPIPatternSync({ hostname: 'api.openai.com', path: '/' })).toMatchObject({
         pattern: expect.objectContaining({ name: 'OpenAI' })
       });
-      expect(svc.getPatternsCountSync()).toBe(7);
+      expect(svc.getPatternsCountSync()).toBe(8);
     });
   });
 });
