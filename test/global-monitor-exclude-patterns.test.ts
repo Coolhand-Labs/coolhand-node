@@ -36,7 +36,7 @@ describe('Global Monitor — excludeApiPatterns and self-endpoint exclusion', ()
     } as any;
 
     mockLoggingService = {
-      logRequestToAPI: jest.fn(),
+      logRequestToAPI: jest.fn().mockResolvedValue(null),
       getApiEndpoint: jest.fn().mockReturnValue('http://localhost:3000/api/v2/llm_request_logs')
     } as any;
 
