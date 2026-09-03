@@ -472,6 +472,47 @@ describe('RequestMonitoringService', () => {
       );
     });
 
+    // Regression test for issue #203: array-form RequestInit.headers (a spec-legal
+    // HeadersInit shape) must be normalized to a plain record before sanitizeHeaders() runs.
+    // Before the fix, this shape fell through to Object.entries([['authorization', ...]]),
+    // producing keys "0", "1", ... that no redaction pattern could ever match, leaking the
+    // raw credential to onRequestComplete (and from there, to Coolhand's backend).
+    it('normalizes array-form headers before sanitizing (issue #203)', async () => {
+      const mockResponse = {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        clone: jest.fn().mockReturnValue({
+          text: jest.fn().mockResolvedValue('{"result": "success"}')
+        })
+      };
+
+      const originalFetch = jest.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = originalFetch;
+
+      const url = 'https://api.test.com/v1/test';
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      await globalThis.fetch(url, {
+        method: 'POST',
+        headers: [['Authorization', 'Bearer sk-secret']],
+        body: '{"prompt":"a"}'
+      });
+      await flush();
+
+      expect(mockPatternMatchingService.sanitizeHeaders).toHaveBeenCalledWith(
+        { Authorization: 'Bearer sk-secret' },
+        mockMatchedPattern.pattern
+      );
+      expect(onRequestCompleteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: 'Bearer sk-secret' })
+        }),
+        mockMatchedPattern
+      );
+    });
+
     // Regression test for issue #164: the "Starting FETCH call" log used the raw `url`
     // param instead of `callData.url`, bypassing sanitizeURL() the same way the http/https
     // path did.
