@@ -38,7 +38,16 @@ export function patchResponseEmit<Req extends EmitLikeRequest, Res>(
         } catch {
           onPatchFailure?.();
         }
-        return originalEmit('response', delivered);
+        // internalCapture always attaches its own listeners directly on the response object (see
+        // callers), so the response must always be treated as "handled" from Node's http client
+        // internals' perspective — regardless of whether the host itself passed a callback or
+        // attached its own 'response' listener. Returning originalEmit's actual result here would
+        // propagate `false` whenever there is no *real* listener on `req`; Node's internals treat
+        // that as "nobody is consuming this response" and call `res._dump()` to discard the body,
+        // racing with (and beating) the 'data' listener internalCapture just attached — silently
+        // dropping every response captured this way down to zero bytes.
+        originalEmit('response', delivered);
+        return true;
       }
       return originalEmit(event, ...args);
     };
