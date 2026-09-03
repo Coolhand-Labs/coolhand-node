@@ -144,6 +144,49 @@ describe('LoggingService', () => {
       await expect(service.logRequestToAPI(callData)).resolves.not.toThrow();
     });
 
+    it('should resolve (not reject) when payload contains a circular reference', async () => {
+      (global as any).fetch = jest.fn();
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: true
+      };
+
+      const service = new LoggingService(config);
+      const circular: any = { note: 'circular' };
+      circular.self = circular;
+      const callData = createMockCallData({ response_body: circular });
+
+      await expect(service.logRequestToAPI(callData)).resolves.not.toThrow();
+      expect(console.error).toHaveBeenCalledWith(
+        '❌ Request error:',
+        expect.stringContaining('circular structure')
+      );
+    });
+
+    it('should resolve (not reject) when matchedPattern is malformed', async () => {
+      (global as any).fetch = createMockFetch({ id: 1, status: 'success' });
+
+      const config: LoggingServiceConfig = {
+        apiKey: 'test-api-key',
+        silent: false
+      };
+
+      const service = new LoggingService(config);
+      const callData = createMockCallData();
+      // logRequestInfo (called before sendRequest, so outside its try/catch) reads
+      // matchedPattern.pattern.name — a matchedPattern missing `pattern` throws
+      // synchronously here, which previously escaped as a rejected logRequestToAPI
+      // promise instead of degrading to null like every other failure mode.
+      const malformedPattern = { matchType: 'domain', matchValue: 'api.test.com' } as any;
+
+      await expect(service.logRequestToAPI(callData, malformedPattern)).resolves.not.toThrow();
+      expect(console.error).toHaveBeenCalledWith(
+        '❌ Failed to log request to API:',
+        expect.stringContaining("reading 'name'")
+      );
+    });
+
     it('should structure payload correctly', async () => {
       let capturedRequestBody: any;
 

@@ -58,7 +58,7 @@ describe('Service Integration', () => {
     jest.doMock('../src/services/LoggingService', () => ({
       LoggingService: class {
         constructor() {}
-        logRequestToAPI = jest.fn();
+        logRequestToAPI = jest.fn().mockResolvedValue(null);
       }
     }));
 

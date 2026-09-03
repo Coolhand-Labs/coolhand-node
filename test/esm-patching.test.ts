@@ -33,7 +33,7 @@ function makeMockServices() {
   } as any;
 
   const mockLoggingService = {
-    logRequestToAPI: jest.fn(),
+    logRequestToAPI: jest.fn().mockResolvedValue(null),
     getApiEndpoint: jest.fn().mockReturnValue('https://api.coolhand.dev'),
   } as any;
 

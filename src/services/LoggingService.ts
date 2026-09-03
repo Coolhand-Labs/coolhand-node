@@ -14,6 +14,7 @@ import {
   SearchLogsResponse
 } from '../types';
 import { CollectionMethod } from '../utils/collector.js';
+import { formatErrorMessage } from '../utils/format-error.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface LoggingServiceConfig extends BaseServiceConfig {}
@@ -30,25 +31,32 @@ export class LoggingService extends BaseService {
     collector?: string,
     metadata?: Record<string, unknown>
   ): Promise<CoolhandLogResponse | null> {
-    // An explicit collector string (e.g. from coolhand-cli) overrides the SDK-derived one.
-    const logData = collector !== undefined
-      ? { raw_request: callData, collector, ...(metadata && { metadata }) }
-      : { ...this.addCollectorToData({ raw_request: callData }, collectionMethod), ...(metadata && { metadata }) };
+    try {
+      // An explicit collector string (e.g. from coolhand-cli) overrides the SDK-derived one.
+      const logData = collector !== undefined
+        ? { raw_request: callData, collector, ...(metadata && { metadata }) }
+        : { ...this.addCollectorToData({ raw_request: callData }, collectionMethod), ...(metadata && { metadata }) };
 
-    const payload: CoolhandLogPayload = {
-      llm_request_log: logData
-    };
+      const payload: CoolhandLogPayload = {
+        llm_request_log: logData
+      };
 
-    this.logRequestInfo(callData, matchedPattern);
+      this.logRequestInfo(callData, matchedPattern);
 
-    const result = await this.sendRequest<CoolhandLogResponse>(
-      payload,
-      `✅ Successfully logged to API with ID for call #${callData.id}`
-    );
+      const result = await this.sendRequest<CoolhandLogResponse>(
+        payload,
+        `✅ Successfully logged to API with ID for call #${callData.id}`
+      );
 
-    this.logSeparator();
+      this.logSeparator();
 
-    return result;
+      return result;
+    } catch (error) {
+      if (!this.silent) {
+        console.error(`❌ Failed to log request to API:`, formatErrorMessage(error));
+      }
+      return null;
+    }
   }
 
   /**

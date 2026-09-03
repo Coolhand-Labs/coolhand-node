@@ -6,6 +6,7 @@ import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
+import { formatErrorMessage } from './utils/format-error.js';
 
 export class Coolhand {
   private patternMatchingService: PatternMatchingService;
@@ -59,7 +60,11 @@ export class Coolhand {
 
     // Set up the callback for when requests are completed
     this.requestMonitoringService.onRequestComplete = (callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern) => {
-      this.loggingService.logRequestToAPI(callData, matchedPattern, 'manual');
+      this.loggingService.logRequestToAPI(callData, matchedPattern, 'manual').catch((error: unknown) => {
+        if (!this.silent) {
+          console.error('❌ Failed to log request to API:', formatErrorMessage(error));
+        }
+      });
     };
 
     if (options.debug && !options.dryRun) {

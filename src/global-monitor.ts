@@ -20,6 +20,7 @@ import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared, SelfEn
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
 import { extractRequestHostname } from './utils/extract-hostname.js';
+import { formatErrorMessage } from './utils/format-error.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -701,7 +702,7 @@ function interceptRequest(
 
       // Log to API
       if (s.globalLoggingService) {
-        s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+        s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);
       }
 
       // Cleanup
@@ -817,7 +818,7 @@ async function interceptFetch(
       .finally(() => {
         const s = getState();
         if (s.globalLoggingService) {
-          s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring');
+          s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);
         }
         unregisterActiveRequest(requestId, uniqueId);
       });
@@ -865,4 +866,11 @@ function log(...args: any[]): void {
   if (!getState().silent) {
     console.log(...args);
   }
+}
+
+// logRequestToAPI already catches its own errors internally and resolves to `null` rather than
+// rejecting; this .catch() is defense-in-depth against that contract changing (or being
+// bypassed by a test double) rather than a path exercised in normal operation.
+function logFailedRequestSubmission(error: unknown): void {
+  log(`❌ Failed to log request to API: ${formatErrorMessage(error)}`);
 }

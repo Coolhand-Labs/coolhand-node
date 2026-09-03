@@ -57,7 +57,7 @@ describe('Global Monitor', () => {
     } as any;
 
     mockLoggingService = {
-      logRequestToAPI: jest.fn(),
+      logRequestToAPI: jest.fn().mockResolvedValue(null),
       getApiEndpoint: jest.fn().mockReturnValue('https://api.coolhand.dev')
     } as any;
 
@@ -980,6 +980,80 @@ describe('Global Monitor', () => {
       }
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Unhandled rejection safety', () => {
+    let capturedRejections: unknown[];
+    let onUnhandledRejection: (reason: unknown) => void;
+
+    beforeEach(() => {
+      capturedRejections = [];
+      onUnhandledRejection = (reason: unknown) => { capturedRejections.push(reason); };
+      process.on('unhandledRejection', onUnhandledRejection);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandledRejection);
+    });
+
+    it('does not produce an unhandledRejection when logRequestToAPI rejects (http path)', async () => {
+      const { EventEmitter } = require('events');
+
+      (mockLoggingService.logRequestToAPI as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const https = require('https');
+      https.request('https://api.test.com/v1/test', jest.fn());
+
+      // Let the queued microtask (response/end) run, then let the rejected
+      // logRequestToAPI promise settle and its .catch() attach.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await flush();
+
+      expect(capturedRejections).toEqual([]);
+    });
+
+    it('does not produce an unhandledRejection when logRequestToAPI rejects (fetch path)', async () => {
+      const mockPattern = {
+        pattern: { name: 'OpenAI', domains: ['api.openai.com'] },
+        matchType: 'domain' as const,
+        matchValue: 'api.openai.com'
+      };
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockPattern);
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => ({ ...headers }));
+      (mockLoggingService.logRequestToAPI as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{}' });
+      await flush();
+
+      expect(capturedRejections).toEqual([]);
     });
   });
 });
