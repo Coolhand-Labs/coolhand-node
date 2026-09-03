@@ -30,6 +30,8 @@ describe('Global Monitor', () => {
   let originalFetch: typeof globalThis.fetch;
   let underlyingFetchMock: jest.Mock;
   let underlyingHttpsRequestMock: jest.Mock;
+  let underlyingHttpsGetMock: jest.Mock;
+  let underlyingHttpGetMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -97,6 +99,8 @@ describe('Global Monitor', () => {
     // Capture the https.request automock reference before global-monitor patches it,
     // so tests can control the "original" request behavior it wraps.
     underlyingHttpsRequestMock = require('https').request as jest.Mock;
+    underlyingHttpsGetMock = require('https').get as jest.Mock;
+    underlyingHttpGetMock = require('http').get as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -428,6 +432,74 @@ describe('Global Monitor', () => {
 
       expect(hostCallback).toHaveBeenCalledTimes(1);
       expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
+
+    it.each([
+      ['https', 'api.get-test.com'] as const,
+      ['http', 'api.httpget-test.com'] as const
+    ])('completes an intercepted %s.get() call without the caller needing to call req.end() (regression for #202)', async (protocol, domain) => {
+      // Regression test: the .get() patch used to hand interceptRequest() the
+      // `.request` reference instead of `.get`. interceptRequest() never calls
+      // req.end() itself (callers of .request() are expected to end the request themselves),
+      // but callers of .get() never call .end() either — that's .get()'s whole contract, since
+      // the real .get() ends the request for you. Passing the wrong original meant every
+      // intercepted .get() call to a matched API pattern hung forever. Covers both protocols,
+      // since patchHTTPS()'s and patchHTTP()'s .get() wiring are separate code paths in
+      // global-monitor.ts that can regress independently.
+      const { EventEmitter } = require('events');
+
+      const mockEndFn = jest.fn();
+      const underlyingGetMock = protocol === 'https' ? underlyingHttpsGetMock : underlyingHttpGetMock;
+      underlyingGetMock.mockImplementationOnce(() => {
+        // Stand in for the real .get(): build the request and call .end() on it
+        // immediately, before returning — this auto-end is .get()'s entire contract, and
+        // the one thing that distinguishes it from .request(). interceptRequest() only
+        // gets a hold of (and wraps) req.end() *after* this returns, so calling it here
+        // reproduces what the real originalGet does before the interceptor ever sees it.
+        const fakeReq: any = new EventEmitter();
+        // req.write must exist (even though GET sends no body) because interceptRequest
+        // unconditionally does `req.write.bind(req)` before wrapping it.
+        fakeReq.write = jest.fn();
+        fakeReq.end = mockEndFn;
+        fakeReq.end();
+
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+        // A real http.IncomingMessage always has .destroy() (inherited from stream.Readable) —
+        // the response tee's 'close' handler relies on it once the tee fully drains and closes.
+        fakeRes.destroyed = false;
+        fakeRes.destroy = jest.fn();
+
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: [domain] },
+        matchType: 'domain',
+        matchValue: domain
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      require(protocol).get({ hostname: domain, path: '/v1/test' }, jest.fn());
+
+      // mockEndFn is invoked synchronously inside the mock above, so the regression this
+      // test guards against is already provable here — no need to wait for anything first.
+      expect(mockEndFn).toHaveBeenCalled();
+
+      // Flush the queued response/end and confirm the call was actually logged. This is
+      // what makes the test prove interceptRequest()'s matched-pattern path ran end-to-end,
+      // not just that the mocked .get() (which every branch, including a pass-through,
+      // would also reach) was invoked — and it's also what unregisters the request's dedup
+      // entry so it doesn't bleed into later tests.
+      await flush();
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
     });
 
     it('protects a host using req.on("response", ...) with no callback passed to .request() (regression for tee/req.on gap)', async () => {
