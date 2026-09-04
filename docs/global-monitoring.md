@@ -499,7 +499,46 @@ const model = new ChatOpenAI({ model: 'gpt-4o' });
 await model.invoke('hello'); // ✅ intercepted
 ```
 
-This only affects libraries that cache `https.request` at import time in native ESM projects. All other interception (including `fetch`) works in both module systems.
+This only affects libraries that cache `https.request` at import time in native ESM projects. All other interception (including `fetch`) works in both module systems (see item 5 below for an exception involving construction-time `fetch` capture).
+
+**5. "AI calls not intercepted even though fetch patching succeeded"**
+
+Some client libraries capture a *reference* to `fetch` once, at construction time, instead of calling `globalThis.fetch` fresh on every request:
+
+```javascript
+// Inside the library's constructor (e.g. the `openai` SDK v5+)
+this.fetch = options.fetch ?? globalThis.fetch;
+```
+
+If the client is constructed before `initializeGlobalMonitoring()` (or `coolhand-node/auto-monitor`) runs, `this.fetch` permanently holds the original, unpatched `fetch` — even though `globalThis.fetch` itself gets reassigned to the patched version moments later. Every subsequent call the client makes bypasses monitoring, silently, with no error and no log lines.
+
+This is different from the `https.request` caching in item 4 above: that only bites native ESM projects, because it's about *when the module is evaluated*. This bites CJS and ESM alike, because it's about *when the client instance is constructed* — any library that captures `fetch` by value in its constructor is exposed, whether construction happens at module scope or inside a handler that just happens to fire before monitoring initializes.
+
+```javascript
+// ❌ Broken — client constructed before monitoring is initialized
+import OpenAI from 'openai';
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // captures unpatched fetch
+
+await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY });
+// openai.chat.completions.create(...) never gets intercepted
+```
+
+```javascript
+// ✅ Fixed — construct the client lazily, after monitoring is initialized
+import OpenAI from 'openai';
+
+let openai;
+function getOpenAIClient() {
+  openai ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return openai;
+}
+
+await initializeGlobalMonitoring({ apiKey: process.env.COOLHAND_API_KEY });
+
+await getOpenAIClient().chat.completions.create({ /* ... */ }); // ✅ intercepted
+```
+
+**Recommended fix:** Never construct AI client instances at module scope in an app that relies on `initializeGlobalMonitoring()`/`coolhand-node/auto-monitor` for interception. Construct clients lazily (on first use, e.g. inside a request handler) rather than eagerly at import time — this guarantees monitoring has already patched `fetch` by construction time, regardless of import order. See `examples/fastify-openai-unbundled` for a worked example of exactly this issue.
 
 ### Debug Mode
 
