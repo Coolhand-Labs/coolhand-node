@@ -17,9 +17,8 @@ parameter and one cannot be supplied.
 
 **Status:** backed by
 [Coolhand-Labs/coolhand#1376](https://github.com/Coolhand-Labs/coolhand/pull/1376), which adds
-`GET /api/v2/llm_request_templates` and `GET /api/v2/llm_request_templates/{id}`. Confirm your
-target Coolhand backend has deployed it before relying on these methods — against a backend that
-hasn't, both will 404.
+`GET /api/v2/llm_request_templates` and `GET /api/v2/llm_request_templates/{id}` and has shipped
+to production. A self-hosted backend that predates it will 404 on both methods.
 
 ## `searchTemplates(params)`
 

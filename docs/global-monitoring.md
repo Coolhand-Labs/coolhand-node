@@ -34,8 +34,9 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 - Anthropic API calls (`api.anthropic.com`)
 - Google AI API calls (`generativelanguage.googleapis.com`)
 - GitHub Models API calls (`models.github.ai`, `models.inference.ai.azure.com`)
-- Cohere API calls (`api.cohere.ai`)
-- Hugging Face API calls (`api-inference.huggingface.co`)
+- Vertex AI API calls (`aiplatform.googleapis.com`)
+- OpenRouter API calls (`openrouter.ai`)
+- Cloudflare AI Gateway API calls (`gateway.ai.cloudflare.com`)
 - Custom AI APIs (configurable)
 
 ✅ **HTTP Methods Supported:**
@@ -72,7 +73,6 @@ require('coolhand-node/auto-monitor');
 **Environment Variables:**
 ```bash
 COOLHAND_API_KEY=your_api_key_here
-COOLHAND_ENVIRONMENT=production  # or 'local'
 COOLHAND_SILENT=true            # or 'false'
 ```
 
@@ -110,15 +110,20 @@ initializeMonitoring();
 | `apiKey` | string | *required* | Your Coolhand API key |
 | `silent` | boolean | `true` | Suppress console output |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+| `debug` | boolean | `false` | Enable verbose logging (does not affect data submission) |
+| `dryRun` | boolean | `false` | Suppress all API submissions to Coolhand |
+| `baseUrl` | string | `undefined` | Self-hosted Coolhand endpoint, e.g. `'https://feedback.example.com'` |
 
 ### Environment Variables (Auto-Monitor)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
-| `COOLHAND_ENVIRONMENT` | `'local'` \| `'production'` | `'production'` | Target environment |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Suppress console output |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Custom patterns file path |
+| `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable verbose logging only |
+| `COOLHAND_DRY_RUN` | `'true'` \| `'false'` | `'false'` | Suppress all API submissions |
+| `COOLHAND_BASE_URL` | string | `undefined` | Self-hosted endpoint, e.g. `'https://feedback.example.com'` |
 
 ## 🚨 Runtime Environment Considerations
 
@@ -307,7 +312,7 @@ console.log('Stats:', {
 ```
 🌐 Global Coolhand monitoring initialized
 🎯 API Endpoint: https://coolhandlabs.com/api/v2/llm_request_logs
-📋 Loaded 5 AI API patterns
+📋 Loaded 7 AI API patterns
 🔍 Now monitoring ALL outbound HTTP requests for AI API calls...
 
 🌐 FETCH to: https://api.openai.com/v1/chat/completions
@@ -552,7 +557,7 @@ Track AI usage during development:
 // See exactly what AI calls your app makes
 initializeGlobalMonitoring({
   apiKey: 'dev-key',
-  environment: 'local',
+  baseUrl: 'http://localhost:3000',
   silent: false // See all AI calls in console
 });
 ```
@@ -603,7 +608,7 @@ If you're using global monitoring with any framework:
 
 1. **Test the integration** with your framework
 2. **Verify AI API calls are being logged**
-3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results:
+3. **[Create an issue](https://github.com/Coolhand-Labs/coolhand-node/issues)** with your results:
    - ✅ Working: Share your setup for others
    - ❌ Issues: Help us fix and improve
    - 💡 Suggestions: Propose better approaches
