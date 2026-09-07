@@ -1,4 +1,4 @@
-import { openai } from './openai-client';
+import { getOpenAIClient } from './openai-client';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
@@ -13,7 +13,7 @@ const PaperSummary = z.object({
 });
 
 export async function summarizePaper(url: string) {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
             {

@@ -113,3 +113,40 @@ jobs:
 
       - name: Smoke test ESM
         run: npm run test:esm
+
+  example-smoke-test:
+    name: Example Smoke Test (fastify-openai-unbundled)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build root package
+        run: npm run build
+
+      - name: Install example dependencies
+        working-directory: examples/fastify-openai-unbundled
+        run: npm ci
+
+      - name: Build example
+        working-directory: examples/fastify-openai-unbundled
+        run: npm run build
+
+      - name: Run smoke test
+        working-directory: examples/fastify-openai-unbundled
+        run: node test/smoke-test.js
+        env:
+          COOLHAND_API_KEY: test-coolhand-key
+          PORT: '3999'

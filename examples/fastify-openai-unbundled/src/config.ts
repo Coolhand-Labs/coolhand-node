@@ -8,7 +8,9 @@ const config = {
     },
     coolhand: {
         apiKey: process.env.COOLHAND_API_KEY || '',
-        debug: process.env.COOLHAND_DEBUG === 'true'
+        debug: process.env.COOLHAND_DEBUG === 'true',
+        dryRun: process.env.COOLHAND_DRY_RUN === 'true',
+        patternsFile: process.env.COOLHAND_PATTERNS_FILE || undefined
     }
 };
 

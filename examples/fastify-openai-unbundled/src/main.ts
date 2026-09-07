@@ -1,3 +1,7 @@
+// Uses the base `coolhand-node` package rather than the `coolhand-node/auto-monitor` subpath:
+// auto-monitor auto-initializes from COOLHAND_* env vars as a side effect of being imported,
+// which would race ahead of (and silently override) the explicit config passed below.
+import { initializeGlobalMonitoring } from 'coolhand-node';
 import config from './config';
 import build from './app';
 
@@ -6,14 +10,12 @@ const server = build();
 export async function start(port = +config.port) {
     /* Initialize Coolhand LLM Monitoring */
     if (config.coolhand.apiKey) {
-        // Use new Function to emit native import() in compiled CJS output.
-        // TypeScript otherwise compiles await import() to require(), which fails for ESM-only packages.
-        const _import = new Function('m', 'return import(m)');
-        const { initializeGlobalMonitoring } = await _import('coolhand-node/auto-monitor');
         await initializeGlobalMonitoring({
             apiKey: config.coolhand.apiKey,
             debug: config.coolhand.debug,
-            silent: false
+            silent: false,
+            dryRun: config.coolhand.dryRun,
+            patternsFile: config.coolhand.patternsFile
         });
         server.log.info('Coolhand LLM monitoring initialized');
     } else {
