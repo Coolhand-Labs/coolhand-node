@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.12.0] - 2026-09-02
+## [0.12.0] - 2026-09-12
 
 ### ✨ New Features
 - **OpenCode support** — `opencode.ai` (the OpenCode Zen model gateway) is now a built-in monitored provider, along with `api.opencode.ai` (an observed misconfigured host that doesn't correspond to any real OpenCode endpoint, captured so a misconfigured integration shows up as a failed/unmatched log instead of vanishing with no trace). Redacts `authorization` and `x-api-key` headers. Works in both Node.js (file-loaded patterns) and Edge runtimes (Cloudflare Workers, Vercel Edge). ([#187](https://github.com/Coolhand-Labs/coolhand-node/issues/187))
