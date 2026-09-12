@@ -319,7 +319,7 @@ un-aggregated rows for one exact `file_path` — since file paths aren't URL-saf
 and so have no `GET .../:file_path` show route. Both are bounded to the last 90 days.
 
 See [docs/llm-reference-search.md](./docs/llm-reference-search.md) for the full filter reference,
-pagination, and error handling (including the retryable `504` on `searchReferencedFiles`).
+pagination, and error handling (including the retryable `504` both methods can throw under load).
 
 ## Framework Integration
 

@@ -285,7 +285,10 @@ export class Coolhand {
    *   {@link getLogContent} to inspect that session. An unmatched `filePath` returns an empty page,
    *   not a 404.
    * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
-   *   `status` property holds the HTTP status code (`422` when `filePath` is missing/blank).
+   *   `status` property holds the HTTP status code (`422` when `filePath` is missing/blank; `504`
+   *   when the pagination count for this `filePath` exceeds the backend's statement timeout — a
+   *   `filePath` referenced by very many sessions makes that count expensive too, retryable the
+   *   same as {@link searchReferencedFiles}'s `504`).
    */
   public async listReferencedFileSessions(
     params: ListReferencedFileSessionsParams

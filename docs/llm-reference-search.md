@@ -14,6 +14,12 @@ parameter and one cannot be supplied.
 **Window:** both endpoints are bounded to the last 90 days (`LlmReference::DEFAULT_WINDOW`
 server-side) — a file referenced only outside that window will not appear anywhere on this surface.
 
+**Status:** backed by
+[Coolhand-Labs/coolhand#1488](https://github.com/Coolhand-Labs/coolhand/pull/1488), which adds
+`GET /api/v2/llm_references` and `GET /api/v2/llm_references/sessions`. It has **not** shipped to
+production yet, so both methods currently 404 — as they will on any self-hosted backend that
+predates it.
+
 ## `searchReferencedFiles(params)`
 
 ```typescript
@@ -127,11 +133,13 @@ message string:
 | Status | When |
 |---|---|
 | `401` | No API key, an invalid key, or the public key (which cannot read) |
+| `404` | The backend doesn't have these routes — see **Status** above. Never a missing `filePath`, which is an empty page |
 | `422` | `searchReferencedFiles`: an unrecognized Ransack attribute/predicate, or a non-scalar value where a scalar (e.g. `page`) is expected. `listReferencedFileSessions`: `filePath` missing/blank, or a non-scalar value |
-| `504` | `searchReferencedFiles` only — the aggregate exceeded the backend's statement timeout |
+| `504` | `searchReferencedFiles`: the `GROUP BY` aggregate exceeded the backend's statement timeout. `listReferencedFileSessions`: the pagination `COUNT(*)` for that one `file_path` exceeded it — a file_path referenced by very many sessions makes counting as expensive as the aggregate above |
 
-**`504` is expected and retryable**, the same as `searchTemplates`'s `log_count` timeout — narrow
-with `filePathContains` or reduce `per` and try again:
+**`504` is expected and retryable on both methods**, the same as `searchTemplates`'s `log_count`
+timeout — narrow `searchReferencedFiles` with `filePathContains` or a smaller `per`, and
+`listReferencedFileSessions` with a smaller `per`, then retry:
 
 ```typescript
 import { Coolhand, HttpError } from 'coolhand-node';

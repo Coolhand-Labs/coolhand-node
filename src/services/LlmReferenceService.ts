@@ -88,7 +88,10 @@ export class LlmReferenceService extends BaseService {
    * @throws Error if `filePath` is not a string. Error on network failure or a non-JSON body. A
    *   non-2xx response throws an {@link HttpError} whose `status` holds the HTTP status code: `401`
    *   (same shapes as {@link searchReferencedFiles}), `422` when `filePath` is missing/blank or a
-   *   non-scalar value.
+   *   non-scalar value, and `504` when the pagination `COUNT(*)` for this `file_path` exceeds the
+   *   backend's statement timeout — no `GROUP BY` aggregate here, but a `file_path` referenced by
+   *   very many sessions makes that count as expensive as {@link searchReferencedFiles}'s
+   *   aggregate; reduce `per` and retry.
    */
   public async listReferencedFileSessions(
     params: ListReferencedFileSessionsParams

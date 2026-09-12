@@ -263,6 +263,20 @@ describe('LlmReferenceService', () => {
       await expect(newService().listReferencedFileSessions({ filePath: '' })).rejects.toMatchObject({ status: 422 });
     });
 
+    it('surfaces the per-file_path session count timeout as a distinguishable 504, not a generic 5xx', async () => {
+      // Unlike searchReferencedFiles there's no GROUP BY aggregate here, but a file_path
+      // referenced by very many sessions makes the pagination COUNT(*) just as expensive, and it
+      // runs under the same statement-timeout guard server-side — so this can 504 too.
+      (global as any).fetch = mockGetFetch(
+        { errors: { system: ['Timed out counting sessions for this file_path. Reduce per and try again.'] } },
+        { ok: false, status: 504 }
+      );
+
+      await expect(newService().listReferencedFileSessions({ filePath: 'config/routes.rb' })).rejects.toMatchObject({
+        status: 504
+      });
+    });
+
     it('rejects a non-string filePath client-side without issuing a request', async () => {
       // A plain-JS caller bypassing the TypeScript signature (e.g. an omitted filePath, which is
       // `undefined` at runtime) must not fall through to URL.searchParams.set, which would coerce
