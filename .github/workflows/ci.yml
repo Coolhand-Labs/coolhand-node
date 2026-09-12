@@ -115,7 +115,7 @@ jobs:
         run: npm run test:esm
 
   example-smoke-test:
-    name: Example Smoke Test (fastify-openai-unbundled)
+    name: Fastify Smoke Test
     runs-on: ubuntu-latest
     permissions:
       contents: read
