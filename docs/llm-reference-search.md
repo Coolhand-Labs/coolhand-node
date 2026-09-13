@@ -159,9 +159,10 @@ Network failures and non-JSON response bodies throw a plain `Error` without a `s
 ## Verifying against a live server
 
 The unit suite mocks the transport. `test/live/llm-references.live.ts` does not — it runs both
-methods against a real Coolhand server. Its unauthenticated assertions (missing/invalid API key)
-need only a reachable server; the authenticated assertions additionally need a real private key and
-are skipped when one isn't configured:
+methods against a real Coolhand server. It is excluded from `npm test` because it needs a reachable
+server; run it explicitly via `npm run test:live`. Its unauthenticated assertions (missing/invalid
+API key) need only a reachable server; the authenticated assertions additionally need a real private
+key and are skipped when one isn't configured:
 
 ```bash
 COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 \
