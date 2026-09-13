@@ -32,11 +32,12 @@ regardless of what an individual PR's diff already contains.
 
 ## Phase 1: Survey open PRs, recommend a release set
 
-1. `gh pr list --state open --json number,title,author,isDraft,mergeable,mergeStateStatus,statusCheckRollup,additions,deletions,changedFiles,body,headRefName`.
-2. For each PR, pull `gh pr diff <n>` and `gh pr checks <n>` — these are
-   independent, read-only lookups across PRs (and within a PR), so issue
-   them concurrently rather than one PR at a time — and rate two
-   independent axes:
+1. `gh pr list --state open --json number,title,author,isDraft,mergeable,mergeStateStatus,statusCheckRollup,additions,deletions,changedFiles,body,headRefName`
+   — `statusCheckRollup` already gives CI status per PR, so there's no
+   need for a separate `gh pr checks <n>` call per PR.
+2. For each PR, pull `gh pr diff <n>` — these are independent, read-only
+   lookups across PRs, so issue them concurrently rather than one PR at a
+   time — and rate two independent axes:
    - **Quality** (High/Medium/Low): does the diff include test coverage
      proportional to the `src/` change, is the code consistent with this
      repo's conventions (`CLAUDE.md`'s TypeScript/DRY rules), does the PR
@@ -74,7 +75,8 @@ Process the user's chosen PRs one at a time, not as a batch:
    rebase," and continue with the rest. Don't resolve conflicts on someone
    else's branch unilaterally.
 2. `gh pr merge <n> --squash --delete-branch` for each surviving PR.
-3. After each merge, sync local `main` before evaluating the next PR.
+3. Immediately after *every* merge — including the last one in the
+   batch, not just as prep for evaluating a next PR — sync local `main`.
    First check `git status --porcelain` — if it's not empty, stop and
    surface it to the user rather than discarding unknown local state. Also
    check `git log origin/main..main --oneline` — if that's non-empty,
@@ -93,13 +95,13 @@ reports both.
 
 ### Determine the version, then create the branch
 
-1. Sync local `main` to `origin/main` first, unconditionally — using the
-   same clean-working-tree and no-unpushed-commits checks as Phase 2 step
-   3 — even if Phase 2 merged nothing this run. Phase 2's sync only runs
-   as a side effect of a successful merge iteration, so if the user chose
-   zero PRs, or every chosen PR was skipped for a conflict, `main` was
-   never synced this run and everything below would otherwise operate
-   against a stale local `main`.
+1. If Phase 2 merged at least one PR, `main` is already synced from that
+   step's last iteration — don't redo the fetch/checkout/reset. Otherwise
+   (the user chose zero PRs, or every chosen PR was skipped for a
+   conflict), Phase 2's sync never ran this run, so sync local `main` to
+   `origin/main` now, using the same clean-working-tree and
+   no-unpushed-commits checks as Phase 2 step 3 — everything below would
+   otherwise operate against a stale local `main`.
 2. Find the last release tag: `git describe --tags --abbrev=0`.
 3. Diff **everything since that tag** on the now-updated `main` —
    `git log <last-tag>..HEAD --oneline` and `git diff <last-tag>..HEAD -- src/`
@@ -113,32 +115,76 @@ reports both.
    backward-compatible addition or breaking change while pre-1.0, major =
    breaking change once the package is at 1.0.0 or later) and the
    resulting `X.Y.Z`. Check `package.json`'s current `version` against the
-   last tag first as a defensive sanity check in case something bumped it
-   out of band: if it's already ahead of the last tag, use that version
-   instead of computing a new one; if it's behind the last tag (e.g. a
-   manual revert after tagging), that's a corrupted state — stop and
-   surface it to the user rather than guessing which version is correct.
+   last tag as a defensive sanity check in case something bumped it out of
+   band: if it's behind the last tag (e.g. a manual revert after
+   tagging), that's a corrupted state — stop and surface it to the user
+   rather than guessing which version is correct. If it's already ahead
+   of the last tag, don't just adopt it verbatim — a PR bumping its own
+   version (a rule violation the preamble says not to strip) may only
+   reflect *that PR's* bump type, not the highest bump the full
+   accumulated diff implies. Compare the already-ahead version against
+   the version you'd compute from the diff yourself; use whichever is
+   higher, and treat a mismatch as worth flagging in the Phase 5 report
+   (an under-versioned bump shipping is a real risk, not just pedantry).
+   If the diff since the last tag is empty (no chosen PRs and no other
+   unreleased changes), there is no bump yet — use a provisional `X.Y.Z`
+   one patch above the last tag for the branch name below; the "Finalize
+   the version" step re-derives the real bump once the red-team has run,
+   and if that differs from this provisional number, rename the branch
+   (`git branch -m`) and the not-yet-opened PR to match before Phase 5.
 5. Create `release/vX.Y.Z` off the now-synced `main` using that version
-   number. If a branch with that name already exists (a prior
-   `/prep-release` run got partway through Phase 3 or later and was
-   interrupted), don't blindly recreate it — check it out, review what's
-   already committed there, and continue from that state instead of
-   silently overwriting or duplicating it. Otherwise, do all of the
-   following as commits on the new branch — never
-   on `main` directly.
+   number. If a branch with that name already exists, that's the
+   corroborating signal that a prior `/prep-release` run got partway
+   through Phase 3 or later and was interrupted — a coincidentally
+   matching `## [X.Y.Z]` heading in `CHANGELOG.md` alone isn't enough
+   (e.g. a chosen PR could have added its own heading for a version that
+   happens to match what this run also computed; the preamble says not to
+   strip that, but it doesn't make it this skill's own in-progress work).
+   If the branch exists:
+   - First check `gh pr list --head release/vX.Y.Z --state all` — an
+     existing PR (even a closed/merged one from a prior run) is a much
+     stronger signal than the CHANGELOG heading alone that this is
+     genuinely this skill's own prior work, not a coincidence.
+   - Check out the branch instead of recreating it, then reconcile it
+     against `main`: `git log release/vX.Y.Z..main` — if
+     non-empty, `main` picked up changes (a hotfix, another merged PR)
+     after this branch was created that the branch doesn't have yet, in
+     `src/` or elsewhere (a doc-only or changelog-only PR merged during
+     the gap is exactly as easy to silently drop as a `src/` change, and
+     Phase 5 has no other check that would catch it).
+     Merge or rebase those in before continuing, or the release would
+     silently ship without them.
+   - Use `CHANGELOG.md`'s state *on that branch* to pick up where it left
+     off: an `[Unreleased]` heading still open means "Docs, changelog,
+     version" and/or the red-team below are incomplete — continue them,
+     treating entries already present as done rather than re-adding them;
+     a heading already closed to `## [X.Y.Z]` means "Finalize the
+     version" already ran — skip straight to Phase 4.
+   - If it's ambiguous which state the branch is in, stop and ask the
+     user rather than guessing and risking a duplicate heading or
+     duplicate changelog entries.
+   Otherwise (no existing branch), do all of the following as commits on
+   the new branch — never on `main` directly.
 
 ### Docs, changelog, version
 
-1. For each change identified above, check it's reflected in:
+1. For each change identified above, check it's reflected in the
+   following — these are independent, read-only checks against different
+   files, so do them as a batch rather than one at a time:
    - `CHANGELOG.md` — exactly one entry per change under an `[Unreleased]`
      heading (add one at the top, above the last version heading, if the
      file doesn't already have one — this repo's `CHANGELOG.md` currently
      goes straight from the header into `## [X.Y.Z]` entries), in Keep a
-     Changelog format matching this repo's existing entries (see the
-     `0.12.0` section for the
-     emoji-headed category style this repo uses — `✨ New Features`,
-     `⚠️ Upgrade Notes`, `🧹 Internal`, `🔒 Security`) — plain-English
-     migration notes for anything behavior-affecting. Attribute each entry
+     Changelog format matching this repo's existing entries. Pick the
+     category from what this repo actually uses across recent releases
+     (check more than just the latest one, and don't assume the categories
+     are used with perfectly consistent emoji — e.g. "Internal" entries
+     appear headed both `🧹 Internal` and `🔧 Internal` across different
+     releases) — `💥 Breaking Changes`, `✨ New Features`, `🐛 Bug Fixes`,
+     `⚠️ Upgrade Notes`, `⚠️ Deprecation Warning`, `🔒 Security`,
+     `📖 Documentation`, `🧹 Internal`/`🔧 Internal`, `🔧 Build & CI` all
+     appear. Plain-English migration notes for anything behavior-affecting.
+     Attribute each entry
      to its PR number where one exists: check Phase 2's merge list first,
      then fall back to the squash-merge commit message (`git log --grep`,
      which carries the PR number in its title) for anything not merged in
@@ -150,11 +196,19 @@ reports both.
      that change, so a change never ends up with two entries describing
      it.
    - `README.md` / `docs/*.md` — any new config option, public method, or
-     behavior change needs the relevant section updated. Follow this
-     repo's docs philosophy from `CLAUDE.md`: the README stays a scannable
-     landing page (basic config/feedback snippets only); anything needing
-     more than one code block belongs in `docs/`; each integration gets
-     its own `docs/frameworks/<name>.md`.
+     behavior change needs the relevant section updated. Sweep every file
+     under `docs/`, not just the ones obviously related to this release's
+     changes — a new read method should mirror the closest sibling doc's
+     structure (e.g. its Parameters/Return value/Errors sections), and a
+     doc that describes Coolhand *backend* behavior (not just this SDK's
+     code) can drift independently of anything in this repo's own commit
+     history, so spot-check a sample of such claims against the actual
+     Coolhand API docs or backend source if you have access, rather than
+     assuming prose that's been sitting in the repo is still accurate.
+     Follow this repo's docs philosophy from `CLAUDE.md`: the README stays
+     a scannable landing page (basic config/feedback snippets only);
+     anything needing more than one code block belongs in `docs/`; each
+     integration gets its own `docs/frameworks/<name>.md`.
    - `CLAUDE.md` itself — its "Code conventions" examples (e.g. the DRY
      section's pointer to whichever service currently has the canonical
      shared-helper example) should still name real, current code, not
@@ -172,19 +226,22 @@ reports both.
    last tag — consolidate/rewrite rather than layering a new paragraph on
    top of an outdated one. Remove docs for anything removed from the
    package.
-4. **Write the version.** Write the `X.Y.Z` determined above to
-   `package.json`, turn the `[Unreleased]` CHANGELOG heading into
-   `## [X.Y.Z] - <today's date>`, run `npm run sync-version` so
-   `src/version.ts` matches (this also runs automatically as part of
-   `npm run build` in Phase 4, but run it explicitly here so the commit is
-   self-consistent), and run `npm install --package-lock-only` so
-   `package-lock.json`'s top-level `version` field matches too.
+
+Leave the `[Unreleased]` CHANGELOG heading open (don't finalize it into a
+version heading yet) — the red-team below can still add its own entries,
+and "Finalize the version" after it is what closes the heading.
 
 ### Red-team
 
 Adversarially review the entire `src/` tree (not just what merged in
-Phase 2) for security issues. This package intercepts outgoing LLM API
-traffic and logs it to Coolhand, so hunt specifically for:
+Phase 2) for security issues. Read the code fresh for this pass rather
+than relying on impressions formed while triaging PRs in Phase 1 — a
+PR that looked fine for merge-worthiness isn't the same question as
+"does this code have a security bug," and no finding should be reported
+without pointing at the actual file/line that shows it, re-confirmed
+against that file/line as it stands right now rather than a paraphrase
+carried over from an earlier phase. This package intercepts outgoing LLM
+API traffic and logs it to Coolhand, so hunt specifically for:
 
 - **Credential/secret leakage**: does any interceptor, logger, or error
   handler write an API key, bearer token, or provider auth header value
@@ -256,12 +313,42 @@ traffic and logs it to Coolhand, so hunt specifically for:
 
 For each finding, report file, line, a concrete failure scenario, and
 severity. Apply safe, mechanical, low-risk fixes directly, as commits on
-`release/vX.Y.Z` (e.g. a missing header-redaction pattern, a missing cap).
-Flag but do not silently apply anything that's a behavior/architecture
-decision (e.g. changing a fail-open security default, adding replay
-protection, moving synchronous work off the hot path) — surface these to
-the user for a decision, the same "hand it to a human" rule `/loop-review`
-uses for stuck findings.
+`release/vX.Y.Z` — a fix counts as safe/mechanical only when it closes a
+gap in an existing, already-established mechanism using its existing
+pattern (e.g. adding a missing entry to `DEFAULT_REDACTED_HEADERS`, or
+wiring an existing `CappedBuffer` cap into a capture path that lacks one,
+matching a sibling path that already has it) — and give each one its own
+`🔒 Security` entry under the still-open `[Unreleased]` heading, the same
+as any other change (this repo's past releases document exactly this
+class of fix in `CHANGELOG.md`). Flag but do not silently apply anything
+that changes a mechanism's own logic or defaults rather than closing a
+gap in it — this includes SSRF/hostname-matching bypasses and
+monkey-patching correctness issues found above, not just the two examples
+named below: changing a fail-open security default, adding replay
+protection, moving synchronous work off the hot path, or anything else
+that's a behavior/architecture decision — surface these to the user for
+a decision, the same "hand it to a human" rule `/loop-review` uses for
+stuck findings; a flagged-not-fixed finding doesn't get a changelog entry
+since it didn't ship.
+
+### Finalize the version
+
+Now that both regular changes and any red-team fixes have their
+`CHANGELOG.md` entries, re-check the SemVer bump from "Determine the
+version" above against what actually shipped: a red-team fix adds at
+least a patch-level change, so if this run started from zero chosen PRs
+and no other unreleased diff (the provisional patch-bump branch name from
+step 4), confirm the real bump is at least that provisional patch level,
+and any red-team fix categorized as a breaking behavior change needs the
+same pre-1.0 vs. 1.0+ major/minor check Phase 3 step 4 already applies.
+If the confirmed `X.Y.Z` differs from the branch's provisional name,
+rename the branch (`git branch -m release/v<old> release/v<new>`) before
+continuing. Then write the resulting `X.Y.Z` to `package.json`, turn the
+`[Unreleased]` heading into `## [X.Y.Z] - <today's date>`, run `npm run
+sync-version` so `src/version.ts` matches (this also runs automatically
+as part of `npm run build` in Phase 4, but run it explicitly here so the
+commit is self-consistent), and run `npm install --package-lock-only` so
+`package-lock.json`'s top-level `version` field matches too.
 
 ## Phase 4: Validate the release branch
 
@@ -274,9 +361,12 @@ uses for stuck findings.
    of `prepublishOnly` and is what actually validates the artifact that
    would ship, not just the source. All of lint, typecheck, tests, build,
    and the CJS/ESM smoke tests must be clean before continuing — a release
-   doesn't ship on a red build. If any fail, stop here and report the
-   failures; fixing genuine bugs takes priority over the rest of this
-   phase and Phase 5.
+   doesn't ship on a red build. If any fail, fixing genuine bugs on
+   `release/vX.Y.Z` (the same disposable-branch commit privileges Phase 3
+   already uses) takes priority over the rest of this phase and Phase 5;
+   if the failure isn't a safe, mechanical fix — it's unclear what broke,
+   or fixing it would itself be a behavior/architecture decision — stop
+   here and report the failures instead of guessing.
 
    Also run `npm audit` (full, not just `--omit=dev`) and note anything
    high/critical — CI's lint job only runs `npm audit --omit=dev
@@ -302,10 +392,14 @@ uses for stuck findings.
    skip straight to this step against a stale `dist/` from before this
    run. Each script also hits a different, unrelated provider, so they're
    safe to run concurrently rather than one at a time — issue them as
-   parallel tool calls (or background each `node examples/<name>.js &`
-   and `wait`), each with its own captured stdout, so output from
-   different scripts can't interleave when you attribute a pass/skip/fail
-   to a specific script below. Each script follows the skip/pass/fail
+   parallel tool calls (or background each with its output redirected to
+   its own file, e.g. `node examples/<name>.js > /tmp/<name>.log 2>&1 &`,
+   then `wait`) so output from different scripts is captured separately
+   and can't interleave when you attribute a pass/skip/fail to a specific
+   script below — backgrounding without redirecting each process's output
+   to its own capture does not achieve this on its own, since concurrent
+   processes still share the same terminal/pipe. Each script follows the
+   skip/pass/fail
    contract documented in `examples/README.md` (exit 0 with a clear
    message = skip, not a failure). A script that exits non-zero with its
    keys present is worth investigating before continuing to Phase 5 — but
@@ -340,14 +434,21 @@ uses for stuck findings.
    - Docs updated, and whether a `coolhand-python` companion issue/PR is
      needed and missing.
    - Red-team findings split into fixed vs. flagged-for-decision.
-   - Phase 4's lint/typecheck/test/build result and the live-example
-     script results (pass/skip/fail per script).
+   - Phase 4's lint/typecheck/test/build result, the `npm audit` result,
+     and the live-example script results (pass/skip/fail per script).
+   - A clear go/no-go verdict for this release, with the blocking items
+     listed if no-go (e.g. a flagged-not-fixed red-team finding, a failing
+     live-example script, or a missing `coolhand-python` companion issue)
+     — don't leave the user to infer readiness from the bullet points
+     above on their own.
    - A reminder of the concrete next step, since this skill stops short of
-     it: once the user reviews and merges the Phase 5 PR, tagging
-     (`git tag vX.Y.Z && git push origin main --tags`) and publishing are
-     their action — the tag push is what triggers
-     `.github/workflows/publish.yml`'s npm Trusted Publishing flow, no
-     local `npm publish` needed.
+     it: once the user reviews and merges the Phase 5 PR, tagging and
+     publishing are their action — `git tag vX.Y.Z && git push origin
+     vX.Y.Z` pushes only the new tag (plain `--tags` pushes every local
+     tag, including any stray one from an aborted prior release attempt,
+     which would trigger its own publish run) — the tag push is what
+     triggers `.github/workflows/publish.yml`'s npm Trusted Publishing
+     flow, no local `npm publish` needed.
 
 ## Safety
 
@@ -360,6 +461,11 @@ uses for stuck findings.
   not the Phase 3 commits themselves.
 - Squash-merging PRs the user explicitly chose in Phase 1, and pushing the
   `release/vX.Y.Z` branch to open its own PR, are both in scope.
+- Fixing a genuine lint/typecheck/test/build failure found in Phase 4,
+  as a commit on `release/vX.Y.Z`, is also in scope — same disposable-
+  branch reasoning as the Phase 3 mechanical commits above — but only
+  when the fix is itself safe and mechanical; anything that isn't follows
+  the same "flag, don't silently apply" rule as an unsafe red-team fix.
 - Never push a commit directly to `main`. All release-branch work lands on
   `main` only via the Phase 5 PR, which the user reviews and merges
   themselves.

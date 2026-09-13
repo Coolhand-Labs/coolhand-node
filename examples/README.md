@@ -5,14 +5,21 @@
 `openai-example.js` and `anthropic-example.js` are small, runnable scripts
 that exercise Coolhand against a real provider API call. Each configures
 `Coolhand` with `silent: false`, so a successful run prints a `🎉 LOGGING
-... API Call #...` line as soon as the request is intercepted — that line
-only confirms interception, not delivery, since the log upload to
+... API Call #...` line once the response finishes being captured — that
+line only confirms interception, not delivery, since the log upload to
 Coolhand's API happens asynchronously afterward and swallows its own
 errors. Look for the delivery outcome that follows: `✅ Successfully
 logged to API...` confirms the log actually reached Coolhand; a `❌
 Request error`/`❌ Request failed`/`❌ Failed to log request to API` line
-means delivery failed silently (exit code stays `0` either way, so the
-exit code alone doesn't tell you which happened).
+means delivery failed silently — **the exit code alone doesn't tell you
+this happened**, since exit code `0` covers both a clean skip (no keys
+set) and a provider call that succeeded but whose log delivery failed.
+
+Exit code does tell you whether the *provider call itself* worked: `0`
+means either a clean skip or a successful provider call; a non-zero exit
+means the provider call failed (bad/expired key, missing content in the
+response) or the provider call and/or the pending log upload didn't settle
+within 30 seconds combined (logged as a timeout, not silence).
 
 These are used by the `/prep-release` skill as a live smoke test before a
 release ships, and are just as useful to run by hand when working on the
@@ -40,6 +47,10 @@ npm run build
 node examples/openai-example.js
 node examples/anthropic-example.js
 ```
+
+Each script hits a different, unrelated provider, so they're also safe to
+run in parallel (e.g. as background jobs) if you'd rather not wait for
+them one at a time.
 
 ## Other examples in this directory
 

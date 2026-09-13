@@ -165,8 +165,11 @@ reuse/simplification/efficiency, every round should also flag:
 **npm package publishing discipline**
 - Follow best practices for TypeScript & Node.js and for npm package
   publishing — don't break public interfaces unless necessary
-- If a break is necessary, it must come with: appropriate documentation
-  updates and a SemVer-consistent version bump
+- If a break is necessary, it must come with appropriate documentation
+  updates and a clear call-out of the SemVer bump it implies — but per
+  `CLAUDE.md`'s "Changelog and versioning" rule, don't expect (or ask for)
+  `package.json`'s version to actually be bumped on this branch; that
+  happens once, at release time, in `/prep-release`
 - Any change to the public API surface (`src/index.ts`, `Coolhand` class
   methods, exported types/classes) that was NOT the stated intention of
   this branch — flag these as breaking changes requiring explicit
