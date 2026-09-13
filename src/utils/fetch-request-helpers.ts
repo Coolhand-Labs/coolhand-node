@@ -1,3 +1,5 @@
+import { readCappedRequestText } from './capped-fetch-body.js';
+
 /**
  * Shared helpers for reading a fetch() call's effective URL/method/headers/body across both
  * calling conventions the Fetch API supports: `fetch(url, init)` and `fetch(new Request(...))`.
@@ -65,7 +67,7 @@ export async function getFetchRequestBody(url: string | URL | Request, options: 
 
   if (isRequestLike(url) && typeof url.clone === 'function') {
     try {
-      return await url.clone().text();
+      return await readCappedRequestText(url.clone());
     } catch {
       return null;
     }
