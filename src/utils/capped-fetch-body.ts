@@ -16,12 +16,34 @@ export function readCappedResponseText(
   maxBytes: number = MAX_DECOMPRESSED_BYTES,
   onTruncate?: () => void
 ): Promise<string> {
-  const body = response.body;
+  return readCappedBodyText(response, maxBytes, onTruncate);
+}
+
+/**
+ * Same capped read as `readCappedResponseText`, for the `fetch(new Request(...))` calling
+ * convention's request body — `Request` exposes the same `.body`/`.text()` shape as `Response`.
+ * Without this cap, a large body passed via `new Request(url, { body })` would be buffered into
+ * memory in full on the request-capture side, unlike every other capture path in this codebase.
+ */
+export function readCappedRequestText(
+  request: Request,
+  maxBytes: number = MAX_DECOMPRESSED_BYTES,
+  onTruncate?: () => void
+): Promise<string> {
+  return readCappedBodyText(request, maxBytes, onTruncate);
+}
+
+function readCappedBodyText(
+  bodyHolder: { body: ReadableStream<Uint8Array> | null; text(): Promise<string> },
+  maxBytes: number,
+  onTruncate?: () => void
+): Promise<string> {
+  const body = bodyHolder.body;
   if (!body || typeof body.getReader !== 'function') {
     // Returned directly, not awaited — an intervening `async` wrapper here would add an extra
     // microtask tick versus calling response.text() inline, which callers upstream rely on for
     // ordering (see the fetch interception's "drain and log in the background" comment).
-    return response.text();
+    return bodyHolder.text();
   }
   return readCappedStream(body, maxBytes, onTruncate);
 }

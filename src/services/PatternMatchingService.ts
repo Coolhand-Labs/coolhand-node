@@ -13,6 +13,7 @@ const DEFAULT_REDACTED_HEADERS = [
   'openai-api-key',
   'x-goog-api-key',
   'cf-aig-authorization',
+  'x-amz-security-token',
 ];
 
 // Runtime detection utility
@@ -520,7 +521,7 @@ export class PatternMatchingService {
       const sensitiveParams = new Set([
         'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
         'password', 'signature', 'sig', 'x-goog-api-key',
-        'x-amz-signature', 'x-amz-credential'
+        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token'
       ]);
       let redacted = false;
       for (const [name] of urlObj.searchParams.entries()) {
