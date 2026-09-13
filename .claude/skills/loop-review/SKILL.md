@@ -191,14 +191,18 @@ reuse/simplification/efficiency, every round should also flag:
   API actually accepts/returns
 
 **Documentation & cross-SDK alignment**
-- Check whether `README.md`, `CHANGELOG.md`, or files under `docs/` need
-  updates to reflect the changes on this branch
+- Check whether `README.md` or files under `docs/` need updates to
+  reflect the changes on this branch
 - Verify any existing documentation touched by this diff is still
   accurate (no stale examples, field names, or descriptions)
 - Enforce the README/docs split from `CLAUDE.md` (README stays a
   scannable landing page; anything needing more than one code block
   belongs in `docs/`)
-- Flag missing `CHANGELOG.md` entries for user-visible changes
+- Flag a `CHANGELOG.md` or `package.json`-version edit on this branch as
+  a violation, per `CLAUDE.md`'s "Changelog and versioning" rule — those
+  are `/prep-release`'s to write, not this branch's. Skip this check on a
+  `release/v*` branch — that's exactly where `/prep-release` writes them
+  intentionally.
 - If this branch makes a structural change (new README section pattern,
   new `docs/` pattern, new configuration option), `CLAUDE.md` asks for a
   companion issue/PR on `coolhand-python` to keep the two SDKs in sync —
