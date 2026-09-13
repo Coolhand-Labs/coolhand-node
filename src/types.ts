@@ -483,3 +483,68 @@ export interface SearchTemplatesResponse {
   templates: LlmRequestTemplateSummary[];
   pagination: Pagination;
 }
+
+// Filters for searchReferencedFiles, applied by GET /api/v2/llm_references. Only these three
+// Ransack predicates are exposed — `id` was deliberately excluded from the model's
+// ransackable_attributes (the aggregated response has no `id` field at all), and any other
+// `q[...]` key is a 422 rather than being silently ignored. There is deliberately no `clientId`:
+// the client is always derived from the authenticating (private) API key.
+export interface SearchReferencedFilesParams {
+  /** Case-insensitive substring match against file_path. Sent as `q[file_path_cont]`. */
+  filePathContains?: string;
+  /** Lower bound (inclusive) on created_at, ISO-8601. Sent as `q[created_at_gteq]`. */
+  createdAtGteq?: string;
+  /** Upper bound (inclusive) on created_at, ISO-8601. Sent as `q[created_at_lteq]`. */
+  createdAtLteq?: string;
+  /** Page number, 1-based. */
+  page?: number;
+  /** Page size (default 25, max 100 — enforced server-side; `per_page` is accepted on the wire as
+   *  an alias but this SDK only sends `per`, same as searchLogs/searchTemplates). */
+  per?: number;
+}
+
+// One row per distinct file_path, aggregated server-side — reference_count/last_referenced_at are
+// computed aggregates (COUNT(*)/MAX(created_at)), not stored columns, which is why there is no
+// `id` field on this shape at all.
+export interface LlmReferencedFile {
+  file_path: string;
+  reference_count: number;
+  /** ISO-8601 UTC. */
+  last_referenced_at: string;
+}
+
+// searchReferencedFiles' backing endpoint renders a bare array on the wire (same shape decision as
+// searchLogs/searchTemplates) and always sends X-Page/X-Per-Page/X-Total-Count/X-Total-Pages —
+// like searchTemplates, there is no `include_total` opt-out. Bounded server-side to the last 90
+// days (LlmReference::DEFAULT_WINDOW) — a file referenced only outside that window will not appear.
+export interface SearchReferencedFilesResponse {
+  files: LlmReferencedFile[];
+  pagination: Pagination;
+}
+
+// Params for GET /api/v2/llm_references/sessions — the per-file drill-down searchReferencedFiles
+// intentionally omits. Unlike SearchReferencedFilesParams, `filePath` is an exact match (no
+// Ransack substring matching) and is required: this is a lookup for a path you already have
+// (typically the `file_path` field from a searchReferencedFiles row), not a search.
+export interface ListReferencedFileSessionsParams {
+  /** Exact file_path to look up. Required — a missing/blank value is a 422 server-side. */
+  filePath: string;
+  page?: number;
+  per?: number;
+}
+
+// A single raw (un-aggregated) reference row, as returned by listReferencedFileSessions.
+export interface LlmReferenceSession {
+  /** Hashid — feed to getLogContent / GET /api/v2/llm_request_logs/{id} to inspect that session. */
+  llm_request_log_id: string;
+  /** ISO-8601 UTC. */
+  created_at: string;
+}
+
+// listReferencedFileSessions' backing endpoint renders a bare array of raw rows, newest first, and
+// sends the same pagination headers as searchReferencedFiles. An unmatched file_path returns a
+// real empty page (200 []), not a 404.
+export interface ListReferencedFileSessionsResponse {
+  sessions: LlmReferenceSession[];
+  pagination: Pagination;
+}

@@ -287,6 +287,67 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('LlmReferenceService integration', () => {
+    it('should expose searchReferencedFiles and listReferencedFileSessions functions', () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+
+      expect(typeof monitor.searchReferencedFiles).toBe('function');
+      expect(typeof monitor.listReferencedFileSessions).toBe('function');
+    });
+  });
+
+  describe('searchReferencedFiles / listReferencedFileSessions', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates searchReferencedFiles to LlmReferenceService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return {
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify([])),
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '1', 'X-Page': '1', 'X-Per-Page': '25' })
+        };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.searchReferencedFiles({ filePathContains: 'routes' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_references');
+      expect(url.searchParams.get('q[file_path_cont]')).toBe('routes');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result.files).toEqual([]);
+      expect(result.pagination.total_count).toBe(0);
+    });
+
+    it('delegates listReferencedFileSessions to LlmReferenceService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.listReferencedFileSessions({ filePath: 'config/routes.rb' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_references/sessions');
+      expect(url.searchParams.get('file_path')).toBe('config/routes.rb');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result.sessions).toEqual([]);
+    });
+  });
+
   describe('logRequest', () => {
     const savedFetch = (global as any).fetch;
 

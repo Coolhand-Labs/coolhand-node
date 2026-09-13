@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### ✨ New Features
+- **`Coolhand#searchReferencedFiles(params)` / `Coolhand#listReferencedFileSessions(params)` + new `LlmReferenceService`** — read back which files your logged requests reference, via the new `GET /api/v2/llm_references` and `GET /api/v2/llm_references/sessions` endpoints. Requires the **private** API key, same as `searchTemplates`. `searchReferencedFiles` aggregates to one row per distinct `file_path` (`{ file_path, reference_count, last_referenced_at }`), ranked by `reference_count` descending and bounded to the last 90 days, filterable by `filePathContains`/`createdAtGteq`/`createdAtLteq` (a fixed set of Ransack predicates — `id` is deliberately not filterable, since the aggregated shape has no `id` field) plus `page`/`per`; `pagination` is sourced from response headers with no `includeTotal` opt-out, same as `searchTemplates`. `listReferencedFileSessions` is the per-file drill-down: raw, un-aggregated `{ llm_request_log_id, created_at }` rows for one **exact** `filePath` (required, no substring matching), newest first — there is no `GET /api/v2/llm_references/:file_path` show route, since file paths aren't URL-safe path segments, so this hits a `sessions` collection route with a query param instead; an unmatched `filePath` returns an empty page, not a 404. New exported types: `SearchReferencedFilesParams`, `SearchReferencedFilesResponse`, `LlmReferencedFile`, `ListReferencedFileSessionsParams`, `ListReferencedFileSessionsResponse`, `LlmReferenceSession`, `LlmReferenceService`, `LlmReferenceServiceConfig`. See `docs/llm-reference-search.md`. ([#221](https://github.com/Coolhand-Labs/coolhand-node/issues/221))
+
+### ⚠️ Upgrade Notes
+- **The referenced-file endpoints need a backend carrying [Coolhand-Labs/coolhand#1488](https://github.com/Coolhand-Labs/coolhand/pull/1488)**, which has not shipped to production yet. Until it does, `searchReferencedFiles`/`listReferencedFileSessions` answer `404` — the same 404 a self-hosted backend that predates it will also get once #1488 ships.
+- **A `504` from `searchReferencedFiles` is likewise expected and retryable**, the same as `searchTemplates`'s `log_count` timeout. The aggregate re-runs once for the page and once more for the total count, so total database time for the response can reach twice the per-statement timeout; narrow with `filePathContains`/a smaller `per` and retry. **`listReferencedFileSessions` can 504 too** — it has no `GROUP BY` aggregate, but its own pagination `COUNT(*)` runs under the same statement-timeout guard, and a `filePath` referenced by very many sessions makes that count as expensive as the aggregate above; narrow with a smaller `per` and retry.
+
 ## [0.12.0] - 2026-09-12
 
 ### ✨ New Features
