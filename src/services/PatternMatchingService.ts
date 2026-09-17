@@ -14,6 +14,8 @@ const DEFAULT_REDACTED_HEADERS = [
   'x-goog-api-key',
   'cf-aig-authorization',
   'x-amz-security-token',
+  'ocp-apim-subscription-key',
+  'subscription-key',
 ];
 
 // Runtime detection utility
@@ -169,6 +171,44 @@ export class PatternMatchingService {
           'x-api-key': '[REDACTED]',
           'openai-api-key': '[REDACTED]',
           'x-goog-api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure OpenAI',
+        domains: ['openai.azure.com', 'openai.azure.us', 'openai.azure.cn'],
+        headers: {
+          'api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure AI Services',
+        domains: [
+          'cognitiveservices.azure.com', 'cognitiveservices.azure.us', 'cognitiveservices.azure.cn',
+          'services.ai.azure.com', 'services.ai.azure.us'
+        ],
+        paths: ['/openai/', '/models/'],
+        requiresPathMatch: true,
+        headers: {
+          'api-key': '[REDACTED]',
+          'ocp-apim-subscription-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure AI Foundry (Serverless)',
+        domains: ['inference.ai.azure.com', 'models.ai.azure.com'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
+        }
+      },
+      {
+        // Azure ML managed online endpoints all score at /score regardless of what's
+        // deployed behind them (LLM, tabular, vision, ...) — no path can distinguish an
+        // LLM deployment from any other, so this is deliberately unanchored rather than
+        // missing LLM traffic. See issue #245.
+        name: 'Azure Machine Learning',
+        domains: ['inference.ml.azure.com', 'inference.ml.azure.us'],
+        headers: {
+          'authorization': 'Bearer [REDACTED]'
         }
       }
     ];
@@ -350,6 +390,25 @@ export class PatternMatchingService {
     return hostname === domain || hostname.endsWith('.' + domain);
   }
 
+  // Shared by every "domain match" entry point (options-based and URL-based) so
+  // CoolhandAPIPattern.requiresPathMatch is honored consistently everywhere, instead of
+  // just wherever someone remembered to check it. A pattern with requiresPathMatch only
+  // counts as matched when `path` also contains one of its `paths` — needed for hosts that
+  // serve multiple unrelated APIs off the same domain (see the Azure AI Services pattern).
+  private findDomainMatch(hostname: string, path?: string): CoolhandMatchedPattern | null {
+    for (const pattern of this.apiPatterns) {
+      for (const domain of pattern.domains) {
+        if (!this.hostnameMatchesDomain(hostname, domain)) { continue; }
+        if (pattern.requiresPathMatch) {
+          const pathMatches = !!path && !!pattern.paths?.some((p) => path.includes(p));
+          if (!pathMatches) { continue; }
+        }
+        return { pattern, matchType: 'domain', matchValue: domain };
+      }
+    }
+    return null;
+  }
+
   // Defense in depth: a bug in any matcher (e.g. malformed apiPatterns surviving
   // load-time validation) must never break the host app's networking — this is the
   // hot path called from every patched http/https/fetch entry point.
@@ -377,20 +436,7 @@ export class PatternMatchingService {
       // Construct URL from options
       const hostname = options.hostname || options.host || '';
 
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.findDomainMatch(hostname, options.path);
     });
   }
 
@@ -408,20 +454,7 @@ export class PatternMatchingService {
       // Construct URL from options
       const hostname = options.hostname || options.host || '';
 
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.findDomainMatch(hostname, options.path);
     });
   }
 
@@ -443,16 +476,9 @@ export class PatternMatchingService {
       }
 
       // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
+      const domainMatch = this.findDomainMatch(urlObj.hostname, urlObj.pathname);
+      if (domainMatch) {
+        return domainMatch;
       }
 
       // Check path matches (only for patterns that explicitly opt in to
@@ -517,11 +543,13 @@ export class PatternMatchingService {
       // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
       // api-patterns.json) — included here too as defense-in-depth for callers that pass it
       // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
-      // on AWS SigV4-presigned URLs.
+      // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
+      // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
       const sensitiveParams = new Set([
         'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
         'password', 'signature', 'sig', 'x-goog-api-key',
-        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token'
+        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
+        'subscription-key'
       ]);
       let redacted = false;
       for (const [name] of urlObj.searchParams.entries()) {
@@ -533,6 +561,53 @@ export class PatternMatchingService {
       return redacted ? urlObj.toString() : url;
     } catch {
       return url;
+    }
+  }
+
+  // Substrings (not exact key names) so e.g. Elasticsearch's `encoded_api_key` is caught
+  // even though it isn't literally `api_key`. Normalized/compared with separators stripped
+  // so `connection_string` and `connectionString` are both caught by one entry.
+  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'token', 'connectionstring'];
+
+  private static normalizeKey(key: string): string {
+    return key.toLowerCase().replace(/[_-]/g, '');
+  }
+
+  // Azure OpenAI's "On Your Data" feature embeds datastore credentials in the request body
+  // under data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo
+  // connection string) — sanitizeHeaders/sanitizeURL never see these. Scoped to that
+  // subtree so message content and tool schemas outside it stay verbatim. See issue #245.
+  private redactDataSourceCredentials(value: unknown, insideDataSources: boolean): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactDataSourceCredentials(item, insideDataSources));
+    }
+
+    if (value && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        const normalizedKey = PatternMatchingService.normalizeKey(key);
+        const nowInside = insideDataSources || normalizedKey === 'datasources';
+        if (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) {
+          result[key] = '[REDACTED]';
+        } else {
+          result[key] = this.redactDataSourceCredentials(val, nowInside);
+        }
+      }
+      return result;
+    }
+
+    return value;
+  }
+
+  public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {
+    if (!body || typeof body !== 'object') {
+      return body;
+    }
+    try {
+      return this.redactDataSourceCredentials(body, false) as Record<string, unknown>;
+    } catch (error) {
+      if (!this.silent) { console.warn(`⚠️  Coolhand: body sanitization failed, request body will not be captured:`, (error as Error).message); }
+      return null;
     }
   }
 

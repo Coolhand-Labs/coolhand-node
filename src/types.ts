@@ -93,6 +93,11 @@ export interface CoolhandAPIPattern {
    *  unrelated domain). Off by default — a wrong opt-in lets unrelated hosts sharing a
    *  common path fragment (e.g. `/v1/models`) be captured and forwarded to Coolhand. */
   allowPathMatchAcrossDomains?: boolean;
+  /** Require `paths` to also match before a domain match counts. Off by default (domain
+   *  match alone is sufficient). Needed for hosts that serve multiple unrelated APIs off
+   *  the same domain (e.g. Azure Cognitive Services also serves Speech/Vision/Language) —
+   *  without this, matching the domain alone would capture non-inference traffic too. */
+  requiresPathMatch?: boolean;
   headers?: Record<string, string>;
 }
 

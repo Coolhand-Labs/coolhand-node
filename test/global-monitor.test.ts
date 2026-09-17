@@ -52,6 +52,7 @@ describe('Global Monitor', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn(),
       sanitizeURL: jest.fn(),
+      sanitizeBody: jest.fn(),
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(5),
