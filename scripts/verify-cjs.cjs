@@ -29,5 +29,20 @@ assert.equal(match.pattern.name, 'OpenAI', `Expected pattern name "OpenAI", got 
   assert.equal(pkg.isGlobalMonitoringActive(), true,
     'index entry should see active state initialised via auto-monitor (shared singleton)');
 
+  // Verify the dist/test-utils build output resolves and its exports are wired up — a
+  // stale/broken exports map or missed build entry here would otherwise ship undetected. The
+  // typeof checks are what actually catch that; this script makes no real intercepted call, so
+  // the equality check below is 0 === 0 and, on its own, wouldn't catch a broken module-sharing
+  // regression (e.g. bundle:true re-introduced for one entry) — it's a sanity check, not
+  // meaningful regression coverage.
+  const testUtils = require('../dist/test-utils.cjs');
+  assert.equal(typeof testUtils.captureInterceptionSnapshot, 'function',
+    'captureInterceptionSnapshot should be exported from coolhand-node/test-utils');
+  assert.equal(typeof testUtils.assertInterceptionOccurred, 'function',
+    'assertInterceptionOccurred should be exported from coolhand-node/test-utils');
+  const snapshot = testUtils.captureInterceptionSnapshot();
+  assert.equal(snapshot.interceptedCalls, pkg.getGlobalStats().interceptedCalls,
+    'captureInterceptionSnapshot should mirror getGlobalStats().interceptedCalls');
+
   console.log(`CJS smoke test passed (${count} patterns loaded, OpenAI matched)`);
 })().catch(err => { console.error(err); process.exitCode = 1; });
