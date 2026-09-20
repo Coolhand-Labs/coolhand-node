@@ -72,6 +72,84 @@
         "openai-api-key": "[REDACTED]",
         "x-goog-api-key": "[REDACTED]"
       }
+    },
+    {
+      "name": "DeepSeek",
+      "domains": ["api.deepseek.com"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Mistral",
+      "domains": ["api.mistral.ai"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Perplexity",
+      "domains": ["api.perplexity.ai"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "xAI",
+      "domains": ["api.x.ai"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Cohere",
+      "domains": ["api.cohere.com", "api.cohere.ai"],
+      "paths": ["/v2/chat", "/v1/embed", "/v2/embed"],
+      "requiresPathMatch": true,
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "TypeSafe Jev",
+      "domains": ["api.typesafe.ai"],
+      "paths": ["/v1/systemone"],
+      "requiresPathMatch": true,
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Ollama",
+      "domains": ["ollama.com"],
+      "ports": [11434],
+      "paths": ["/api/chat", "/api/generate", "/api/embed", "/api/embeddings"],
+      "requiresPathMatch": true,
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Bedrock",
+      "domains": ["bedrock-runtime.*.amazonaws.com", "bedrock-runtime-fips.*.amazonaws.com", "bedrock-runtime.*.amazonaws.com.cn"],
+      "paths": ["/model/", "/openai/"],
+      "requiresPathMatch": true,
+      "headers": {
+        "authorization": "[REDACTED]",
+        "x-amz-security-token": "[REDACTED]"
+      }
+    },
+    {
+      "name": "ElevenLabs",
+      "domains": ["api.elevenlabs.io"],
+      "paths": [],
+      "headers": {
+        "xi-api-key": "[REDACTED]"
+      }
     }
   ]
 }

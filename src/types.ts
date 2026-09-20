@@ -93,6 +93,14 @@ export interface CoolhandAPIPattern {
    *  unrelated domain). Off by default — a wrong opt-in lets unrelated hosts sharing a
    *  common path fragment (e.g. `/v1/models`) be captured and forwarded to Coolhand. */
   allowPathMatchAcrossDomains?: boolean;
+  /** Make `paths` binding: a request only matches this pattern when its path also starts
+   *  with one of `paths` (ending on a segment boundary, so `/v1/embed` does not match
+   *  `/v1/embed-jobs`). Off by default — without it a `domains` match applies to every path
+   *  on that host. With it set and `paths` empty, nothing matches. */
+  requiresPathMatch?: boolean;
+  /** Ports that identify this provider on any host (e.g. 11434 for a local Ollama). Only
+   *  honored when `requiresPathMatch` is set, so a port alone never captures a request. */
+  ports?: number[];
   headers?: Record<string, string>;
 }
 
