@@ -448,7 +448,7 @@ Example patterns file (`my-patterns.json`):
 
 A `domains` match applies to **every** path on that host — `paths` isn't a further restriction on top of it. `paths` only matters on its own, as a fallback for hosts that didn't match any pattern's `domains` at all, and only when the pattern explicitly opts in via `allowPathMatchAcrossDomains: true` (off by default, since a wrong opt-in lets unrelated hosts that happen to share a path fragment — e.g. `/v1/chat` — get captured and forwarded to Coolhand). Without that flag, a pattern's `paths` field (like `"My Custom AI"`'s above) has no effect.
 
-To make `paths` binding for one pattern, set `"requiresPathMatch": true`: the pattern then only matches requests whose path starts with one of its `paths` (ending on a path-segment boundary, so `/v1/embed` matches `/v1/embed?x=1` but not `/v1/embed-jobs`). The built-in Cohere, TypeSafe Jev, Bedrock and Ollama patterns use it; everything else still matches every path on its host. A `requiresPathMatch` pattern with no `paths` matches nothing. Two more pattern features are available only alongside it: `ports` (e.g. `[11434]`) identifies a provider by port on any host, and a `*` in a `domains` entry stands for exactly one DNS label (e.g. `bedrock-runtime.*.amazonaws.com`). If your Ollama listens on another port, add your own pattern with that port to a patterns file.
+The built-in Cohere, TypeSafe Jev, Bedrock and Ollama patterns only match specific paths (`requiresPathMatch`). For that option, `ports`, `*` wildcard domains, and a custom Ollama port, see the [Global Monitoring Guide](./docs/global-monitoring.md).
 
 ## Monitoring Statistics
 

@@ -440,12 +440,10 @@ export class PatternMatchingService {
     return regex;
   }
 
-  // `path` may still carry a query string (http.request's options.path does). An entry
-  // matches as a prefix that ends on a segment boundary, so `/v1/embed` matches
-  // `/v1/embed` and `/v1/embed/x` but not `/v1/embed-jobs`; an entry that itself ends in
-  // `/` is a plain prefix.
-  private pathMatchesEntry(path: string, entry: string): boolean {
-    const pathname = path.split(/[?#]/, 1)[0];
+  // An entry matches `pathname` as a prefix that ends on a segment boundary, so `/v1/embed`
+  // matches `/v1/embed` and `/v1/embed/x` but not `/v1/embed-jobs`; an entry that itself ends
+  // in `/` is a plain prefix.
+  private pathnameMatchesEntry(pathname: string, entry: string): boolean {
     if (!pathname.startsWith(entry)) { return false; }
     return entry.endsWith('/') || pathname.length === entry.length || pathname[entry.length] === '/';
   }
@@ -455,23 +453,30 @@ export class PatternMatchingService {
   // everywhere. Without `requiresPathMatch` a `domains` match applies to every path, exactly
   // as it always has. With it, the request must also hit one of the pattern's `paths` — and
   // only then may `ports` identify a host-less provider such as a local Ollama.
+  // `path` may still carry a query string (http.request's options.path does). This runs on
+  // every http/https/fetch call, so the cheap host/port test comes first and the path is only
+  // split for patterns whose host or port already matched.
   private findDomainMatch(hostname: string, port: number | undefined, path: string | undefined): CoolhandMatchedPattern | null {
+    let pathname: string | undefined;
     for (const pattern of this.apiPatterns) {
-      let matchedPath: string | undefined;
-      if (pattern.requiresPathMatch) {
-        matchedPath = path === undefined ? undefined : pattern.paths?.find((entry) => this.pathMatchesEntry(path, entry));
-        if (matchedPath === undefined) { continue; }
+      const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(hostname, domain));
+      const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
+      if (matchedDomain === undefined && !portMatches) { continue; }
+
+      if (!pattern.requiresPathMatch) {
+        if (matchedDomain === undefined) { continue; }
+        return { pattern, matchType: 'domain', matchValue: matchedDomain };
       }
 
-      for (const domain of pattern.domains) {
-        if (this.hostnameMatchesDomain(hostname, domain)) {
-          return { pattern, matchType: 'domain', matchValue: domain };
-        }
-      }
+      if (path === undefined) { continue; }
+      pathname ??= path.split(/[?#]/, 1)[0];
+      const requestPathname = pathname;
+      const matchedPath = pattern.paths?.find((entry) => this.pathnameMatchesEntry(requestPathname, entry));
+      if (matchedPath === undefined) { continue; }
 
-      if (matchedPath !== undefined && port !== undefined && pattern.ports?.includes(port)) {
-        return { pattern, matchType: 'path', matchValue: matchedPath };
-      }
+      return matchedDomain !== undefined
+        ? { pattern, matchType: 'domain', matchValue: matchedDomain }
+        : { pattern, matchType: 'path', matchValue: matchedPath };
     }
     return null;
   }
