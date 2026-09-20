@@ -1,4 +1,5 @@
 import { CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
+import { normalizeHostname } from '../utils/self-endpoint.js';
 
 // Credential-bearing headers redacted unconditionally, regardless of which (if any)
 // pattern matched — closes the gap where an unmatched/misdetected request or a custom
@@ -28,6 +29,46 @@ const CREDENTIAL_HEADER_EXEMPT_PATTERN = /rate-?limit/;
 
 function isCredentialHeaderName(lowerName: string): boolean {
   return CREDENTIAL_HEADER_PATTERN.test(lowerName) && !CREDENTIAL_HEADER_EXEMPT_PATTERN.test(lowerName);
+}
+
+// A `domains` entry made only of `*` and `.` (e.g. `*`, `**`, `*.*`) has no label to anchor on and
+// would match every host — self-inflicted by a custom patternsFile, but still worth refusing.
+function isWildcardOnlyDomain(domain: string): boolean {
+  return /^[*.\s]*$/.test(domain);
+}
+
+// Canonical path used for `paths`/`requiresPathMatch` matching, so a request can't dodge (or
+// spuriously trigger) a match by how its path is spelled. `URL` already normalizes URL-derived
+// pathnames but `http.request({ path })` reaches us verbatim, so both go through here: the query
+// is dropped, dot-segments are resolved (`/x/../model/` -> `/model/`) and duplicate slashes
+// collapsed (`//model/x` -> `/model/x`).
+function normalizeMatchPath(path: string): string {
+  const raw = path.split(/[?#]/, 1)[0];
+  // Leading slashes are stripped before parsing: `//model/x` would otherwise read as a
+  // protocol-relative host rather than a path.
+  const resolved = raw.replace(/^\/+/, '');
+  try {
+    return new URL('http://coolhand.invalid/' + resolved).pathname.replace(/\/{2,}/g, '/');
+  } catch {
+    return '/' + resolved.replace(/\/{2,}/g, '/');
+  }
+}
+
+// Synchronously resolves a Node built-in from either module format. `require` is preferred where it
+// exists (CJS, and Jest — whose `jest.mock('fs')` only intercepts `require`); native ESM has no
+// `require`, so it falls back to `process.getBuiltinModule` (Node 20.16+ / 22.3+). Returns null
+// where neither is available (old Node in ESM, or non-Node runtimes).
+function getNodeBuiltin(name: 'fs' | 'path' | 'url'): any {
+  if (typeof require !== 'undefined') {
+    try { return require(name); } catch { /* fall through */ }
+  }
+  try {
+    const getBuiltinModule = (process as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+    if (typeof getBuiltinModule === 'function') {
+      return getBuiltinModule.call(process, name) ?? null;
+    }
+  } catch { /* not available */ }
+  return null;
 }
 
 // Runtime detection utility
@@ -84,15 +125,24 @@ export class PatternMatchingService {
     } else {
       // In Node.js runtime, try to load from filesystem synchronously
       try {
-        // Check if require is available (CommonJS) or if we need to use dynamic import (ES modules)
-        if (typeof require !== 'undefined') {
-          const fs = require('fs');
-          const path = require('path');
+        const fs = getNodeBuiltin('fs');
+        const path = getNodeBuiltin('path');
+        if (fs && path) {
           this.loadAPIPatternsSync(customPatternsFile, fs, path);
         } else {
-          // In ES modules, we can't use require synchronously, so fall back to default patterns
-          // The async initialization will handle proper loading later
-          if (!this.silent) { console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.'); }
+          // Native ESM on a Node without process.getBuiltinModule (< 20.16 / 22.3): there is no
+          // synchronous way to reach fs from here, so only the built-in patterns are available.
+          // A custom patterns file being silently ignored would be a surprise, so say so even in
+          // silent mode.
+          if (customPatternsFile) {
+            console.warn(
+              `⚠️  Coolhand: patternsFile "${customPatternsFile}" was NOT loaded — synchronous file loading ` +
+              'is unavailable in native ESM on this Node.js version (needs 20.16+ / 22.3+, or use the CommonJS build). ' +
+              'Using the built-in patterns instead.'
+            );
+          } else if (!this.silent) {
+            console.log('📋 ES module environment without synchronous fs access detected, using built-in patterns.');
+          }
           this.loadDefaultPatternsForEdge();
         }
       } catch {
@@ -311,7 +361,16 @@ export class PatternMatchingService {
     if (!isValid) {
       throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], ... }] })`);
     }
-    return patterns as CoolhandAPIPattern[];
+    return (patterns as CoolhandAPIPattern[]).map((pattern) => {
+      const domains = pattern.domains.filter((domain) => {
+        if (typeof domain === 'string' && isWildcardOnlyDomain(domain)) {
+          if (!this.silent) { console.warn(`⚠️  Coolhand: ignoring domain "${domain}" in "${pattern.name}" (${sourceFile}) — it would match every host`); }
+          return false;
+        }
+        return true;
+      });
+      return domains.length === pattern.domains.length ? pattern : { ...pattern, domains };
+    });
   }
 
   private async loadAPIPatterns(customPatternsFile?: string): Promise<void> {
@@ -433,7 +492,7 @@ export class PatternMatchingService {
             const metaUrl: string = eval('import.meta.url');
             // Use fileURLToPath instead of new URL().pathname to handle
             // Windows paths correctly (e.g. /C:/foo/bar.js → C:\foo\bar.js)
-            const { fileURLToPath } = require('url');
+            const { fileURLToPath } = getNodeBuiltin('url');
             baseDir = _path.dirname(fileURLToPath(metaUrl));
           } catch {
             baseDir = process.cwd();
@@ -473,7 +532,7 @@ export class PatternMatchingService {
 
   private hostnameMatchesDomain(hostname: string, domain: string): boolean {
     if (domain.includes('*')) {
-      return this.wildcardDomainRegex(domain).test(hostname);
+      return !isWildcardOnlyDomain(domain) && this.wildcardDomainRegex(domain).test(hostname);
     }
     // `hostname` is already lowercased by findDomainMatch; lowercase the configured domain too
     // so a custom pattern written as `API.Example.com` keeps matching.
@@ -488,7 +547,9 @@ export class PatternMatchingService {
   private wildcardDomainRegex(domain: string): RegExp {
     let regex = this.wildcardDomainCache.get(domain);
     if (!regex) {
-      const body = domain.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
+      // Consecutive `*`s mean the same as one (a label), and left as-is they would build a regex
+      // with polynomial backtracking (`[a-z0-9-]+[a-z0-9-]+...`).
+      const body = domain.replace(/\*+/g, '*').split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
       regex = new RegExp(`(^|\\.)${body}$`, 'i');
       this.wildcardDomainCache.set(domain, regex);
     }
@@ -515,7 +576,8 @@ export class PatternMatchingService {
     let pathname: string | undefined;
     // Hostnames are case-insensitive, and `options.hostname` reaches us exactly as the host
     // app wrote it (only URL-derived hostnames are already lowercased).
-    const lowerHostname = hostname.toLowerCase();
+    // Also drops a trailing dot: `api.openai.com.` is the same DNS name as `api.openai.com`.
+    const lowerHostname = normalizeHostname(hostname);
     for (const pattern of this.apiPatterns) {
       const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(lowerHostname, domain));
       const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
@@ -527,7 +589,7 @@ export class PatternMatchingService {
       }
 
       if (path === undefined) { continue; }
-      pathname ??= path.split(/[?#]/, 1)[0];
+      pathname ??= normalizeMatchPath(path);
       const requestPathname = pathname;
       const matchedPath = pattern.paths?.find((entry) => this.pathnameMatchesEntry(requestPathname, entry));
       if (matchedPath === undefined) { continue; }
@@ -547,7 +609,7 @@ export class PatternMatchingService {
   }
 
   private pathFromOptions(options: CoolhandRequestOptions): string | undefined {
-    if (options.path) { return options.path; }
+    if (options.path) { return options.path; } // normalized in findDomainMatch
     const full = options.href || options.url;
     if (full) {
       try { return new URL(full).pathname; } catch { return undefined; }
@@ -623,7 +685,7 @@ export class PatternMatchingService {
       for (const pattern of this.apiPatterns) {
         if (pattern.paths && pattern.allowPathMatchAcrossDomains) {
           for (const pathPattern of pattern.paths) {
-            if (urlObj.pathname.includes(pathPattern)) {
+            if (normalizeMatchPath(urlObj.pathname).includes(pathPattern)) {
               return {
                 pattern,
                 matchType: 'path',
