@@ -19,6 +19,17 @@ const DEFAULT_REDACTED_HEADERS = [
   'xi-api-key',
 ];
 
+// Header names that look credential-bearing even though they aren't in the exact-name list above
+// (`x-auth-token`, `cf-access-client-secret`, `x-csrf-token`, ...). Rate-limit telemetry such as
+// `anthropic-ratelimit-tokens-remaining` matches "token" but carries no secret and is genuinely
+// useful in logs, so it is exempt.
+const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie/;
+const CREDENTIAL_HEADER_EXEMPT_PATTERN = /rate-?limit/;
+
+function isCredentialHeaderName(lowerName: string): boolean {
+  return CREDENTIAL_HEADER_PATTERN.test(lowerName) && !CREDENTIAL_HEADER_EXEMPT_PATTERN.test(lowerName);
+}
+
 // Runtime detection utility
 const isEdgeRuntime = () => {
   return (typeof (globalThis as any).EdgeRuntime !== 'undefined') ||
@@ -638,6 +649,11 @@ export class PatternMatchingService {
         sanitized[headerName] = '[REDACTED]';
       }
     }
+    for (const headerName of Object.keys(sanitized)) {
+      if (sanitized[headerName] !== undefined && isCredentialHeaderName(headerName)) {
+        sanitized[headerName] = '[REDACTED]';
+      }
+    }
 
     // Pattern-specific sanitization
     if (pattern?.headers) {
@@ -660,28 +676,36 @@ export class PatternMatchingService {
     return sanitized;
   }
 
+  // Compared via normalizeKey (lowercased, `_`/`-` stripped) so `accessToken`, `access_token` and
+  // `access-token` are all one entry.
+  // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
+  // api-patterns.json) — included here too as defense-in-depth for callers that pass it
+  // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
+  // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
+  // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
+  private static readonly SENSITIVE_QUERY_PARAMS = new Set([
+    'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
+    'password', 'signature', 'sig', 'x-goog-api-key',
+    'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
+    'subscription-key', 'client_secret', 'refresh_token', 'id_token', 'authorization'
+  ].map((name) => PatternMatchingService.normalizeKey(name)));
+
   public sanitizeURL(url: string): string {
     try {
       const urlObj = new URL(url);
-      if (!urlObj.search) {
-        return url;
-      }
-      // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
-      // api-patterns.json) — included here too as defense-in-depth for callers that pass it
-      // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
-      // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
-      // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
-      const sensitiveParams = new Set([
-        'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
-        'password', 'signature', 'sig', 'x-goog-api-key',
-        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
-        'subscription-key'
-      ]);
       let redacted = false;
-      for (const [name] of urlObj.searchParams.entries()) {
-        if (sensitiveParams.has(name.toLowerCase())) {
-          urlObj.searchParams.set(name, '[REDACTED]');
-          redacted = true;
+      // `https://user:pass@host/...` — userinfo is a credential too.
+      if (urlObj.username || urlObj.password) {
+        urlObj.username = '';
+        urlObj.password = '';
+        redacted = true;
+      }
+      if (urlObj.search) {
+        for (const [name] of urlObj.searchParams.entries()) {
+          if (PatternMatchingService.SENSITIVE_QUERY_PARAMS.has(PatternMatchingService.normalizeKey(name))) {
+            urlObj.searchParams.set(name, '[REDACTED]');
+            redacted = true;
+          }
         }
       }
       return redacted ? urlObj.toString() : url;
@@ -699,24 +723,58 @@ export class PatternMatchingService {
     return key.toLowerCase().replace(/[_-]/g, '');
   }
 
-  // Azure OpenAI's "On Your Data" feature embeds datastore credentials in the request body
-  // under data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo
-  // connection string) — sanitizeHeaders/sanitizeURL never see these. Scoped to that
-  // subtree so message content and tool schemas outside it stay verbatim. See issue #245.
-  private redactDataSourceCredentials(value: unknown, insideDataSources: boolean): unknown {
+  // Credential-bearing keys that are redacted wherever they appear in a body, normalized as above:
+  //  - Anthropic `mcp_servers[].authorization_token`
+  //  - OpenAI realtime `client_secret` (an ephemeral key returned in *response* bodies)
+  private static readonly ALWAYS_REDACTED_BODY_KEYS = new Set(['authorizationtoken', 'clientsecret']);
+
+  // `authorization` / `headers` are only credentials on an MCP tool/server definition — OpenAI
+  // Responses MCP tools carry `{ type: 'mcp', server_url, authorization, headers }`. Scoped to
+  // those objects because a bare `headers` or `authorization` key elsewhere (tool schemas, message
+  // content) is ordinary data.
+  private static readonly MCP_CREDENTIAL_KEYS = new Set(['authorization', 'headers']);
+
+  // Deeper subtrees are replaced rather than walked, so a pathologically nested body can't blow the
+  // stack — and, failing closed, whatever is in them is never logged.
+  private static readonly MAX_BODY_DEPTH = 64;
+
+  private static isMcpDefinition(node: Record<string, unknown>): boolean {
+    return node.type === 'mcp' || 'server_url' in node || 'serverUrl' in node || 'server_label' in node || 'serverLabel' in node;
+  }
+
+  // Credentials that appear in request/response bodies rather than headers/URLs, which
+  // sanitizeHeaders/sanitizeURL never see:
+  //  - Azure OpenAI's "On Your Data" feature embeds datastore credentials under
+  //    data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo connection
+  //    string). Scoped to that subtree so message content and tool schemas outside it stay
+  //    verbatim. See issue #245.
+  //  - MCP server/tool credentials and realtime client secrets (see the key sets above).
+  private redactBodyCredentials(value: unknown, insideDataSources: boolean, depth: number): unknown {
+    if (depth > PatternMatchingService.MAX_BODY_DEPTH) {
+      return '[REDACTED: nested too deeply]';
+    }
+
     if (Array.isArray(value)) {
-      return value.map((item) => this.redactDataSourceCredentials(item, insideDataSources));
+      return value.map((item) => this.redactBodyCredentials(item, insideDataSources, depth + 1));
     }
 
     if (value && typeof value === 'object') {
+      const node = value as Record<string, unknown>;
+      const isMcp = PatternMatchingService.isMcpDefinition(node);
       const result: Record<string, unknown> = {};
-      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      for (const [key, val] of Object.entries(node)) {
         const normalizedKey = PatternMatchingService.normalizeKey(key);
         const nowInside = insideDataSources || normalizedKey === 'datasources';
-        if (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) {
-          result[key] = '[REDACTED]';
+        const redact =
+          (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) ||
+          PatternMatchingService.ALWAYS_REDACTED_BODY_KEYS.has(normalizedKey) ||
+          (isMcp && PatternMatchingService.MCP_CREDENTIAL_KEYS.has(normalizedKey));
+        const next = redact ? '[REDACTED]' : this.redactBodyCredentials(val, nowInside, depth + 1);
+        if (key === '__proto__') {
+          // A plain assignment would set the prototype and silently drop the key from the log.
+          Object.defineProperty(result, key, { value: next, enumerable: true, writable: true, configurable: true });
         } else {
-          result[key] = this.redactDataSourceCredentials(val, nowInside);
+          result[key] = next;
         }
       }
       return result;
@@ -725,12 +783,45 @@ export class PatternMatchingService {
     return value;
   }
 
+  // Bodies reach us as strings whenever parseBody couldn't produce an object: a top-level JSON
+  // array (re-joined as NDJSON), NDJSON itself, a BOM-prefixed document, or a body truncated at the
+  // capture cap. They must be redacted like parsed bodies rather than logged verbatim.
+  private static readonly CREDENTIAL_JSON_STRING_PATTERN =
+    /("(?:[^"\\]|\\.)*?(?:key|secret|password|token|authorization|connection_?string)(?:[^"\\]|\\.)*?"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+
+  private sanitizeStringBody(text: string): string {
+    const stripped = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+
+    try {
+      return JSON.stringify(this.redactBodyCredentials(JSON.parse(stripped), false, 0));
+    } catch { /* not a single JSON document */ }
+
+    const lines = stripped.split('\n');
+    if (lines.length > 1) {
+      try {
+        return lines
+          .map((line) => (line.trim() === '' ? line : JSON.stringify(this.redactBodyCredentials(JSON.parse(line), false, 0))))
+          .join('\n');
+      } catch { /* not NDJSON either */ }
+    }
+
+    // Unparseable (truncated, malformed): can't know the structure, so redact by key name instead.
+    // Deliberately over-inclusive — a body we can't parse is safer over-redacted than leaked.
+    return text.replace(PatternMatchingService.CREDENTIAL_JSON_STRING_PATTERN, '$1"[REDACTED]"');
+  }
+
   public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {
-    if (!body || typeof body !== 'object') {
+    if (!body) {
       return body;
     }
     try {
-      return this.redactDataSourceCredentials(body, false) as Record<string, unknown>;
+      if (typeof body === 'string') {
+        return this.sanitizeStringBody(body);
+      }
+      if (typeof body !== 'object') {
+        return body;
+      }
+      return this.redactBodyCredentials(body, false, 0) as Record<string, unknown>;
     } catch (error) {
       if (!this.silent) { console.warn(`⚠️  Coolhand: body sanitization failed, request body will not be captured:`, (error as Error).message); }
       return null;

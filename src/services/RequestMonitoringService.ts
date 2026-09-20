@@ -2,7 +2,6 @@ import { PassThrough } from 'stream';
 import type { IncomingMessage, ClientRequest } from 'http';
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from '../types';
 import { PatternMatchingService } from './PatternMatchingService.js';
-import { parseBody } from '../utils/parse-body.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from '../utils/decompress.js';
 import { CappedBuffer } from '../utils/capped-buffer.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
@@ -13,6 +12,9 @@ import { patchResponseEmit } from '../utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded, SelfEndpoint } from '../utils/self-endpoint.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 import { extractRequestHostname } from '../utils/extract-hostname.js';
+import { formatErrorMessage } from '../utils/format-error.js';
+import { captureRequestChunk, parseAndSanitizeBody } from '../utils/request-capture.js';
+import { getState } from '../utils/global-state.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -74,6 +76,11 @@ function setActiveOwner(owner: RequestMonitoringService): void {
 /** Clears the active-owner singleton — for use in tests only. */
 export function _resetActiveOwner(): void {
   delete (globalThis as any)[ACTIVE_OWNER_KEY];
+  // The http/https/fetch patch flags live in the shared global state (see CoolhandGlobalState);
+  // tests that restore the real modules between cases need them cleared along with the owner.
+  const state = getState();
+  state.httpPatched = false;
+  state.fetchPatched = false;
 }
 
 export class RequestMonitoringService {
@@ -98,7 +105,14 @@ export class RequestMonitoringService {
     if (owner === null) {
       setActiveOwner(this);
 
-      if (loadNodeModules()) {
+      const state = getState();
+      if (state.httpPatched) {
+        // Auto-monitor (or another copy of this SDK) already wrapped http/https — wrapping again
+        // would log every request twice and hold two tees / 2 x 50 MB buffers per response.
+        this.log('🔄 http/https already patched by another Coolhand layer, skipping');
+      } else if (loadNodeModules()) {
+        state.httpPatched = true;
+
         // Patch HTTPS
         this.patchHTTPS();
 
@@ -109,7 +123,11 @@ export class RequestMonitoringService {
       }
 
       // Patch fetch if available (Node 18+)
-      this.patchFetch();
+      if (state.fetchPatched) {
+        this.log('🔄 fetch already patched by another Coolhand layer, skipping');
+      } else {
+        this.patchFetch();
+      }
     } else if (owner !== this) {
       // Only one Coolhand instance's patches are ever live per process — the http/https/fetch
       // replacements install once and close over whichever instance called setupMonitoring()
@@ -301,10 +319,14 @@ export class RequestMonitoringService {
 
   private patchFetch(): void {
     if (typeof globalThis.fetch === 'function') {
+      getState().fetchPatched = true;
       const originalFetch = globalThis.fetch;
       const monitor = this;
 
-      globalThis.fetch = async function(url: string | URL | Request, options: RequestInit = {}) {
+      globalThis.fetch = async function(url: string | URL | Request, rawOptions?: RequestInit | null) {
+        // `fetch(url, null)` is valid per the Fetch spec (null init behaves like {}), but a default
+        // parameter only covers `undefined`.
+        const options = rawOptions ?? {};
         // getFetchURL/getFetchMethod handle both fetch() calling conventions — `fetch(url, init)`
         // and `fetch(new Request(...))` — the latter of which `url.toString()` alone would render
         // as the useless "[object Request]" (Request doesn't override toString, unlike URL),
@@ -343,21 +365,28 @@ export class RequestMonitoringService {
 
     const url = this.buildURL(options, protocol);
 
-    const callData: CoolhandCallData = {
-      id: this.interceptedCalls,
-      timestamp: new Date().toISOString(),
-      method: typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET',
-      url: this.patternMatchingService.sanitizeURL(url),
-      headers: this.patternMatchingService.sanitizeHeaders(
-        typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
-        matchedPattern?.pattern
-      ),
-      request_body: null,
-      response_body: null,
-      response_headers: null,
-      status_code: null,
-      protocol: protocol
-    };
+    let callData: CoolhandCallData;
+    try {
+      callData = {
+        id: this.interceptedCalls,
+        timestamp: new Date().toISOString(),
+        method: typeof options === 'object' && 'method' in options ? options.method || 'GET' : 'GET',
+        url: this.patternMatchingService.sanitizeURL(url),
+        headers: this.patternMatchingService.sanitizeHeaders(
+          typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
+          matchedPattern?.pattern
+        ),
+        request_body: null,
+        response_body: null,
+        response_headers: null,
+        status_code: null,
+        protocol: protocol
+      };
+    } catch (err) {
+      // Building the (sanitized) log record must never stop the host's own request from being made.
+      this.log(`⚠️ Could not prepare capture; not intercepting this request: ${formatErrorMessage(err)}`);
+      return originalRequest(options as any, callback as any);
+    }
 
     this.log(`📞 Starting API call #${callData.id} to ${callData.url}`);
 
@@ -395,22 +424,40 @@ export class RequestMonitoringService {
         responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
 
-      res.on('end', async () => {
+      // Completes the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first — an
+      // aborted or destroyed response never emits 'end', so without the other two triggers it
+      // would never be logged.
+      let finalized = false;
+      const finalize = async (): Promise<void> => {
+        if (finalized) { return; }
+        finalized = true;
         try {
-          const rawBuffer = responseBuffer.concat();
-          const contentEncoding = res.headers?.['content-encoding'];
-          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this));
-          callData.response_body = parseBody(responseBody);
-        } catch (err: any) {
-          this.log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
-          callData.response_body = null;
-        }
-        callData.response_headers = this.patternMatchingService.sanitizeHeaders(res.headers, matchedPattern?.pattern);
-        callData.status_code = res.statusCode || null;
+          try {
+            const rawBuffer = responseBuffer.concat();
+            const contentEncoding = res.headers?.['content-encoding'];
+            const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this));
+            callData.response_body = parseAndSanitizeBody(
+              responseBody,
+              (body) => this.patternMatchingService.sanitizeBody(body),
+              (err) => this.log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+            );
+          } catch (err: any) {
+            this.log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
+            callData.response_body = null;
+          }
+          callData.response_headers = this.patternMatchingService.sanitizeHeaders(res.headers, matchedPattern?.pattern);
+          callData.status_code = res.statusCode || null;
 
-        // Emit event for the logging service to handle
-        this.onRequestComplete(callData, matchedPattern);
-      });
+          // Emit event for the logging service to handle
+          this.onRequestComplete(callData, matchedPattern);
+        } catch (err) {
+          this.log(`⚠️ Could not complete call #${callData.id}: ${formatErrorMessage(err)}`);
+        }
+      };
+
+      res.on('end', finalize);
+      res.on('aborted', finalize);
+      res.on('close', finalize);
 
       // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
       return (hostStream as unknown as IncomingMessage) || res;
@@ -430,24 +477,43 @@ export class RequestMonitoringService {
     const originalWrite = req.write.bind(req);
     const originalEnd = req.end.bind(req);
 
+    // Capture is best-effort and always runs *before* forwarding the original arguments untouched:
+    // nothing here may throw into, delay, or alter the host's own write/end. `req.end(callback)`
+    // and `req.end(chunk, callback)` are valid Node signatures — captureRequestChunk ignores
+    // non-chunk arguments instead of trying to buffer them.
+    const onCaptureError = (err: unknown) => {
+      this.log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
+    };
+
     req.write = function(chunk: any, encoding?: any, callback?: any) {
-      if (chunk) {
-        requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
+      captureRequestChunk(requestBuffer, chunk, encoding, onCaptureError);
       return originalWrite(chunk, encoding, callback);
     };
 
     req.end = ((chunk?: any, encoding?: any, callback?: any) => {
-      if (chunk) {
-        requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      captureRequestChunk(requestBuffer, chunk, encoding, onCaptureError);
+      try {
+        callData.request_body = parseAndSanitizeBody(
+          requestBuffer.concat().toString('utf-8'),
+          (body) => this.patternMatchingService.sanitizeBody(body),
+          onCaptureError
+        );
+        this.log(`📤 Request complete for call #${callData.id}`);
+      } catch (err) {
+        onCaptureError(err);
       }
-      callData.request_body = this.patternMatchingService.sanitizeBody(parseBody(requestBuffer.concat().toString('utf-8')));
-      this.log(`📤 Request complete for call #${callData.id}`);
       return originalEnd(chunk, encoding, callback);
     }).bind(this);
 
     req.on('error', (err) => {
       this.log(`❌ Request error for call #${callData.id}:`, err.message);
+      // Adding this listener must not change what the host observes: with no host 'error'
+      // listener, Node would have thrown the error from emit(); ours would otherwise swallow it
+      // and leave the host's promise hanging. If we are the only listener at emit time, surface
+      // it the same way.
+      if (req.listenerCount('error') === 1) {
+        throw err;
+      }
     });
 
     return req;
@@ -461,39 +527,58 @@ export class RequestMonitoringService {
   ): Promise<Response> {
     this.interceptedCalls++;
 
-    const callData: CoolhandCallData = {
-      id: this.interceptedCalls,
-      timestamp: new Date().toISOString(),
-      method: getFetchMethod(url, options),
-      url: this.patternMatchingService.sanitizeURL(getFetchURL(url)),
-      headers: this.patternMatchingService.sanitizeHeaders(
-        getFetchHeaders(url, options),
-        matchedPattern?.pattern
-      ),
-      request_body: null,
-      response_body: null,
-      response_headers: null,
-      status_code: null,
-      protocol: 'fetch'
-    };
+    let callData: CoolhandCallData;
+    try {
+      callData = {
+        id: this.interceptedCalls,
+        timestamp: new Date().toISOString(),
+        method: getFetchMethod(url, options),
+        url: this.patternMatchingService.sanitizeURL(getFetchURL(url)),
+        headers: this.patternMatchingService.sanitizeHeaders(
+          getFetchHeaders(url, options),
+          matchedPattern?.pattern
+        ),
+        request_body: null,
+        response_body: null,
+        response_headers: null,
+        status_code: null,
+        protocol: 'fetch'
+      };
+    } catch (err) {
+      // Building the (sanitized) log record must never stop the host's own fetch from being made.
+      this.log(`⚠️ Could not prepare capture; not intercepting this fetch: ${formatErrorMessage(err)}`);
+      return originalFetch.call(globalThis, url, options);
+    }
 
     this.log(`📞 Starting FETCH call #${callData.id} to ${callData.url}`);
 
-    try {
-      // Body capture and the outbound request run concurrently (see global-monitor.ts's
-      // identical interceptFetch) — a Request-object body read (clone().text()) is not
-      // guaranteed to be instantaneous, and awaiting it before dispatching the real request
-      // would delay every intercepted fetch() behind request-body capture, or hang it
-      // indefinitely if that read never settles. Using Promise.all also keeps the fetch
-      // rejection inside this try/catch from the moment it is created, closing the
-      // unhandledRejection window that would exist if fetchPromise were started outside
-      // the guarded block.
-      const [requestBody, response] = await Promise.all([
-        getFetchRequestBody(url, options),
-        originalFetch.call(globalThis, url, options)
-      ]);
+    // Body capture and the outbound request run concurrently (see global-monitor.ts's identical
+    // interceptFetch) — a Request-object body read (clone().text()) is not guaranteed to be
+    // instantaneous, and awaiting it before dispatching the real request would delay every
+    // intercepted fetch() behind request-body capture, or hang it indefinitely. The capture promise
+    // never rejects, so a failure there can't reach the host or leave an unhandledRejection.
+    const requestBodyPromise: Promise<void> = getFetchRequestBody(url, options).catch((err: unknown) => {
+      this.log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
+      return null;
+    }).then((requestBody) => {
+      callData.request_body = parseAndSanitizeBody(
+        requestBody,
+        (body) => this.patternMatchingService.sanitizeBody(body),
+        (err) => this.log(`⚠️ Request body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+      );
+    });
 
-      callData.request_body = this.patternMatchingService.sanitizeBody(parseBody(requestBody));
+    // Only the real fetch is inside the rethrowing try: an error here is the host's own, and must
+    // reach it unchanged. Anything the interceptor does with the response afterwards is best-effort.
+    let response: Response;
+    try {
+      response = await originalFetch.call(globalThis, url, options);
+    } catch (error) {
+      this.log(`❌ Fetch error for call #${callData.id}:`, formatErrorMessage(error));
+      throw error;
+    }
+
+    try {
       callData.status_code = response.status;
       callData.response_headers = this.patternMatchingService.sanitizeHeaders(
         Object.fromEntries(response.headers.entries()),
@@ -508,21 +593,29 @@ export class RequestMonitoringService {
         this.log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
       })
         .then((responseText) => {
-          callData.response_body = parseBody(responseText);
+          callData.response_body = parseAndSanitizeBody(
+            responseText,
+            (body) => this.patternMatchingService.sanitizeBody(body),
+            (err) => this.log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+          );
         })
         .catch((err) => {
           this.log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
           callData.response_body = null;
         })
+        // Complete only once the request body capture has settled too; it never rejects.
+        .then(() => requestBodyPromise)
         .finally(() => {
           this.onRequestComplete(callData, matchedPattern);
+        })
+        .catch((err) => {
+          this.log(`⚠️ Could not complete call #${callData.id}: ${formatErrorMessage(err)}`);
         });
-
-      return response;
-    } catch (error) {
-      this.log(`❌ Fetch error for call #${callData.id}:`, (error as Error).message);
-      throw error;
+    } catch (err) {
+      this.log(`⚠️ Response capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
     }
+
+    return response;
   }
 
   /**

@@ -8,7 +8,6 @@
 import { CoolhandCallData, CoolhandRequestOptions, CoolhandMatchedPattern } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
-import { parseBody } from './utils/parse-body.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
 import { CappedBuffer } from './utils/capped-buffer.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
@@ -16,11 +15,13 @@ import { createResponseTee } from './utils/tee-response.js';
 import { readCappedResponseText } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
-import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared, SelfEndpoint } from './utils/self-endpoint.js';
+import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared } from './utils/self-endpoint.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
 import { extractRequestHostname } from './utils/extract-hostname.js';
 import { formatErrorMessage } from './utils/format-error.js';
+import { getState, _resetGlobalState as resetGlobalState } from './utils/global-state.js';
+import { captureRequestChunk, parseAndSanitizeBody } from './utils/request-capture.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -109,42 +110,6 @@ const loadNodeModules = async () => {
   }
 };
 
-// State is stored on globalThis so both the CJS and ESM builds of this module
-// share the same values in a mixed-format Node.js process. A string key (not a
-// Symbol) is required because Symbols are per-realm and would be independent
-// across module formats.
-const COOLHAND_STATE_KEY = '__coolhand_node_v1__';
-
-interface CoolhandGlobalState {
-  globalPatternService: PatternMatchingService | null;
-  globalLoggingService: LoggingService | null;
-  isGloballyPatched: boolean;
-  callCounter: number;
-  interceptedCalls: number;
-  silent: boolean;
-  globalActiveRequests: Map<string, { timestamp: number; requestIds: Set<string> }>;
-  excludeApiPatterns: string[];
-  selfEndpoint: SelfEndpoint | null;
-}
-
-function getState(): CoolhandGlobalState {
-  const g = globalThis as any;
-  if (!g[COOLHAND_STATE_KEY]) {
-    g[COOLHAND_STATE_KEY] = {
-      globalPatternService: null,
-      globalLoggingService: null,
-      isGloballyPatched: false,
-      callCounter: 0,
-      interceptedCalls: 0,
-      silent: true,
-      globalActiveRequests: new Map(),
-      excludeApiPatterns: [],
-      selfEndpoint: null,
-    } satisfies CoolhandGlobalState;
-  }
-  return g[COOLHAND_STATE_KEY] as CoolhandGlobalState;
-}
-
 // Combines the self-endpoint and excludeApiPatterns checks — every patched request/get/fetch
 // call site needs both together, rather than repeating `isSelfEndpoint(url) || isExcluded(url)`
 // at each one. Delegates to the shared isSelfOrExcluded in self-endpoint.ts (also used by
@@ -154,9 +119,12 @@ function isSelfOrExcluded(url: string): boolean {
   return isSelfOrExcludedShared(url, state.selfEndpoint, state.excludeApiPatterns);
 }
 
-/** Reset all singleton state — for use in tests only. */
+/**
+ * Reset all singleton state — for use in tests only. A wrapper rather than a re-export: tsc's CJS
+ * re-export uses Object.defineProperty, which several test files stub out.
+ */
 export function _resetGlobalState(): void {
-  delete (globalThis as any)[COOLHAND_STATE_KEY];
+  resetGlobalState();
 }
 
 const DEDUP_WINDOW_MS = 1000;
@@ -230,8 +198,7 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
 
   const hasNodeModules = loadNodeModulesSync();
   if (hasNodeModules) {
-    patchHTTPS();
-    patchHTTP();
+    patchHttpModules();
   }
   patchFetch();
   state.isGloballyPatched = true;
@@ -244,11 +211,11 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
  */
 export async function loadAndPatchNodeModulesIfNeeded(): Promise<void> {
   if (https !== null) { return; } // already loaded synchronously
+  if (getState().httpPatched) { return; } // another copy/layer already patched
   if (isEdgeRuntime()) { return; }
   const hasNodeModules = await loadNodeModules();
   if (hasNodeModules) {
-    patchHTTPS();
-    patchHTTP();
+    patchHttpModules();
   }
 }
 
@@ -354,6 +321,20 @@ function unregisterActiveRequest(requestId: string, uniqueId: string): void {
 function isIdempotentMethod(method: string): boolean {
   const normalized = method.toUpperCase();
   return normalized === 'GET' || normalized === 'HEAD';
+}
+
+// Idempotent across module copies and across patching layers (see CoolhandGlobalState.httpPatched).
+// The flag is set before patching, and there is no `await` between the check and the set, so two
+// concurrent async initializations cannot both wrap http/https.
+function patchHttpModules(): void {
+  const state = getState();
+  if (state.httpPatched) {
+    log('🔄 http/https already patched, skipping');
+    return;
+  }
+  state.httpPatched = true;
+  patchHTTPS();
+  patchHTTP();
 }
 
 function patchHTTPS(): void {
@@ -577,10 +558,19 @@ function patchHTTP(): void {
 }
 
 function patchFetch(): void {
+  const state = getState();
+  if (state.fetchPatched) {
+    log('🔄 fetch already patched, skipping');
+    return;
+  }
   if (typeof globalThis.fetch === 'function') {
+    state.fetchPatched = true;
     const originalFetch = globalThis.fetch;
 
-    globalThis.fetch = async function(url: string | URL | Request, options: RequestInit = {}) {
+    globalThis.fetch = async function(url: string | URL | Request, rawOptions?: RequestInit | null) {
+      // `fetch(url, null)` is valid per the Fetch spec (null init behaves like {}), but a default
+      // parameter only covers `undefined`.
+      const options = rawOptions ?? {};
       const urlStr = getFetchURL(url);
       debugRequest('FETCH', { url: urlStr, ...options });
 
@@ -633,21 +623,29 @@ function interceptRequest(
   const requestId = generateRequestId(url, `${protocol}-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
-  const callData: CoolhandCallData = {
-    id: state.interceptedCalls,
-    timestamp: new Date().toISOString(),
-    method: method,
-    url: state.globalPatternService?.sanitizeURL(url) ?? url,
-    headers: state.globalPatternService?.sanitizeHeaders(
-      typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
-      matchedPattern?.pattern
-    ) || {},
-    request_body: null,
-    response_body: null,
-    response_headers: null,
-    status_code: null,
-    protocol: protocol
-  };
+  let callData: CoolhandCallData;
+  try {
+    callData = {
+      id: state.interceptedCalls,
+      timestamp: new Date().toISOString(),
+      method: method,
+      url: state.globalPatternService?.sanitizeURL(url) ?? url,
+      headers: state.globalPatternService?.sanitizeHeaders(
+        typeof options === 'object' && 'headers' in options ? options.headers || {} : {},
+        matchedPattern?.pattern
+      ) || {},
+      request_body: null,
+      response_body: null,
+      response_headers: null,
+      status_code: null,
+      protocol: protocol
+    };
+  } catch (err) {
+    // Building the (sanitized) log record must never stop the host's own request from being made.
+    log(`⚠️ Could not prepare capture; not intercepting this request: ${formatErrorMessage(err)}`);
+    unregisterActiveRequest(requestId, uniqueId);
+    return originalRequest(options as any, callback as any);
+  }
 
   log(`📞 Starting API call #${callData.id} to ${callData.url}`);
 
@@ -686,28 +684,46 @@ function interceptRequest(
       responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
-    res.on('end', async () => {
+    // Logs the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first. A response
+    // that is aborted or destroyed never emits 'end', so without the other two triggers its dedup
+    // entry would leak and the call would never be logged.
+    let finalized = false;
+    const finalize = async (): Promise<void> => {
+      if (finalized) { return; }
+      finalized = true;
       try {
-        const rawBuffer = responseBuffer.concat();
-        const contentEncoding = res.headers?.['content-encoding'];
-        const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
-        callData.response_body = parseBody(responseBody);
-      } catch (err: any) {
-        log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
-        callData.response_body = null;
-      }
-      const s = getState();
-      callData.response_headers = s.globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
-      callData.status_code = res.statusCode || null;
+        try {
+          const rawBuffer = responseBuffer.concat();
+          const contentEncoding = res.headers?.['content-encoding'];
+          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
+          callData.response_body = parseAndSanitizeBody(
+            responseBody,
+            (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
+            (err) => log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+          );
+        } catch (err: any) {
+          log(`⚠️ Response body capture failed for call #${callData.id}: ${err?.message}`);
+          callData.response_body = null;
+        }
+        const s = getState();
+        callData.response_headers = s.globalPatternService?.sanitizeHeaders(res.headers, matchedPattern?.pattern) || {};
+        callData.status_code = res.statusCode || null;
 
-      // Log to API
-      if (s.globalLoggingService) {
-        s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);
+        // Log to API
+        if (s.globalLoggingService) {
+          s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);
+        }
+      } catch (err) {
+        log(`⚠️ Could not log call #${callData.id}: ${formatErrorMessage(err)}`);
+      } finally {
+        // Cleanup
+        unregisterActiveRequest(requestId, uniqueId);
       }
+    };
 
-      // Cleanup
-      unregisterActiveRequest(requestId, uniqueId);
-    });
+    res.on('end', finalize);
+    res.on('aborted', finalize);
+    res.on('close', finalize);
 
     return hostStream || res;
   }, () => {
@@ -728,26 +744,43 @@ function interceptRequest(
   const originalWrite = req.write.bind(req);
   const originalEnd = req.end.bind(req);
 
+  // Capture is best-effort and always runs *before* forwarding the original arguments untouched:
+  // nothing here may throw into, delay, or alter the host's own write/end. `req.end(callback)` and
+  // `req.end(chunk, callback)` are valid Node signatures — captureRequestChunk ignores non-chunk
+  // arguments instead of trying to buffer them.
+  const onCaptureError = (err: unknown) => {
+    log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
+  };
+
   req.write = function(chunk: any, encoding?: any, callback?: any) {
-    if (chunk) {
-      requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
+    captureRequestChunk(requestBuffer, chunk, encoding, onCaptureError);
     return originalWrite(chunk, encoding, callback);
   };
 
   req.end = ((chunk?: any, encoding?: any, callback?: any) => {
-    if (chunk) {
-      requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    captureRequestChunk(requestBuffer, chunk, encoding, onCaptureError);
+    try {
+      callData.request_body = parseAndSanitizeBody(
+        requestBuffer.concat().toString('utf-8'),
+        (body) => state.globalPatternService?.sanitizeBody(body) ?? null,
+        onCaptureError
+      );
+      log(`📤 Request complete for call #${callData.id}`);
+    } catch (err) {
+      onCaptureError(err);
     }
-    const parsedRequestBody = parseBody(requestBuffer.concat().toString('utf-8'));
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
-    log(`📤 Request complete for call #${callData.id}`);
     return originalEnd(chunk, encoding, callback);
   });
 
   req.on('error', (err: Error) => {
     log(`❌ Request error for call #${callData.id}:`, err.message);
     unregisterActiveRequest(requestId, uniqueId);
+    // Adding this listener must not change what the host observes: with no host 'error' listener,
+    // Node would have thrown the error from emit(); ours would otherwise swallow it and leave the
+    // host's promise hanging. If we are the only listener at emit time, surface it the same way.
+    if (req.listenerCount('error') === 1) {
+      throw err;
+    }
   });
 
   return req;
@@ -767,36 +800,60 @@ async function interceptFetch(
   const requestId = generateRequestId(urlStr, `fetch-${method}`);
   const uniqueId = registerActiveRequest(requestId);
 
-  const callData: CoolhandCallData = {
-    id: state.interceptedCalls,
-    timestamp: new Date().toISOString(),
-    method: method,
-    url: state.globalPatternService?.sanitizeURL(urlStr) ?? urlStr,
-    headers: state.globalPatternService?.sanitizeHeaders(
-      getFetchHeaders(url, options),
-      matchedPattern?.pattern
-    ) || {},
-    request_body: null,
-    response_body: null,
-    response_headers: null,
-    status_code: null,
-    protocol: 'fetch'
-  };
+  let callData: CoolhandCallData;
+  try {
+    callData = {
+      id: state.interceptedCalls,
+      timestamp: new Date().toISOString(),
+      method: method,
+      url: state.globalPatternService?.sanitizeURL(urlStr) ?? urlStr,
+      headers: state.globalPatternService?.sanitizeHeaders(
+        getFetchHeaders(url, options),
+        matchedPattern?.pattern
+      ) || {},
+      request_body: null,
+      response_body: null,
+      response_headers: null,
+      status_code: null,
+      protocol: 'fetch'
+    };
+  } catch (err) {
+    // Building the (sanitized) log record must never stop the host's own fetch from being made.
+    log(`⚠️ Could not prepare capture; not intercepting this fetch: ${formatErrorMessage(err)}`);
+    unregisterActiveRequest(requestId, uniqueId);
+    return originalFetch.call(globalThis, url, options);
+  }
 
   log(`📞 Starting FETCH call #${callData.id} to ${callData.url}`);
 
-  try {
-    // Body capture and the outbound request run concurrently. Using Promise.all
-    // keeps the fetch rejection inside this try/catch from the moment it is
-    // created, closing the unhandledRejection window that would exist if
-    // fetchPromise were started outside the guarded block.
-    const [requestBody, response] = await Promise.all([
-      getFetchRequestBody(url, options),
-      originalFetch.call(globalThis, url, options)
-    ]);
+  // Body capture and the outbound request run concurrently — a Request-object body read
+  // (clone().text()) isn't guaranteed to be instantaneous, and awaiting it before dispatching the
+  // real request would delay every intercepted fetch() behind it, or hang it indefinitely. The
+  // capture promise never rejects, so a failure there can't reach the host or leave an
+  // unhandledRejection.
+  const requestBodyPromise: Promise<void> = getFetchRequestBody(url, options).catch((err: unknown) => {
+    log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
+    return null;
+  }).then((requestBody) => {
+    callData.request_body = parseAndSanitizeBody(
+      requestBody,
+      (body) => state.globalPatternService?.sanitizeBody(body) ?? null,
+      (err) => log(`⚠️ Request body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+    );
+  });
 
-    const parsedRequestBody = parseBody(requestBody);
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
+  // Only the real fetch is inside the rethrowing try: an error here is the host's own, and must
+  // reach it unchanged. Anything the interceptor does with the response afterwards is best-effort.
+  let response: Response;
+  try {
+    response = await originalFetch.call(globalThis, url, options);
+  } catch (error) {
+    log(`❌ Fetch error for call #${callData.id}:`, formatErrorMessage(error));
+    unregisterActiveRequest(requestId, uniqueId);
+    throw error;
+  }
+
+  try {
     callData.status_code = response.status;
     callData.response_headers = state.globalPatternService?.sanitizeHeaders(
       Object.fromEntries(response.headers.entries()),
@@ -811,26 +868,32 @@ async function interceptFetch(
       log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
     })
       .then((responseText) => {
-        callData.response_body = parseBody(responseText);
+        callData.response_body = parseAndSanitizeBody(
+          responseText,
+          (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
+          (err) => log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+        );
       })
       .catch((err) => {
         log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
         callData.response_body = null;
       })
+      // Log only once the request body capture has settled too; it never rejects.
+      .then(() => requestBodyPromise)
       .finally(() => {
         const s = getState();
         if (s.globalLoggingService) {
           s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);
         }
         unregisterActiveRequest(requestId, uniqueId);
-      });
-
-    return response;
-  } catch (error) {
-    log(`❌ Fetch error for call #${callData.id}:`, (error as Error).message);
+      })
+      .catch(logFailedRequestSubmission);
+  } catch (err) {
+    log(`⚠️ Response capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
     unregisterActiveRequest(requestId, uniqueId);
-    throw error;
   }
+
+  return response;
 }
 
 function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol: string): string {

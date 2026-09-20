@@ -52,7 +52,7 @@ describe('Global Monitor', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn(),
       sanitizeURL: jest.fn(),
-      sanitizeBody: jest.fn(),
+      sanitizeBody: jest.fn().mockImplementation((body: any) => body),
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(5),
@@ -792,6 +792,8 @@ describe('Global Monitor', () => {
         globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{"prompt":"c"}' }),
       ]);
 
+      await flush(); // logging runs in the background once response + request body capture settle
+
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(3);
     });
 
@@ -800,6 +802,8 @@ describe('Global Monitor', () => {
         globalThis.fetch('https://api.openai.com/v1/models'),
         globalThis.fetch('https://api.openai.com/v1/models'),
       ]);
+
+      await flush(); // logging runs in the background once response + request body capture settle
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
     });
@@ -810,6 +814,8 @@ describe('Global Monitor', () => {
         globalThis.fetch('https://api.openai.com/v1/thread', { method: 'PUT', body: '{"b":2}' }),
       ]);
 
+      await flush(); // logging runs in the background once response + request body capture settle
+
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(2);
     });
 
@@ -819,6 +825,8 @@ describe('Global Monitor', () => {
         globalThis.fetch(new Request(url, { method: 'POST', body: '{"prompt":"a"}' })),
         globalThis.fetch(new Request(url, { method: 'POST', body: '{"prompt":"b"}' })),
       ]);
+
+      await flush(); // logging runs in the background once response + request body capture settle
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(2);
     });
@@ -1127,6 +1135,125 @@ describe('Global Monitor', () => {
       await flush();
 
       expect(capturedRejections).toEqual([]);
+    });
+  });
+
+  describe('Host-request integrity (issue #250)', () => {
+    const mockPattern = {
+      pattern: { name: 'OpenAI', domains: ['api.openai.com'] },
+      matchType: 'domain' as const,
+      matchValue: 'api.openai.com'
+    };
+
+    beforeEach(async () => {
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockPattern);
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers: any) => ({ ...headers }));
+    });
+
+    it('accepts fetch(url, null) without throwing', async () => {
+      await expect(globalThis.fetch('https://api.openai.com/v1/models', null as any)).resolves.toBeDefined();
+      await flush();
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns the response to the host even when response capture throws', async () => {
+      mockPatternMatchingService.sanitizeHeaders.mockImplementation(() => { throw new Error('sanitize boom'); });
+
+      await expect(
+        globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: '{}' })
+      ).resolves.toMatchObject({ status: 200 });
+    });
+
+    it('does not reject the host fetch when request body capture rejects', async () => {
+      const badBody = { toString() { throw new Error('toString boom'); } };
+      await expect(
+        globalThis.fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', body: badBody as any })
+      ).resolves.toMatchObject({ status: 200 });
+      await flush();
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends req.end(callback) and still logs the call', async () => {
+      const { EventEmitter } = require('events');
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      const originalEnd = jest.fn();
+      fakeReq.end = originalEnd;
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = {};
+        queueMicrotask(() => { fakeReq.emit('response', fakeRes); fakeRes.emit('end'); });
+        return fakeReq;
+      });
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce(mockPattern as any);
+
+      const req: any = require('https').request('https://api.openai.com/v1/x', { method: 'POST' }, jest.fn());
+      const cb = jest.fn();
+      expect(() => req.end(cb)).not.toThrow();
+      expect(originalEnd).toHaveBeenCalledWith(cb, undefined, undefined);
+
+      await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+    });
+
+    it('logs and unregisters a response that is aborted before end', async () => {
+      const { EventEmitter } = require('events');
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      fakeReq.end = jest.fn();
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = {};
+        queueMicrotask(() => { fakeReq.emit('response', fakeRes); fakeRes.emit('aborted'); fakeRes.emit('close'); });
+        return fakeReq;
+      });
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce(mockPattern as any);
+
+      require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, jest.fn());
+      await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+      await flush();
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+      const state = (globalThis as any).__coolhand_node_v1__;
+      expect(state.globalActiveRequests.has('HTTPS-GET:https://api.openai.com/v1/x')).toBe(false);
+    });
+
+    it('rethrows a request error only when the host has no error listener', () => {
+      const { EventEmitter } = require('events');
+      const fakeReq: any = new EventEmitter();
+      fakeReq.write = jest.fn();
+      fakeReq.end = jest.fn();
+      underlyingHttpsRequestMock.mockImplementation(() => fakeReq);
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValue(mockPattern as any);
+
+      try {
+        require('https').request('https://api.openai.com/v1/x', { method: 'POST' });
+        const error = new Error('ECONNRESET');
+        expect(() => fakeReq.emit('error', error)).toThrow(error);
+
+        const hostListener = jest.fn();
+        fakeReq.on('error', hostListener);
+        expect(() => fakeReq.emit('error', error)).not.toThrow();
+        expect(hostListener).toHaveBeenCalledWith(error);
+      } finally {
+        underlyingHttpsRequestMock.mockReset();
+        mockPatternMatchingService.matchesAPIPatternSync.mockReset();
+      }
+    });
+
+    it('patches http/https and fetch only once across repeated initialization', async () => {
+      const fetchAfterFirstInit = globalThis.fetch;
+      const httpsAfterFirstInit = require('https').request;
+
+      // Simulates a second module copy / layer initializing against the same shared state.
+      const state = (globalThis as any).__coolhand_node_v1__;
+      state.isGloballyPatched = false;
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      expect(globalThis.fetch).toBe(fetchAfterFirstInit);
+      expect(require('https').request).toBe(httpsAfterFirstInit);
     });
   });
 });
