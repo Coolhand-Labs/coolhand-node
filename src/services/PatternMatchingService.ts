@@ -16,6 +16,7 @@ const DEFAULT_REDACTED_HEADERS = [
   'x-amz-security-token',
   'ocp-apim-subscription-key',
   'subscription-key',
+  'xi-api-key',
 ];
 
 // Runtime detection utility
@@ -463,7 +464,10 @@ export class PatternMatchingService {
     if (domain.includes('*')) {
       return this.wildcardDomainRegex(domain).test(hostname);
     }
-    return hostname === domain || hostname.endsWith('.' + domain);
+    // `hostname` is already lowercased by findDomainMatch; lowercase the configured domain too
+    // so a custom pattern written as `API.Example.com` keeps matching.
+    const lowerDomain = domain.toLowerCase();
+    return hostname === lowerDomain || hostname.endsWith('.' + lowerDomain);
   }
 
   // A `*` in a domain stands for exactly one DNS label (e.g. the region in
@@ -498,8 +502,11 @@ export class PatternMatchingService {
   // split for patterns whose host or port already matched.
   private findDomainMatch(hostname: string, port: number | undefined, path: string | undefined): CoolhandMatchedPattern | null {
     let pathname: string | undefined;
+    // Hostnames are case-insensitive, and `options.hostname` reaches us exactly as the host
+    // app wrote it (only URL-derived hostnames are already lowercased).
+    const lowerHostname = hostname.toLowerCase();
     for (const pattern of this.apiPatterns) {
-      const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(hostname, domain));
+      const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(lowerHostname, domain));
       const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
       if (matchedDomain === undefined && !portMatches) { continue; }
 

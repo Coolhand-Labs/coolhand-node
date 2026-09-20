@@ -150,6 +150,12 @@ describe('provider patterns added for #247', () => {
       expect((await service.matchesAPIPattern(options))?.pattern.name ?? null).toBe(expected);
     });
 
+    it('matches request-option hostnames case-insensitively', () => {
+      expect(service.matchesAPIPatternSync({ hostname: 'API.DeepSeek.com', path: '/chat/completions' })?.pattern.name).toBe('DeepSeek');
+      expect(service.matchesAPIPatternSync({ hostname: 'Bedrock-Runtime.US-East-1.amazonaws.com', path: '/model/x/invoke' })?.pattern.name)
+        .toBe('Bedrock');
+    });
+
     it('accepts a numeric-string port in request options (as Node does)', () => {
       const options = { hostname: 'localhost', port: '11434' as unknown as number, path: '/api/chat' };
       expect(service.matchesAPIPatternSync(options)?.pattern.name).toBe('Ollama');
