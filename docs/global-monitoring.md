@@ -36,7 +36,11 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 - GitHub Models API calls (`models.github.ai`, `models.inference.ai.azure.com`)
 - Vertex AI API calls (`aiplatform.googleapis.com`)
 - OpenRouter API calls (`openrouter.ai`)
+- OpenCode API calls (`opencode.ai`)
 - Cloudflare AI Gateway API calls (`gateway.ai.cloudflare.com`)
+- Azure OpenAI (`*.openai.azure.com`), Azure AI Services and AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/`, `/models/` and `/api/projects/` paths only), Azure AI Foundry serverless endpoints (`*.inference.ai.azure.com`, `*.models.ai.azure.com`) and Azure Machine Learning managed online endpoints (`*.inference.ml.azure.com`)
+- DeepSeek, Mistral, Perplexity, xAI and ElevenLabs API calls (`api.deepseek.com`, `api.mistral.ai`, `api.perplexity.ai`, `api.x.ai`, `api.elevenlabs.io`)
+- Cohere (`api.cohere.com`, `api.cohere.ai` — v2 chat and v1/v2 embed only), TypeSafe Jev (`api.typesafe.ai`, `/v1/systemone` only), Ollama (port `11434` or `ollama.com` — chat, generate and embedding endpoints only) and Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com` — `/model/` and `/openai/` paths only)
 - Custom AI APIs (configurable)
 
 ✅ **HTTP Methods Supported:**
@@ -429,6 +433,12 @@ Sensitive headers are automatically redacted:
   "content-type": "application/json"
 }
 ```
+
+Query-string credentials (`key`, `api_key`, `token`, `subscription-key`, AWS presigned-URL signatures and the like) are redacted from the logged URL the same way.
+
+### Request Body Sanitization
+
+Azure OpenAI's "On Your Data" feature embeds datastore credentials (an Azure AI Search admin key, a Cosmos DB or MongoDB connection string) in the request body under `data_sources`/`dataSources`. Inside that subtree, any field whose name contains `key`, `secret`, `password`, `token` or `connectionstring` (ignoring case and `_`/`-`) is replaced with `[REDACTED]` before the body is logged. Message content and tool schemas elsewhere in the body are logged as sent.
 
 ### Configurable Sanitization
 

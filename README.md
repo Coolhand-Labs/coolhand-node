@@ -403,7 +403,7 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenCode (`opencode.ai`, OpenCode Zen model gateway)
 - Cloudflare AI Gateway (`gateway.ai.cloudflare.com`, proxying any upstream provider)
 - Azure OpenAI (`*.openai.azure.com`, dedicated Azure OpenAI resources)
-- Azure AI Services and Azure AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/` and `/models/` inference paths only; serverless endpoints on `*.inference.ai.azure.com` and `*.models.ai.azure.com`)
+- Azure AI Services and Azure AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/`, `/models/` and `/api/projects/` inference paths only; serverless endpoints on `*.inference.ai.azure.com` and `*.models.ai.azure.com`)
 - Azure Machine Learning managed online endpoints (`*.inference.ml.azure.com`)
 - DeepSeek (`api.deepseek.com`)
 - Mistral (`api.mistral.ai`)
@@ -572,7 +572,7 @@ and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
 
 ## Security
 
-- API keys in request headers are automatically redacted
+- API keys in request headers, URL query strings and Azure OpenAI "On Your Data" request bodies are automatically redacted
 - No sensitive data is exposed in logs
 - Dry-run mode (`dryRun: true`) prevents any data from being sent to external servers
 
