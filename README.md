@@ -572,7 +572,7 @@ and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
 
 ## Security
 
-- API keys in request headers, URL query strings and Azure OpenAI "On Your Data" request bodies are automatically redacted
+- API keys and other credentials in request headers, URL query strings and request and response bodies (Azure OpenAI "On Your Data" datastore credentials, MCP tokens, realtime client secrets) are automatically redacted
 - No sensitive data is exposed in logs
 - Dry-run mode (`dryRun: true`) prevents any data from being sent to external servers
 
