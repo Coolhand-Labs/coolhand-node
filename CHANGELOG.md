@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.0] - 2026-09-20
 
 ### ✨ New Features
 - **Nine new built-in providers** — DeepSeek (`api.deepseek.com`), Mistral (`api.mistral.ai`), Perplexity (`api.perplexity.ai`), xAI (`api.x.ai`), Cohere (`api.cohere.com`/`api.cohere.ai`, v2 chat and v1/v2 embed only), TypeSafe Jev (`api.typesafe.ai`, the `/v1/systemone` endpoint only), Ollama (port `11434` or `ollama.com`, chat/generate/embed endpoints only), Amazon Bedrock (`bedrock-runtime[-fips].<region>.amazonaws.com[.cn]`, `/model/` and `/openai/` paths only) and ElevenLabs (`api.elevenlabs.io`) are now monitored out of the box, in both Node.js (file-loaded patterns) and Edge runtimes. Redacts `authorization` (all but ElevenLabs), `x-amz-security-token` (Bedrock) and `xi-api-key` (ElevenLabs). ([#247](https://github.com/Coolhand-Labs/coolhand-node/issues/247), [#248](https://github.com/Coolhand-Labs/coolhand-node/pull/248))
