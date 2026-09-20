@@ -187,7 +187,7 @@ export class PatternMatchingService {
           'cognitiveservices.azure.com', 'cognitiveservices.azure.us', 'cognitiveservices.azure.cn',
           'services.ai.azure.com', 'services.ai.azure.us'
         ],
-        paths: ['/openai/', '/models/'],
+        paths: ['/openai/', '/models/', '/api/projects/'],
         requiresPathMatch: true,
         headers: {
           'api-key': '[REDACTED]',

@@ -97,6 +97,7 @@ const URL_CASES: Array<[string, string | null]> = [
   // Azure AI Services shares its host with Speech/Vision/etc., so only /openai/ and /models/ count
   ['https://myres.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions', 'Azure AI Services'],
   ['https://myres.services.ai.azure.com/models/chat/completions?api-version=2024-05-01-preview', 'Azure AI Services'],
+  ['https://myres.services.ai.azure.com/api/projects/p1/openai/v1/responses', 'Azure AI Services'],
   ['https://myres.cognitiveservices.azure.com/speech/recognition/conversation', null],
   ['https://myres.cognitiveservices.azure.com/', null],
   ['https://myres.cognitiveservices.azure.com.evil.example/openai/deployments/x/chat/completions', null],
