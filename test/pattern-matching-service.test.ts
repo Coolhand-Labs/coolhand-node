@@ -1057,23 +1057,33 @@ describe('PatternMatchingService', () => {
 
       expect(sanitized['api-key']).toBe('[REDACTED]');
       expect(sanitized['x-api-key']).toBe('[REDACTED]'); // In default rules (#163)
-      expect(sanitized['auth-token']).toBe('pat_1234567890'); // Not in default rules
+      expect(sanitized['auth-token']).toBe('[REDACTED]'); // Caught by credential-name matching (#250)
     });
 
     it('should preserve non-sensitive header variations', () => {
       const headers = {
-        'content-authorization': 'not-an-auth-header',
-        'authorization-info': 'metadata',
         'user-agent': 'MyApp/1.0',
-        'accept-encoding': 'gzip, deflate'
+        'accept-encoding': 'gzip, deflate',
+        'content-type': 'application/json',
+        'anthropic-ratelimit-tokens-remaining': '9000',
+        'x-ratelimit-remaining-tokens': '1200'
       };
 
       const sanitized = service.sanitizeHeaders(headers);
 
-      expect(sanitized['content-authorization']).toBe('not-an-auth-header');
-      expect(sanitized['authorization-info']).toBe('metadata');
       expect(sanitized['user-agent']).toBe('MyApp/1.0');
       expect(sanitized['accept-encoding']).toBe('gzip, deflate');
+      expect(sanitized['content-type']).toBe('application/json');
+      expect(sanitized['anthropic-ratelimit-tokens-remaining']).toBe('9000');
+      expect(sanitized['x-ratelimit-remaining-tokens']).toBe('1200');
+    });
+
+    it.each([
+      'x-auth-token', 'cf-access-client-secret', 'X-CSRF-Token', 'x-session-cookie', 'x-custom-api-key', 'authorization-info'
+    ])('redacts credential-looking header %s by name (#250)', (name) => {
+      const sanitized = service.sanitizeHeaders({ [name]: 'super-secret-value' });
+
+      expect(sanitized[name.toLowerCase()]).toBe('[REDACTED]');
     });
 
     it('should handle pattern-specific complex sanitization rules', () => {
@@ -1752,6 +1762,22 @@ describe('PatternMatchingService', () => {
       expect(result).toBe('not-a-valid-url');
     });
 
+    it.each(['accessToken', 'access-token', 'ApiKey', 'clientSecret', 'refresh_token'])(
+      'should redact %s param regardless of casing and separators (#250)',
+      (param) => {
+        const result = service.sanitizeURL(`https://api.example.com/v1/resource?${param}=super-secret-value`);
+        expect(result).not.toContain('super-secret-value');
+        expect(result).toContain('REDACTED');
+      }
+    );
+
+    it('should redact URL userinfo (#250)', () => {
+      const result = service.sanitizeURL('https://user:hunter2@api.example.com/v1/resource');
+      expect(result).not.toContain('hunter2');
+      expect(result).not.toContain('user:');
+      expect(result).toContain('api.example.com/v1/resource');
+    });
+
     it.each(['password', 'signature', 'sig', 'x-goog-api-key', 'X-Amz-Signature', 'X-Amz-Credential', 'subscription-key'])(
       'should redact %s param',
       (param) => {
@@ -1839,9 +1865,179 @@ describe('PatternMatchingService', () => {
       expect(sanitized).toEqual(body);
     });
 
-    it('passes through non-object bodies unchanged', () => {
+    it('passes through null and credential-free plain text bodies unchanged', () => {
       expect(service.sanitizeBody(null)).toBeNull();
       expect(service.sanitizeBody('plain text body')).toBe('plain text body');
+    });
+
+    describe('scope beyond data_sources (#250)', () => {
+      it('redacts Anthropic mcp_servers[].authorization_token', () => {
+        const sanitized = service.sanitizeBody({
+          mcp_servers: [{ type: 'url', url: 'https://mcp.example.com', name: 'x', authorization_token: 'mcp-secret' }]
+        }) as Record<string, any>;
+
+        expect(sanitized.mcp_servers[0].authorization_token).toBe('[REDACTED]');
+        expect(sanitized.mcp_servers[0].url).toBe('https://mcp.example.com');
+      });
+
+      it('redacts authorization and headers on an OpenAI Responses MCP tool', () => {
+        const sanitized = service.sanitizeBody({
+          tools: [{
+            type: 'mcp', server_label: 'dmcp', server_url: 'https://mcp.example.com',
+            authorization: 'Bearer abc', headers: { 'X-Api-Key': 'abc' }
+          }]
+        }) as Record<string, any>;
+
+        expect(sanitized.tools[0].authorization).toBe('[REDACTED]');
+        expect(sanitized.tools[0].headers).toBe('[REDACTED]');
+        expect(sanitized.tools[0].server_label).toBe('dmcp');
+      });
+
+      it('leaves authorization/headers keys on non-MCP objects alone', () => {
+        const body = { tools: [{ type: 'function', function: { name: 'f', parameters: { headers: 'ok', authorization: 'ok' } } }] };
+
+        expect(service.sanitizeBody(body)).toEqual(body);
+      });
+
+      it('redacts an OpenAI realtime client_secret in a response body', () => {
+        const sanitized = service.sanitizeBody({
+          id: 'sess_1',
+          client_secret: { value: 'ek_live_123', expires_at: 1700000000 }
+        }) as Record<string, any>;
+
+        expect(sanitized.client_secret).toBe('[REDACTED]');
+        expect(sanitized.id).toBe('sess_1');
+      });
+    });
+
+    describe('string bodies (#250)', () => {
+      it('redacts credentials in an NDJSON string body (e.g. a top-level array)', () => {
+        const ndjson = [
+          JSON.stringify({ data_sources: [{ parameters: { key: 'live-key' } }] }),
+          JSON.stringify({ ok: true })
+        ].join('\n');
+
+        const sanitized = service.sanitizeBody(ndjson) as string;
+
+        expect(sanitized).not.toContain('live-key');
+        expect(sanitized).toContain('[REDACTED]');
+        expect(sanitized.split('\n')).toHaveLength(2);
+      });
+
+      it('redacts a BOM-prefixed JSON document', () => {
+        const sanitized = service.sanitizeBody('\uFEFF' + JSON.stringify({ mcp_servers: [{ authorization_token: 'tok' }] })) as string;
+
+        expect(sanitized).not.toContain('"tok"');
+      });
+
+      it('scrubs credential-named string values from an unparseable (truncated) body', () => {
+        const truncated = '{"data_sources":[{"parameters":{"key":"live-key","endpoint":"https://x"}}],"messages":[{"content":"trunc';
+
+        const sanitized = service.sanitizeBody(truncated) as string;
+
+        expect(sanitized).not.toContain('live-key');
+        expect(sanitized).toContain('"key":"[REDACTED]"');
+        expect(sanitized).toContain('https://x');
+      });
+
+      it.each([
+        'say "hi {"password":"hunter2"}',
+        '{"a":"b"}\n{"x":"unterminated, {"password":"hunter2"}',
+        '"stray quote {"api_key": "hunter2", "other": "ok"} tail"',
+      ])('still redacts when an unbalanced quote precedes the credential: %s', (body) => {
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).not.toContain('hunter2');
+        expect(sanitized).toContain('[REDACTED]');
+      });
+
+      it('redacts a credential whose key contains an escape sequence, in an unparseable body', () => {
+        const sanitized = service.sanitizeBody('{"api\\u005fkey":"sk-live-123", "x":') as string;
+
+        expect(sanitized).not.toContain('sk-live-123');
+      });
+
+      it('redacts a credential whose key hides the credential word behind a \\u escape, in an unparseable body', () => {
+        const sanitized = service.sanitizeBody('{"pass\\u0077ord":"hunter2", "x":') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it.each([
+        ['credential words after a lone quote', '"' + 'keykey'.repeat(400_000) + ' {'],
+        ['credential words with no quotes at all', 'key'.repeat(800_000) + ' {'],
+        ['a quote before every credential word', '"key '.repeat(500_000) + ' {'],
+      ])('scans adversarial unparseable bodies in linear time: %s', (_name, body) => {
+        const start = Date.now();
+
+        service.sanitizeBody(body);
+
+        expect(Date.now() - start).toBeLessThan(2000);
+      });
+
+      it('redacts every credential in an unparseable body and keeps the rest', () => {
+        const sanitized = service.sanitizeBody('{"token":"aaa","note":"keep me","client_secret":"bbb" ,') as string;
+
+        expect(sanitized).not.toMatch(/aaa|bbb/);
+        expect(sanitized).toContain('keep me');
+      });
+
+      it('scans a large unparseable body with many escaped quotes in linear time', () => {
+        const body = '["' + '\\"a'.repeat(120_000) + '", {"password":"hunter2"} ';
+        const start = Date.now();
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts a credential value cut off by truncation', () => {
+        const sanitized = service.sanitizeBody('{"a":"b","password":"hunter2-trunc') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts in linear time when a non-pair string is full of escaped quotes', () => {
+        const embedded = '{\\"x\\":1,'.repeat(20000);
+        const body = `["${embedded}","q"] {"token":"live-token","tail":"trunc`;
+
+        const start = Date.now();
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('live-token');
+      });
+
+      it('redacts an unparseable body in linear time even with a long key-heavy string', () => {
+        const long = '{"note":"' + 'monkey '.repeat(40000) + '","token":"live-token","tail":"trunc';
+
+        const start = Date.now();
+        const sanitized = service.sanitizeBody(long) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('live-token');
+      });
+    });
+
+    it('keeps a JSON __proto__ key in the sanitized body', () => {
+      const body = JSON.parse('{"__proto__": {"x": 1}, "a": 2}');
+
+      const sanitized = service.sanitizeBody(body) as Record<string, any>;
+
+      expect(Object.keys(sanitized)).toContain('__proto__');
+      expect(Object.getPrototypeOf(sanitized)).toBe(Object.prototype);
+    });
+
+    it('replaces subtrees nested past the depth limit instead of failing the whole body', () => {
+      let deep: any = { leaf: 'value' };
+      for (let i = 0; i < 200; i++) { deep = { child: deep }; }
+
+      const sanitized = JSON.stringify(service.sanitizeBody({ top: 'ok', deep }));
+
+      expect(sanitized).toContain('"top":"ok"');
+      expect(sanitized).toContain('[REDACTED: nested too deeply]');
+      expect(sanitized).not.toContain('"leaf"');
     });
 
     it('does not mutate the original body object', () => {

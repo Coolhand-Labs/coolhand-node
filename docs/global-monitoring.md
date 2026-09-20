@@ -434,11 +434,18 @@ Sensitive headers are automatically redacted:
 }
 ```
 
-Query-string credentials (`key`, `api_key`, `token`, `subscription-key`, AWS presigned-URL signatures and the like) are redacted from the logged URL the same way.
+Any header whose name contains `auth`, `key`, `token`, `secret` or `cookie` (for example
+`x-auth-token` or `cf-access-client-secret`) is redacted too. Rate-limit headers such as
+`anthropic-ratelimit-tokens-remaining` are left intact.
 
-### Request Body Sanitization
+### Query Parameter, URL and Body Sanitization
 
-Azure OpenAI's "On Your Data" feature embeds datastore credentials (an Azure AI Search admin key, a Cosmos DB or MongoDB connection string) in the request body under `data_sources`/`dataSources`. Inside that subtree, any field whose name contains `key`, `secret`, `password`, `token` or `connectionstring` (ignoring case and `_`/`-`) is replaced with `[REDACTED]` before the body is logged. Message content and tool schemas elsewhere in the body are logged as sent.
+- **URLs:** credential-like query parameters (`key`, `api_key`, `accessToken`, `signature`, ...) and
+  `user:password@` userinfo are redacted.
+- **Request and response bodies:** Azure OpenAI `data_sources` credentials, Anthropic
+  `mcp_servers[].authorization_token`, OpenAI Responses MCP tool `authorization`/`headers`, and
+  OpenAI realtime `client_secret` are redacted. Bodies that are not a single JSON document (NDJSON,
+  truncated bodies) are scrubbed too.
 
 ### Configurable Sanitization
 

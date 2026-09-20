@@ -7,7 +7,7 @@ import { MAX_DECOMPRESSED_BYTES } from './decompress.js';
  * path (see issue #112) — unlike that path, fetch() responses are already
  * decompressed by the runtime, so no separate decompression step is needed here.
  *
- * Falls back to `response.text()` when `.body` isn't a readable stream (e.g. a
+ * Falls back to `response.text()` (truncating the result) when `.body` isn't a readable stream (e.g. a
  * non-standard Response-like object) — real Node 18+ fetch/undici Response
  * objects always expose `.body` when there's content.
  */
@@ -40,10 +40,16 @@ function readCappedBodyText(
 ): Promise<string> {
   const body = bodyHolder.body;
   if (!body || typeof body.getReader !== 'function') {
-    // Returned directly, not awaited — an intervening `async` wrapper here would add an extra
-    // microtask tick versus calling response.text() inline, which callers upstream rely on for
-    // ordering (see the fetch interception's "drain and log in the background" comment).
-    return bodyHolder.text();
+    // Not an `async` wrapper — that would add extra microtask ticks versus calling
+    // response.text() inline, which callers upstream rely on for ordering (see the fetch
+    // interception's "drain and log in the background" comment). `.text()` has already buffered
+    // the whole body by the time it resolves (a polyfilled fetch gives us no stream to bound), so
+    // this can only cap what gets *logged*, not memory.
+    return bodyHolder.text().then((text) => {
+      if (text.length <= maxBytes) { return text; }
+      onTruncate?.();
+      return text.slice(0, maxBytes);
+    });
   }
   return readCappedStream(body, maxBytes, onTruncate);
 }

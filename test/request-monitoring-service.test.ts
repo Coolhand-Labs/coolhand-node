@@ -144,6 +144,43 @@ describe('RequestMonitoringService', () => {
       expect(console.log).toHaveBeenCalledWith('📡 Monitoring all outbound requests...');
     });
 
+    it('does not wrap http/https/fetch again when another layer (e.g. auto-monitor) already patched them', () => {
+      const state = (globalThis as any).__coolhand_node_v1__ ?? ((globalThis as any).__coolhand_node_v1__ = {});
+      state.httpPatched = true;
+      state.fetchPatched = true;
+      const httpsSpy = jest.spyOn(service as any, 'patchHTTPS');
+      const fetchSpy = jest.spyOn(service as any, 'patchFetch');
+      const fetchBefore = globalThis.fetch;
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      service.setupMonitoring();
+
+      expect(httpsSpy).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toBe(fetchBefore);
+      expect(warnSpy).not.toHaveBeenCalled(); // silent by default
+    });
+
+    it('warns that its config is unused when http/https was already patched and it is not silent', () => {
+      const state = (globalThis as any).__coolhand_node_v1__ ?? ((globalThis as any).__coolhand_node_v1__ = {});
+      state.httpPatched = true;
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const loudService = new RequestMonitoringService(mockPatternMatchingService, false);
+
+      loudService.setupMonitoring();
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('already active'));
+    });
+
+    it('marks http/https/fetch as patched so a later layer skips them', () => {
+      service.setupMonitoring();
+
+      const state = (globalThis as any).__coolhand_node_v1__;
+      expect(state.httpPatched).toBe(true);
+      expect(state.fetchPatched).toBe(true);
+    });
+
     describe('multi-instance ownership warning', () => {
       it('warns and does not patch again when a second instance calls setupMonitoring() while another instance owns interception', () => {
         const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
@@ -970,24 +1007,59 @@ describe('RequestMonitoringService', () => {
       }, 20);
     });
 
-    it('should handle request errors', () => {
+    it('rethrows a request error when the host attached no error listener (matches Node\'s default)', () => {
       const originalRequest = jest.fn().mockReturnValue(mockReq);
-
-      const options = { hostname: 'api.test.com', path: '/test' };
-
-      (service as any).interceptRequest(
-        originalRequest,
-        options,
-        jest.fn(),
-        'https',
-        mockMatchedPattern
-      );
+      (service as any).interceptRequest(originalRequest, { hostname: 'api.test.com', path: '/test' }, jest.fn(), 'https', mockMatchedPattern);
 
       const error = new Error('Request error');
-      mockReq.emit('error', error);
+      expect(() => mockReq.emit('error', error)).toThrow(error);
+    });
 
-      // Should not throw
-      expect(true).toBe(true);
+    it('delivers a request error to the host listener without throwing', () => {
+      const originalRequest = jest.fn().mockReturnValue(mockReq);
+      (service as any).interceptRequest(originalRequest, { hostname: 'api.test.com', path: '/test' }, jest.fn(), 'https', mockMatchedPattern);
+
+      const hostListener = jest.fn();
+      mockReq.on('error', hostListener);
+
+      const error = new Error('Request error');
+      expect(() => mockReq.emit('error', error)).not.toThrow();
+      expect(hostListener).toHaveBeenCalledWith(error);
+    });
+
+    it('sends req.end(callback) without trying to buffer the callback', () => {
+      const originalEnd = jest.fn();
+      mockReq.end = originalEnd;
+      const originalRequest = jest.fn().mockReturnValue(mockReq);
+      const req = (service as any).interceptRequest(originalRequest, { hostname: 'api.test.com', path: '/test' }, jest.fn(), 'https', mockMatchedPattern);
+
+      const cb = jest.fn();
+      expect(() => req.end(cb)).not.toThrow();
+      expect(originalEnd).toHaveBeenCalledWith(cb, undefined, undefined);
+    });
+
+    it('still sends the request when body capture throws', () => {
+      const originalEnd = jest.fn();
+      mockReq.end = originalEnd;
+      const originalRequest = jest.fn().mockReturnValue(mockReq);
+      mockPatternMatchingService.sanitizeBody.mockImplementationOnce(() => { throw new Error('boom'); });
+      const req = (service as any).interceptRequest(originalRequest, { hostname: 'api.test.com', path: '/test' }, jest.fn(), 'https', mockMatchedPattern);
+
+      expect(() => req.end('{"a":1}')).not.toThrow();
+      expect(originalEnd).toHaveBeenCalledWith('{"a":1}', undefined, undefined);
+    });
+
+    it('completes the call when the response is aborted before \'end\'', async () => {
+      const originalRequest = jest.fn().mockReturnValue(mockReq);
+      (service as any).interceptRequest(originalRequest, { hostname: 'api.test.com', path: '/test' }, jest.fn(), 'https', mockMatchedPattern);
+      mockReq.on('response', () => { /* host listener so a tee is used */ });
+
+      mockReq.emit('response', mockRes);
+      mockRes.emit('aborted');
+      mockRes.emit('close');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(service.onRequestComplete).toHaveBeenCalledTimes(1);
     });
   });
 
