@@ -509,6 +509,45 @@ describe('PatternMatchingService', () => {
       expect(service.sanitizeURL('https://a.com/x')).toBe('https://a.com/x');
     });
 
+    it.each(['x-password', 'x-passwd', 'x-credentials', 'x-bearer', 'x-jwt', 'x-signature'])('redacts the %s header by name', (name) => {
+      expect(service.sanitizeHeaders({ [name]: 'secret-value', accept: 'a' })).toEqual({ [name]: '[REDACTED]', accept: 'a' });
+    });
+
+    it('keeps a header named like an Object.prototype member as its own value', () => {
+      expect(service.sanitizeHeaders(['constructor', 'a', 'constructor', 'b'])).toEqual({ constructor: 'a, b' });
+      expect(service.sanitizeHeaders({ constructor: 'x' })).toEqual({ constructor: 'x' });
+    });
+
+    it('sanitizes headers with tens of thousands of repeated names in linear time', () => {
+      const flat: string[] = [];
+      for (let i = 0; i < 40_000; i++) { flat.push('X-Dup', 'v'); }
+      const started = Date.now();
+      const sanitized = service.sanitizeHeaders(flat);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(String(sanitized['x-dup']).split(', ')).toHaveLength(40_000);
+    });
+
+    it.each(['api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd'])(
+      'redacts the %s query param', (param) => {
+        expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain(`${param}=%5BREDACTED%5D`);
+      }
+    );
+
+    it('redacts a URL with tens of thousands of sensitive params in linear time', () => {
+      const url = `https://a.com/x?${Array.from({ length: 100_000 }, () => 'key=1').join('&')}`;
+      const started = Date.now();
+      const out = service.sanitizeURL(url);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(out).not.toContain('key=1');
+    });
+
+    it('redacts passwd/pwd/credential keys inside data_sources', () => {
+      const body = { data_sources: [{ parameters: { passwd: 'a', PWD: 'b', credential: 'c', endpoint: 'https://x' } }] };
+      expect(service.sanitizeBody(body)).toEqual({
+        data_sources: [{ parameters: { passwd: '[REDACTED]', PWD: '[REDACTED]', credential: '[REDACTED]', endpoint: 'https://x' } }]
+      });
+    });
+
     it.each([
       'ocp-apim-subscription-key', 'api-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'access-token'
     ])('redacts the %s query param', (param) => {

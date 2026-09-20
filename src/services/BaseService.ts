@@ -38,14 +38,19 @@ function timeoutSignal(ms: number = DEFAULT_REQUEST_TIMEOUT_MS): AbortSignal | u
     : undefined;
 }
 
-// Error messages quote the configured baseUrl, which may carry `user:pass@` credentials — never
-// echo those back into logs/exceptions.
-function redactUserinfo(raw: string): string {
-  return raw.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i, '$1');
+// Error messages quote the configured baseUrl, which may carry credentials — as `user:pass@`
+// userinfo (with or without a scheme, or leading whitespace) or in a query string/fragment
+// (`?apikey=...`). Never echo those back into logs/exceptions: drop the query/fragment and mask
+// everything up to the last `@` of the authority.
+function redactForMessage(raw: unknown): string {
+  const text = String(raw);
+  const cut = text.search(/[?#]/);
+  const withoutQuery = cut === -1 ? text : `${text.slice(0, cut)}…`;
+  return withoutQuery.replace(/^(\s*(?:[a-z][a-z0-9+.-]*:\/\/)?)[^/\s]*@/i, '$1***@');
 }
 
 function validateBaseUrl(raw: string): void {
-  const shown = redactUserinfo(raw);
+  const shown = redactForMessage(raw);
   let url: URL;
   try {
     url = new URL(raw);

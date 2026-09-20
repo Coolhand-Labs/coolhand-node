@@ -24,7 +24,7 @@ const DEFAULT_REDACTED_HEADERS = [
 // (`x-auth-token`, `cf-access-client-secret`, `x-csrf-token`, ...). Rate-limit telemetry such as
 // `anthropic-ratelimit-tokens-remaining` matches "token" but carries no secret and is genuinely
 // useful in logs, so it is exempt.
-const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie/;
+const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie|passw|credential|bearer|jwt|signature/;
 const CREDENTIAL_HEADER_EXEMPT_PATTERN = /rate-?limit/;
 
 function isCredentialHeaderName(lowerName: string): boolean {
@@ -741,13 +741,18 @@ export class PatternMatchingService {
   }
 
   public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
-    const sanitized: Record<string, any> = {};
+    // Repeated names (flat/pair arrays can repeat one) are collected first and joined by the
+    // normalization pass below; a Map keeps this linear and immune to names like `constructor`
+    // colliding with Object.prototype.
+    const collected = new Map<string, unknown[]>();
     for (const [key, value] of PatternMatchingService.headerEntries(headers)) {
       const name = key.toLowerCase();
-      // A repeated name (flat/pair arrays can repeat one) collects into an array, which the
-      // normalization pass below joins.
-      sanitized[name] = name in sanitized ? [sanitized[name], value].flat() : value;
+      const values = collected.get(name);
+      if (values) { values.push(value); } else { collected.set(name, [value]); }
     }
+    const sanitized: Record<string, any> = Object.fromEntries(
+      Array.from(collected, ([name, values]) => [name, values.length === 1 ? values[0] : values.flat()])
+    );
 
     // Default sanitization rules — applied unconditionally, independent of pattern match
     for (const headerName of DEFAULT_REDACTED_HEADERS) {
@@ -793,7 +798,8 @@ export class PatternMatchingService {
     'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
     'password', 'signature', 'sig', 'x-goog-api-key',
     'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
-    'subscription-key', 'ocp-apim-subscription-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'authorization'
+    'subscription-key', 'ocp-apim-subscription-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'authorization',
+    'api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd'
   ].map((name) => PatternMatchingService.normalizeKey(name)));
 
   public sanitizeURL(url: string): string {
@@ -807,11 +813,21 @@ export class PatternMatchingService {
         redacted = true;
       }
       if (urlObj.search) {
-        for (const [name] of urlObj.searchParams.entries()) {
+        // Rebuilt in one pass rather than calling searchParams.set() per sensitive name: set() has
+        // to drop every duplicate of that name and is quadratic on a URL with many repeated params.
+        const params = new URLSearchParams();
+        let paramRedacted = false;
+        for (const [name, value] of urlObj.searchParams) {
           if (PatternMatchingService.SENSITIVE_QUERY_PARAMS.has(PatternMatchingService.normalizeKey(name))) {
-            urlObj.searchParams.set(name, '[REDACTED]');
-            redacted = true;
+            params.append(name, '[REDACTED]');
+            paramRedacted = true;
+          } else {
+            params.append(name, value);
           }
+        }
+        if (paramRedacted) {
+          urlObj.search = params.toString();
+          redacted = true;
         }
       }
       return redacted ? urlObj.toString() : url;
@@ -823,7 +839,7 @@ export class PatternMatchingService {
   // Substrings (not exact key names) so e.g. Elasticsearch's `encoded_api_key` is caught
   // even though it isn't literally `api_key`. Normalized/compared with separators stripped
   // so `connection_string` and `connectionString` are both caught by one entry.
-  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'token', 'connectionstring'];
+  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'passwd', 'pwd', 'token', 'credential', 'connectionstring'];
 
   private static normalizeKey(key: string): string {
     return key.toLowerCase().replace(/[_-]/g, '');

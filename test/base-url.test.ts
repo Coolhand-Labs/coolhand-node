@@ -18,6 +18,26 @@ const fakeCallData: CoolhandCallData = {
   protocol: 'https'
 };
 
+describe('baseUrl validation errors never echo credentials', () => {
+  it.each([
+    ['user:SECRETPW@host.com', 'scheme forgotten'],
+    ['  https://user:SECRETPW@', 'leading whitespace'],
+    ['https://user:p@SECRETPW@', 'password containing @'],
+    ['https://host.com?apikey=SECRETPW', 'query string'],
+    ['https://host.com#SECRETPW', 'fragment'],
+    ['http://user:SECRETPW@example.com', 'non-https with userinfo'],
+  ])('%s (%s)', (baseUrl) => {
+    let message = '';
+    try { new Coolhand({ apiKey: 'test-key', baseUrl, silent: true }); } catch (err) { message = (err as Error).message; }
+    expect(message).not.toBe('');
+    expect(message).not.toContain('SECRETPW');
+  });
+
+  it('rejects a non-string baseUrl with a validation error rather than a TypeError from the message builder', () => {
+    expect(() => new Coolhand({ apiKey: 'test-key', baseUrl: 123 as unknown as string, silent: true })).toThrow(/baseUrl/);
+  });
+});
+
 describe('baseUrl configuration', () => {
   describe('Coolhand constructor', () => {
     it('uses the default endpoint when baseUrl is omitted', () => {
