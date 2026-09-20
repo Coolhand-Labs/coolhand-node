@@ -2,7 +2,7 @@
 
 [![npm version](https://badge.fury.io/js/coolhand-node.svg)](https://badge.fury.io/js/coolhand-node)
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, DeepSeek, Mistral, Perplexity, xAI, Cohere, Ollama, Amazon Bedrock, ElevenLabs, TypeSafe Jev, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
@@ -402,6 +402,15 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenRouter (`openrouter.ai`, unified access to 200+ models)
 - OpenCode (`opencode.ai`, OpenCode Zen model gateway)
 - Cloudflare AI Gateway (`gateway.ai.cloudflare.com`, proxying any upstream provider)
+- DeepSeek (`api.deepseek.com`)
+- Mistral (`api.mistral.ai`)
+- Perplexity (`api.perplexity.ai`)
+- xAI (`api.x.ai`)
+- Cohere (`api.cohere.com`, `api.cohere.ai` — v2 chat and v1/v2 embed endpoints only)
+- Ollama (self-hosted at port `11434`, or `ollama.com` — chat, generate and embedding endpoints only)
+- Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com` — model invoke, Converse and OpenAI-compatible endpoints)
+- ElevenLabs (`api.elevenlabs.io`)
+- TypeSafe Jev (`api.typesafe.ai`, the System One `/v1/systemone` endpoint)
 - LangChain
 - Direct `fetch()` calls
 - `https`/`http` module usage
@@ -438,6 +447,8 @@ Example patterns file (`my-patterns.json`):
 ```
 
 A `domains` match applies to **every** path on that host — `paths` isn't a further restriction on top of it. `paths` only matters on its own, as a fallback for hosts that didn't match any pattern's `domains` at all, and only when the pattern explicitly opts in via `allowPathMatchAcrossDomains: true` (off by default, since a wrong opt-in lets unrelated hosts that happen to share a path fragment — e.g. `/v1/chat` — get captured and forwarded to Coolhand). Without that flag, a pattern's `paths` field (like `"My Custom AI"`'s above) has no effect.
+
+The built-in Cohere, TypeSafe Jev, Bedrock and Ollama patterns only match specific paths (`requiresPathMatch`). For that option, `ports`, `*` wildcard domains, and a custom Ollama port, see the [Global Monitoring Guide](./docs/global-monitoring.md).
 
 ## Monitoring Statistics
 

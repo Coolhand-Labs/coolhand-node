@@ -170,6 +170,79 @@ export class PatternMatchingService {
           'openai-api-key': '[REDACTED]',
           'x-goog-api-key': '[REDACTED]'
         }
+      },
+      {
+        name: 'DeepSeek',
+        domains: ['api.deepseek.com'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Mistral',
+        domains: ['api.mistral.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Perplexity',
+        domains: ['api.perplexity.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'xAI',
+        domains: ['api.x.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Cohere',
+        domains: ['api.cohere.com', 'api.cohere.ai'],
+        paths: ['/v2/chat', '/v1/embed', '/v2/embed'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'TypeSafe Jev',
+        domains: ['api.typesafe.ai'],
+        paths: ['/v1/systemone'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Ollama',
+        domains: ['ollama.com'],
+        paths: ['/api/chat', '/api/generate', '/api/embed', '/api/embeddings'],
+        ports: [11434],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Bedrock',
+        domains: ['bedrock-runtime.*.amazonaws.com', 'bedrock-runtime-fips.*.amazonaws.com', 'bedrock-runtime.*.amazonaws.com.cn'],
+        paths: ['/model/', '/openai/'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]',
+          'x-amz-security-token': '[REDACTED]'
+        }
+      },
+      {
+        name: 'ElevenLabs',
+        domains: ['api.elevenlabs.io'],
+        headers: {
+          'xi-api-key': '[REDACTED]'
+        }
       }
     ];
     if (!this.silent) { console.log(`📋 Loaded ${this.apiPatterns.length} default API patterns for Edge runtime`); }
@@ -347,7 +420,81 @@ export class PatternMatchingService {
   }
 
   private hostnameMatchesDomain(hostname: string, domain: string): boolean {
+    if (domain.includes('*')) {
+      return this.wildcardDomainRegex(domain).test(hostname);
+    }
     return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
+  // A `*` in a domain stands for exactly one DNS label (e.g. the region in
+  // `bedrock-runtime.*.amazonaws.com`). Like plain domains, it also matches any
+  // subdomain in front of it.
+  private wildcardDomainCache = new Map<string, RegExp>();
+  private wildcardDomainRegex(domain: string): RegExp {
+    let regex = this.wildcardDomainCache.get(domain);
+    if (!regex) {
+      const body = domain.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
+      regex = new RegExp(`(^|\\.)${body}$`, 'i');
+      this.wildcardDomainCache.set(domain, regex);
+    }
+    return regex;
+  }
+
+  // An entry matches `pathname` as a prefix that ends on a segment boundary, so `/v1/embed`
+  // matches `/v1/embed` and `/v1/embed/x` but not `/v1/embed-jobs`; an entry that itself ends
+  // in `/` is a plain prefix.
+  private pathnameMatchesEntry(pathname: string, entry: string): boolean {
+    if (!pathname.startsWith(entry)) { return false; }
+    return entry.endsWith('/') || pathname.length === entry.length || pathname[entry.length] === '/';
+  }
+
+  // Single domain-matching implementation shared by every entry point (options-based and
+  // URL-based, async and sync), so `requiresPathMatch` and `ports` behave identically
+  // everywhere. Without `requiresPathMatch` a `domains` match applies to every path, exactly
+  // as it always has. With it, the request must also hit one of the pattern's `paths` — and
+  // only then may `ports` identify a host-less provider such as a local Ollama.
+  // `path` may still carry a query string (http.request's options.path does). This runs on
+  // every http/https/fetch call, so the cheap host/port test comes first and the path is only
+  // split for patterns whose host or port already matched.
+  private findDomainMatch(hostname: string, port: number | undefined, path: string | undefined): CoolhandMatchedPattern | null {
+    let pathname: string | undefined;
+    for (const pattern of this.apiPatterns) {
+      const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(hostname, domain));
+      const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
+      if (matchedDomain === undefined && !portMatches) { continue; }
+
+      if (!pattern.requiresPathMatch) {
+        if (matchedDomain === undefined) { continue; }
+        return { pattern, matchType: 'domain', matchValue: matchedDomain };
+      }
+
+      if (path === undefined) { continue; }
+      pathname ??= path.split(/[?#]/, 1)[0];
+      const requestPathname = pathname;
+      const matchedPath = pattern.paths?.find((entry) => this.pathnameMatchesEntry(requestPathname, entry));
+      if (matchedPath === undefined) { continue; }
+
+      return matchedDomain !== undefined
+        ? { pattern, matchType: 'domain', matchValue: matchedDomain }
+        : { pattern, matchType: 'path', matchValue: matchedPath };
+    }
+    return null;
+  }
+
+  private matchesFromOptions(options: CoolhandRequestOptions): CoolhandMatchedPattern | null {
+    const hostname = options.hostname || options.host || '';
+    // Node accepts a numeric string for `port`; normalize so `ports` compares reliably.
+    const port = Number(options.port) || undefined;
+    return this.findDomainMatch(hostname, port, this.pathFromOptions(options));
+  }
+
+  private pathFromOptions(options: CoolhandRequestOptions): string | undefined {
+    if (options.path) { return options.path; }
+    const full = options.href || options.url;
+    if (full) {
+      try { return new URL(full).pathname; } catch { return undefined; }
+    }
+    return undefined;
   }
 
   // Defense in depth: a bug in any matcher (e.g. malformed apiPatterns surviving
@@ -374,23 +521,7 @@ export class PatternMatchingService {
         return this.matchesAPIPatternFromURL(options.toString());
       }
 
-      // Construct URL from options
-      const hostname = options.hostname || options.host || '';
-
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.matchesFromOptions(options);
     });
   }
 
@@ -405,23 +536,7 @@ export class PatternMatchingService {
         return this.matchesAPIPatternFromURL(options.toString());
       }
 
-      // Construct URL from options
-      const hostname = options.hostname || options.host || '';
-
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.matchesFromOptions(options);
     });
   }
 
@@ -442,18 +557,8 @@ export class PatternMatchingService {
         return null;
       }
 
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
+      const domainMatch = this.findDomainMatch(urlObj.hostname, Number(urlObj.port) || undefined, urlObj.pathname);
+      if (domainMatch) { return domainMatch; }
 
       // Check path matches (only for patterns that explicitly opt in to
       // cross-domain path matching — see CoolhandAPIPattern.allowPathMatchAcrossDomains)

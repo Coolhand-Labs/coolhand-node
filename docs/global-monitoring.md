@@ -362,6 +362,23 @@ initializeGlobalMonitoring({
 
 A `domains` match applies to every path on that host, so `paths` isn't needed here — it only matters as a separate, domain-agnostic fallback for hosts that didn't match any pattern's `domains` at all (e.g. detecting a self-hosted proxy by its provider-shaped path alone), and only for a pattern that explicitly opts in via `allowPathMatchAcrossDomains: true`. That flag is off by default: a wrong opt-in would let unrelated hosts sharing a common path fragment (e.g. `/v1/chat`) get captured and forwarded to Coolhand.
 
+To make `paths` binding for one pattern, set `requiresPathMatch: true`. The pattern then matches only when the request path also starts with one of its `paths`, ending on a path-segment boundary (`/v1/embed` matches `/v1/embed?x=1` and `/v1/embed/x`, not `/v1/embed-jobs`). It is opt-in per pattern because making `paths` binding for every pattern would stop capturing traffic that is captured today. A `requiresPathMatch` pattern with no `paths` matches nothing, and the check applies identically to `http`/`https` requests and `fetch()`.
+
+Two pattern features only work together with `requiresPathMatch`, so they can never capture on their own:
+
+- `ports`: numbers that identify the provider on any host. The built-in Ollama pattern uses `[11434]` plus the `/api/chat`, `/api/generate`, `/api/embed` and `/api/embeddings` paths, so a local Ollama at `localhost:11434` is captured while an unrelated app's own `/api/chat` on another port is not. An Ollama on a different port, or behind a custom hostname, needs its own pattern.
+- `*` in `domains`: stands for exactly one DNS label, e.g. `bedrock-runtime.*.amazonaws.com` for every Bedrock region. Like plain domains, it also matches subdomains in front of it.
+
+```json
+{
+  "name": "My Ollama",
+  "domains": [],
+  "ports": [8080],
+  "paths": ["/api/chat", "/api/generate"],
+  "requiresPathMatch": true
+}
+```
+
 ### Conditional Initialization
 
 ```javascript
