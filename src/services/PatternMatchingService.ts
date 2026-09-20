@@ -13,6 +13,10 @@ const DEFAULT_REDACTED_HEADERS = [
   'openai-api-key',
   'x-goog-api-key',
   'cf-aig-authorization',
+  'x-amz-security-token',
+  'ocp-apim-subscription-key',
+  'subscription-key',
+  'xi-api-key',
 ];
 
 // Runtime detection utility
@@ -168,6 +172,117 @@ export class PatternMatchingService {
           'x-api-key': '[REDACTED]',
           'openai-api-key': '[REDACTED]',
           'x-goog-api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure OpenAI',
+        domains: ['openai.azure.com', 'openai.azure.us', 'openai.azure.cn'],
+        headers: {
+          'api-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure AI Services',
+        domains: [
+          'cognitiveservices.azure.com', 'cognitiveservices.azure.us', 'cognitiveservices.azure.cn',
+          'services.ai.azure.com', 'services.ai.azure.us'
+        ],
+        paths: ['/openai/', '/models/', '/api/projects/'],
+        requiresPathMatch: true,
+        headers: {
+          'api-key': '[REDACTED]',
+          'ocp-apim-subscription-key': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Azure AI Foundry (Serverless)',
+        domains: ['inference.ai.azure.com', 'models.ai.azure.com'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        // Azure ML managed online endpoints all score at /score regardless of what's
+        // deployed behind them (LLM, tabular, vision, ...) — no path can distinguish an
+        // LLM deployment from any other, so this is deliberately unanchored rather than
+        // missing LLM traffic. See issue #245.
+        name: 'Azure Machine Learning',
+        domains: ['inference.ml.azure.com', 'inference.ml.azure.us'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'DeepSeek',
+        domains: ['api.deepseek.com'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Mistral',
+        domains: ['api.mistral.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Perplexity',
+        domains: ['api.perplexity.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'xAI',
+        domains: ['api.x.ai'],
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Cohere',
+        domains: ['api.cohere.com', 'api.cohere.ai'],
+        paths: ['/v2/chat', '/v1/embed', '/v2/embed'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'TypeSafe Jev',
+        domains: ['api.typesafe.ai'],
+        paths: ['/v1/systemone'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Ollama',
+        domains: ['ollama.com'],
+        paths: ['/api/chat', '/api/generate', '/api/embed', '/api/embeddings'],
+        ports: [11434],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]'
+        }
+      },
+      {
+        name: 'Bedrock',
+        domains: ['bedrock-runtime.*.amazonaws.com', 'bedrock-runtime-fips.*.amazonaws.com', 'bedrock-runtime.*.amazonaws.com.cn'],
+        paths: ['/model/', '/openai/'],
+        requiresPathMatch: true,
+        headers: {
+          'authorization': '[REDACTED]',
+          'x-amz-security-token': '[REDACTED]'
+        }
+      },
+      {
+        name: 'ElevenLabs',
+        domains: ['api.elevenlabs.io'],
+        headers: {
+          'xi-api-key': '[REDACTED]'
         }
       }
     ];
@@ -346,7 +461,87 @@ export class PatternMatchingService {
   }
 
   private hostnameMatchesDomain(hostname: string, domain: string): boolean {
-    return hostname === domain || hostname.endsWith('.' + domain);
+    if (domain.includes('*')) {
+      return this.wildcardDomainRegex(domain).test(hostname);
+    }
+    // `hostname` is already lowercased by findDomainMatch; lowercase the configured domain too
+    // so a custom pattern written as `API.Example.com` keeps matching.
+    const lowerDomain = domain.toLowerCase();
+    return hostname === lowerDomain || hostname.endsWith('.' + lowerDomain);
+  }
+
+  // A `*` in a domain stands for exactly one DNS label (e.g. the region in
+  // `bedrock-runtime.*.amazonaws.com`). Like plain domains, it also matches any
+  // subdomain in front of it.
+  private wildcardDomainCache = new Map<string, RegExp>();
+  private wildcardDomainRegex(domain: string): RegExp {
+    let regex = this.wildcardDomainCache.get(domain);
+    if (!regex) {
+      const body = domain.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
+      regex = new RegExp(`(^|\\.)${body}$`, 'i');
+      this.wildcardDomainCache.set(domain, regex);
+    }
+    return regex;
+  }
+
+  // An entry matches `pathname` as a prefix that ends on a segment boundary, so `/v1/embed`
+  // matches `/v1/embed` and `/v1/embed/x` but not `/v1/embed-jobs`; an entry that itself ends
+  // in `/` is a plain prefix.
+  private pathnameMatchesEntry(pathname: string, entry: string): boolean {
+    if (!pathname.startsWith(entry)) { return false; }
+    return entry.endsWith('/') || pathname.length === entry.length || pathname[entry.length] === '/';
+  }
+
+  // Single domain-matching implementation shared by every entry point (options-based and
+  // URL-based, async and sync), so `requiresPathMatch` and `ports` behave identically
+  // everywhere. Without `requiresPathMatch` a `domains` match applies to every path, exactly
+  // as it always has. With it, the request must also hit one of the pattern's `paths` — and
+  // only then may `ports` identify a host-less provider such as a local Ollama.
+  // `path` may still carry a query string (http.request's options.path does). This runs on
+  // every http/https/fetch call, so the cheap host/port test comes first and the path is only
+  // split for patterns whose host or port already matched.
+  private findDomainMatch(hostname: string, port: number | undefined, path: string | undefined): CoolhandMatchedPattern | null {
+    let pathname: string | undefined;
+    // Hostnames are case-insensitive, and `options.hostname` reaches us exactly as the host
+    // app wrote it (only URL-derived hostnames are already lowercased).
+    const lowerHostname = hostname.toLowerCase();
+    for (const pattern of this.apiPatterns) {
+      const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(lowerHostname, domain));
+      const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
+      if (matchedDomain === undefined && !portMatches) { continue; }
+
+      if (!pattern.requiresPathMatch) {
+        if (matchedDomain === undefined) { continue; }
+        return { pattern, matchType: 'domain', matchValue: matchedDomain };
+      }
+
+      if (path === undefined) { continue; }
+      pathname ??= path.split(/[?#]/, 1)[0];
+      const requestPathname = pathname;
+      const matchedPath = pattern.paths?.find((entry) => this.pathnameMatchesEntry(requestPathname, entry));
+      if (matchedPath === undefined) { continue; }
+
+      return matchedDomain !== undefined
+        ? { pattern, matchType: 'domain', matchValue: matchedDomain }
+        : { pattern, matchType: 'path', matchValue: matchedPath };
+    }
+    return null;
+  }
+
+  private matchesFromOptions(options: CoolhandRequestOptions): CoolhandMatchedPattern | null {
+    const hostname = options.hostname || options.host || '';
+    // Node accepts a numeric string for `port`; normalize so `ports` compares reliably.
+    const port = Number(options.port) || undefined;
+    return this.findDomainMatch(hostname, port, this.pathFromOptions(options));
+  }
+
+  private pathFromOptions(options: CoolhandRequestOptions): string | undefined {
+    if (options.path) { return options.path; }
+    const full = options.href || options.url;
+    if (full) {
+      try { return new URL(full).pathname; } catch { return undefined; }
+    }
+    return undefined;
   }
 
   // Defense in depth: a bug in any matcher (e.g. malformed apiPatterns surviving
@@ -373,23 +568,7 @@ export class PatternMatchingService {
         return this.matchesAPIPatternFromURL(options.toString());
       }
 
-      // Construct URL from options
-      const hostname = options.hostname || options.host || '';
-
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.matchesFromOptions(options);
     });
   }
 
@@ -404,23 +583,7 @@ export class PatternMatchingService {
         return this.matchesAPIPatternFromURL(options.toString());
       }
 
-      // Construct URL from options
-      const hostname = options.hostname || options.host || '';
-
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
-
-      return null;
+      return this.matchesFromOptions(options);
     });
   }
 
@@ -441,18 +604,8 @@ export class PatternMatchingService {
         return null;
       }
 
-      // Check domain matches
-      for (const pattern of this.apiPatterns) {
-        for (const domain of pattern.domains) {
-          if (this.hostnameMatchesDomain(urlObj.hostname, domain)) {
-            return {
-              pattern,
-              matchType: 'domain',
-              matchValue: domain
-            };
-          }
-        }
-      }
+      const domainMatch = this.findDomainMatch(urlObj.hostname, Number(urlObj.port) || undefined, urlObj.pathname);
+      if (domainMatch) { return domainMatch; }
 
       // Check path matches (only for patterns that explicitly opt in to
       // cross-domain path matching — see CoolhandAPIPattern.allowPathMatchAcrossDomains)
@@ -516,11 +669,13 @@ export class PatternMatchingService {
       // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
       // api-patterns.json) — included here too as defense-in-depth for callers that pass it
       // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
-      // on AWS SigV4-presigned URLs.
+      // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
+      // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
       const sensitiveParams = new Set([
         'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
         'password', 'signature', 'sig', 'x-goog-api-key',
-        'x-amz-signature', 'x-amz-credential'
+        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
+        'subscription-key'
       ]);
       let redacted = false;
       for (const [name] of urlObj.searchParams.entries()) {
@@ -532,6 +687,53 @@ export class PatternMatchingService {
       return redacted ? urlObj.toString() : url;
     } catch {
       return url;
+    }
+  }
+
+  // Substrings (not exact key names) so e.g. Elasticsearch's `encoded_api_key` is caught
+  // even though it isn't literally `api_key`. Normalized/compared with separators stripped
+  // so `connection_string` and `connectionString` are both caught by one entry.
+  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'token', 'connectionstring'];
+
+  private static normalizeKey(key: string): string {
+    return key.toLowerCase().replace(/[_-]/g, '');
+  }
+
+  // Azure OpenAI's "On Your Data" feature embeds datastore credentials in the request body
+  // under data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo
+  // connection string) — sanitizeHeaders/sanitizeURL never see these. Scoped to that
+  // subtree so message content and tool schemas outside it stay verbatim. See issue #245.
+  private redactDataSourceCredentials(value: unknown, insideDataSources: boolean): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactDataSourceCredentials(item, insideDataSources));
+    }
+
+    if (value && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        const normalizedKey = PatternMatchingService.normalizeKey(key);
+        const nowInside = insideDataSources || normalizedKey === 'datasources';
+        if (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) {
+          result[key] = '[REDACTED]';
+        } else {
+          result[key] = this.redactDataSourceCredentials(val, nowInside);
+        }
+      }
+      return result;
+    }
+
+    return value;
+  }
+
+  public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {
+    if (!body || typeof body !== 'object') {
+      return body;
+    }
+    try {
+      return this.redactDataSourceCredentials(body, false) as Record<string, unknown>;
+    } catch (error) {
+      if (!this.silent) { console.warn(`⚠️  Coolhand: body sanitization failed, request body will not be captured:`, (error as Error).message); }
+      return null;
     }
   }
 

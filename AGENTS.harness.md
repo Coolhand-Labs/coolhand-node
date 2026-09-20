@@ -112,10 +112,18 @@ never gets written into three more issues and copied into three more repos.
 
 Off by default. Skip this section when `reviewLoop` is false.
 
-## 6. Open your PR
+## 6. Run your review skill
+
+**Mandatory, before you push.** Follow `<workspaceRoot>/coolhand/harness/RESIST_RULES.md`
+→ "Before you push: run your repo's review skill" (R8) — load
+`.claude/skills/loop-review/SKILL.md` off disk and run it for real against your diff. Do
+not approximate its steps manually; if you cannot spawn the reviewer subagent it calls
+for, escalate to server (R8) and STOP rather than substitute a self-review.
+
+## 7. Open your PR
 
 **If `dryRun` is true, do not push and do not open a PR.** Commit locally, report what you
-built — then continue to section 7, **skipping 7a only**: no issues get opened in a dry run,
+built — then continue to section 8, **skipping 8a only**: no issues get opened in a dry run,
 but your children still launch and still build (`RESIST_RULES.md` → Dry runs: "the whole
 tree runs, it just leaves no trace on GitHub"). Launch them with the run's `branch` name in
 place of an issue url.
@@ -127,8 +135,10 @@ place of an issue url.
    all five PRs findable as one unit of work, and this repo has no branch-name rule.
 3. Body must say: **depends on the server PR — deploy that first.**
 4. Record it: `node <workspaceRoot>/coolhand/harness/harness.mjs pr --run <RUN_DIR> --repo node --url <url>`
+5. Post your review skill's Iteration Breakdown table (section 6) as a comment on this PR
+   — see `RESIST_RULES.md` → "After the loop exits."
 
-## 7. Fan the work out — issue first, then launch
+## 8. Fan the work out — issue first, then launch
 
 **Only after your own PR is open.** You built it, so you know what the wrapper actually
 takes to write — that knowledge is what the other three need, and you cannot write it
@@ -137,7 +147,7 @@ down before you have it.
 Your children are **python**, **ruby** (each if listed in `clients`) and **cli**
 (if `cliEnabled`).
 
-### 7a. Open one issue per child
+### 8a. Open one issue per child
 
 For each child, **create a GitHub issue in that repo containing its complete
 instructions**, exactly as the server did for you. The issue is that package's system of
@@ -168,7 +178,7 @@ gh issue create --repo Coolhand-Labs/coolhand-<child> \
 node <workspaceRoot>/coolhand/harness/harness.mjs issue --run <RUN_DIR> --repo <child> --url <issue url>
 ```
 
-### 7b. Then launch them
+### 8b. Then launch them
 
 python and ruby run **in parallel**. Give each exactly this:
 
@@ -190,7 +200,7 @@ The node branch to build against: <branch>
 Local node package path: <workspaceRoot>/coolhand-node
 ```
 
-### 7c. Then stay reachable
+### 8c. Then stay reachable
 
 You are now a parent. Children escalate to you on their own channels:
 
@@ -204,12 +214,14 @@ down. You own the wrapper pattern; the server owns the definition.
 
 Do not stop until every child has finished or escalated to a human.
 
-## 8. Done means
+## 9. Done means
 
 - [ ] Method exists, matches the API definition exactly
 - [ ] `npm test`, `npm run typecheck`, `npm run lint` all pass
 - [ ] At least one test hit the real local server, not a mock
 - [ ] PR opened, titled `[closes #N]`, recorded, and states its dependency on the server PR
+- [ ] Your review skill ran for real (not approximated) and its Iteration Breakdown table
+      is posted as a comment on your PR
 - [ ] **One issue opened per child, each complete enough to build from without you**, each
       recorded with `harness.mjs issue`, each linking your PR as the reference
 - [ ] **No child was launched before its issue existed**

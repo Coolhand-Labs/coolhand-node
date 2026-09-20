@@ -2,7 +2,7 @@
 
 [![npm version](https://badge.fury.io/js/coolhand-node.svg)](https://badge.fury.io/js/coolhand-node)
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, Azure OpenAI, DeepSeek, Mistral, Perplexity, xAI, Cohere, Ollama, Amazon Bedrock, ElevenLabs, TypeSafe Jev, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
@@ -299,6 +299,28 @@ patterns come from `getTemplate` only.
 See [docs/template-search.md](./docs/template-search.md) for the full filter reference, pagination,
 and error handling (including the retryable `504` on the `log_count` aggregate).
 
+## Reading Referenced Files
+
+`searchReferencedFiles` and `listReferencedFileSessions` read back which files your logged requests
+are associated with. Like the other read methods, these require your **private** API key (the
+public key 401s):
+
+```typescript
+const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
+
+const { files } = await coolhand.searchReferencedFiles({ filePathContains: 'routes' });
+
+const { sessions } = await coolhand.listReferencedFileSessions({ filePath: files[0].file_path });
+```
+
+`searchReferencedFiles` aggregates to one row per distinct `file_path`, ranked by `reference_count`
+descending. `listReferencedFileSessions` is the per-file drill-down it intentionally omits — raw,
+un-aggregated rows for one exact `file_path` — since file paths aren't URL-safe as a path segment
+and so have no `GET .../:file_path` show route. Both are bounded to the last 90 days.
+
+See [docs/llm-reference-search.md](./docs/llm-reference-search.md) for the full filter reference,
+pagination, and error handling (including the retryable `504` both methods can throw under load).
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -380,6 +402,18 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenRouter (`openrouter.ai`, unified access to 200+ models)
 - OpenCode (`opencode.ai`, OpenCode Zen model gateway)
 - Cloudflare AI Gateway (`gateway.ai.cloudflare.com`, proxying any upstream provider)
+- Azure OpenAI (`*.openai.azure.com`, dedicated Azure OpenAI resources)
+- Azure AI Services and Azure AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/` and `/models/` inference paths only; serverless endpoints on `*.inference.ai.azure.com` and `*.models.ai.azure.com`)
+- Azure Machine Learning managed online endpoints (`*.inference.ml.azure.com`)
+- DeepSeek (`api.deepseek.com`)
+- Mistral (`api.mistral.ai`)
+- Perplexity (`api.perplexity.ai`)
+- xAI (`api.x.ai`)
+- Cohere (`api.cohere.com`, `api.cohere.ai` — v2 chat and v1/v2 embed endpoints only)
+- Ollama (self-hosted at port `11434`, or `ollama.com` — chat, generate and embedding endpoints only)
+- Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com` — model invoke, Converse and OpenAI-compatible endpoints)
+- ElevenLabs (`api.elevenlabs.io`)
+- TypeSafe Jev (`api.typesafe.ai`, the System One `/v1/systemone` endpoint)
 - LangChain
 - Direct `fetch()` calls
 - `https`/`http` module usage
@@ -416,6 +450,8 @@ Example patterns file (`my-patterns.json`):
 ```
 
 A `domains` match applies to **every** path on that host — `paths` isn't a further restriction on top of it. `paths` only matters on its own, as a fallback for hosts that didn't match any pattern's `domains` at all, and only when the pattern explicitly opts in via `allowPathMatchAcrossDomains: true` (off by default, since a wrong opt-in lets unrelated hosts that happen to share a path fragment — e.g. `/v1/chat` — get captured and forwarded to Coolhand). Without that flag, a pattern's `paths` field (like `"My Custom AI"`'s above) has no effect.
+
+The built-in Cohere, TypeSafe Jev, Bedrock and Ollama patterns only match specific paths (`requiresPathMatch`). For that option, `ports`, `*` wildcard domains, and a custom Ollama port, see the [Global Monitoring Guide](./docs/global-monitoring.md).
 
 ## Monitoring Statistics
 
@@ -530,10 +566,11 @@ API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
-`getTemplate`) throw instead, since callers need to react to the result — a non-2xx response throws
-an `HttpError` with the status code attached; see
-[docs/feedback-search.md](./docs/feedback-search.md), [docs/log-search.md](./docs/log-search.md)
-and [docs/template-search.md](./docs/template-search.md) for details.
+`getTemplate`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
+need to react to the result — a non-2xx response throws an `HttpError` with the status code
+attached; see [docs/feedback-search.md](./docs/feedback-search.md),
+[docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md)
+and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
 
 ## Security
 
@@ -551,6 +588,7 @@ and [docs/template-search.md](./docs/template-search.md) for details.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
+- **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
 
 ## Related Packages
 

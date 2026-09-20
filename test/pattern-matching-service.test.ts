@@ -100,8 +100,8 @@ describe('PatternMatchingService', () => {
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('API patterns file not found')
       );
-      // Should fall back to default Edge runtime patterns (8 patterns) — see #167
-      expect(service.getPatternsCountSync()).toBe(8);
+      // Should fall back to default Edge runtime patterns (21 patterns) — see #167
+      expect(service.getPatternsCountSync()).toBe(21);
 
       // The service must remain usable/monitoring must still work after falling back.
       const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
@@ -118,8 +118,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.any(String)
       );
-      // Should fallback to default Edge runtime patterns (8 patterns)
-      expect(service.getPatternsCountSync()).toBe(8);
+      // Should fallback to default Edge runtime patterns (21 patterns)
+      expect(service.getPatternsCountSync()).toBe(21);
     });
 
     it('should handle file system errors', () => {
@@ -133,8 +133,8 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         'File system error'
       );
-      // Should fallback to default Edge runtime patterns (8 patterns)
-      expect(service.getPatternsCountSync()).toBe(8);
+      // Should fallback to default Edge runtime patterns (21 patterns)
+      expect(service.getPatternsCountSync()).toBe(21);
     });
   });
 
@@ -158,7 +158,7 @@ describe('PatternMatchingService', () => {
         expect.stringContaining('Error loading API patterns'),
         expect.stringContaining('not shaped correctly')
       );
-      expect(service.getPatternsCountSync()).toBe(8);
+      expect(service.getPatternsCountSync()).toBe(21);
 
       // The service must remain usable after falling back — no throw on the next request.
       const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
@@ -171,7 +171,7 @@ describe('PatternMatchingService', () => {
 
       service = new PatternMatchingService('./custom-patterns.json');
 
-      expect(service.getPatternsCountSync()).toBe(8);
+      expect(service.getPatternsCountSync()).toBe(21);
       expect(() => service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).not.toThrow();
       expect(() => service.matchesAPIPatternFromURL('https://api.openai.com/v1/chat/completions')).not.toThrow();
     });
@@ -352,6 +352,89 @@ describe('PatternMatchingService', () => {
         pattern: expect.objectContaining({ name: 'Legit Proxy' }),
         matchType: 'domain',
         matchValue: 'legit.example.com'
+      });
+    });
+  });
+
+  describe('Path-anchored domain matching (requiresPathMatch, #245)', () => {
+    // Mirrors the real "Azure AI Services" pattern: cognitiveservices.azure.com also serves
+    // Speech/Vision/Language/Content Safety off the same domain, so a domain match alone must
+    // not be enough — the path must also fall under one of the inference-only prefixes.
+    const pathAnchoredPatterns = {
+      patterns: [
+        {
+          name: 'Azure AI Services',
+          domains: ['cognitiveservices.azure.com'],
+          paths: ['/openai/', '/models/'],
+          requiresPathMatch: true
+        },
+        {
+          name: 'Azure OpenAI',
+          domains: ['openai.azure.com']
+        }
+      ]
+    };
+
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(pathAnchoredPatterns));
+      service = new PatternMatchingService();
+    });
+
+    it('matches a path-anchored domain when the path falls under an allowed prefix', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://myresource.cognitiveservices.azure.com/openai/deployments/gpt-4/chat/completions?api-version=2024-02-01'
+      );
+
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Azure AI Services' }),
+        matchType: 'domain',
+        matchValue: 'cognitiveservices.azure.com'
+      });
+    });
+
+    it('matches the newer /openai/v1/... GA path via the same /openai/ prefix', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://myresource.cognitiveservices.azure.com/openai/v1/chat/completions'
+      );
+
+      expect(result?.pattern.name).toBe('Azure AI Services');
+    });
+
+    it('does NOT match a path-anchored domain when the path is a different service on the same host', () => {
+      const result = service.matchesAPIPatternFromURL(
+        'https://myresource.cognitiveservices.azure.com/speechtotext/v3.1/transcriptions'
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it('does NOT match a path-anchored domain when there is no path at all', () => {
+      const result = service.matchesAPIPatternFromURL('https://myresource.cognitiveservices.azure.com/');
+
+      expect(result).toBeNull();
+    });
+
+    it('applies the same restriction via the options-based (matchesAPIPatternSync) entry point', () => {
+      const matched = service.matchesAPIPatternSync({
+        hostname: 'myresource.cognitiveservices.azure.com',
+        path: '/openai/deployments/gpt-4/chat/completions'
+      });
+      const unmatched = service.matchesAPIPatternSync({
+        hostname: 'myresource.cognitiveservices.azure.com',
+        path: '/vision/v3.2/analyze'
+      });
+
+      expect(matched?.pattern.name).toBe('Azure AI Services');
+      expect(unmatched).toBeNull();
+    });
+
+    it('leaves unanchored patterns matching on any path (no requiresPathMatch)', () => {
+      const result = service.matchesAPIPatternFromURL('https://myresource.openai.azure.com/anything/at/all');
+
+      expect(result).toMatchObject({
+        pattern: expect.objectContaining({ name: 'Azure OpenAI' }),
+        matchType: 'domain'
       });
     });
   });
@@ -580,6 +663,20 @@ describe('PatternMatchingService', () => {
 
       expect(headers).toEqual(originalHeaders);
     });
+
+    it('should redact Ocp-Apim-Subscription-Key and subscription-key by default (#245)', () => {
+      const headers = {
+        'Ocp-Apim-Subscription-Key': 'live-cognitive-services-key',
+        'subscription-key': 'another-apim-key',
+        'content-type': 'application/json'
+      };
+
+      const sanitized = service.sanitizeHeaders(headers);
+
+      expect(sanitized['ocp-apim-subscription-key']).toBe('[REDACTED]');
+      expect(sanitized['subscription-key']).toBe('[REDACTED]');
+      expect(sanitized['content-type']).toBe('application/json');
+    });
   });
 
   describe('Public API Methods', () => {
@@ -617,7 +714,7 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(false);
       const fallbackService = new PatternMatchingService();
 
-      expect(fallbackService.getPatternsCountSync()).toBe(8);
+      expect(fallbackService.getPatternsCountSync()).toBe(21);
     });
   });
 
@@ -1094,9 +1191,9 @@ describe('PatternMatchingService', () => {
       service = new PatternMatchingService();
 
       // ...and since one entry is missing `domains`, the whole file is treated as
-      // malformed and the service falls back to the 8 built-in default patterns,
+      // malformed and the service falls back to the 21 built-in default patterns,
       // rather than silently loading the entries that happen to be well-formed.
-      expect(service.getPatternsCountSync()).toBe(8);
+      expect(service.getPatternsCountSync()).toBe(21);
 
       // Nor should the very next request throw — this is the actual crash #116 describes.
       expect(() => service.matchesAPIPatternSync('https://valid.com/test')).not.toThrow();
@@ -1622,7 +1719,7 @@ describe('PatternMatchingService', () => {
       expect(result).toBe('not-a-valid-url');
     });
 
-    it.each(['password', 'signature', 'sig', 'x-goog-api-key', 'X-Amz-Signature', 'X-Amz-Credential'])(
+    it.each(['password', 'signature', 'sig', 'x-goog-api-key', 'X-Amz-Signature', 'X-Amz-Credential', 'subscription-key'])(
       'should redact %s param',
       (param) => {
         const url = `https://api.example.com/v1/resource?${param}=super-secret-value`;
@@ -1637,6 +1734,90 @@ describe('PatternMatchingService', () => {
       const result = service.sanitizeURL(url);
       expect(result).not.toContain('super-secret-value');
       expect(result).toContain('REDACTED');
+    });
+  });
+
+  describe('Body Sanitization (#245)', () => {
+    beforeEach(() => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
+      service = new PatternMatchingService();
+    });
+
+    it('redacts an Azure OpenAI "On Your Data" datastore key under data_sources', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'hello' }],
+        data_sources: [
+          {
+            type: 'azure_search',
+            parameters: {
+              authentication: { type: 'api_key', key: 'live-azure-search-admin-key' }
+            }
+          }
+        ]
+      };
+
+      const sanitized = service.sanitizeBody(body) as Record<string, any>;
+
+      expect(sanitized.data_sources[0].parameters.authentication.key).toBe('[REDACTED]');
+      expect(sanitized.messages).toEqual(body.messages);
+    });
+
+    it('matches dataSources (camelCase) the same as data_sources (snake_case)', () => {
+      const body = { dataSources: [{ parameters: { authentication: { key: 'secret' } } }] };
+
+      const sanitized = service.sanitizeBody(body) as Record<string, any>;
+
+      expect(sanitized.dataSources[0].parameters.authentication.key).toBe('[REDACTED]');
+    });
+
+    it('matches connection_string and connectionString separator-insensitively', () => {
+      const body = {
+        data_sources: [
+          { parameters: { connection_string: 'AccountKey=abc123' } },
+          { parameters: { connectionString: 'AccountKey=xyz789' } }
+        ]
+      };
+
+      const sanitized = service.sanitizeBody(body) as Record<string, any>;
+
+      expect(sanitized.data_sources[0].parameters.connection_string).toBe('[REDACTED]');
+      expect(sanitized.data_sources[1].parameters.connectionString).toBe('[REDACTED]');
+    });
+
+    it('matches encoded_api_key as a substring, not just exact api_key (Elasticsearch)', () => {
+      const body = {
+        data_sources: [{ parameters: { authentication: { encoded_api_key: 'ZWxhc3RpYy1zZWNyZXQ=' } } }]
+      };
+
+      const sanitized = service.sanitizeBody(body) as Record<string, any>;
+
+      expect(sanitized.data_sources[0].parameters.authentication.encoded_api_key).toBe('[REDACTED]');
+    });
+
+    it('leaves message content and tool schemas outside data_sources untouched', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'what is my api_key?' }],
+        tools: [{ type: 'function', function: { name: 'get_key', parameters: { key: { type: 'string' } } } }]
+      };
+
+      const sanitized = service.sanitizeBody(body);
+
+      expect(sanitized).toEqual(body);
+    });
+
+    it('passes through non-object bodies unchanged', () => {
+      expect(service.sanitizeBody(null)).toBeNull();
+      expect(service.sanitizeBody('plain text body')).toBe('plain text body');
+    });
+
+    it('does not mutate the original body object', () => {
+      const body = { data_sources: [{ parameters: { key: 'secret' } }] };
+      const original = JSON.parse(JSON.stringify(body));
+
+      service.sanitizeBody(body);
+
+      expect(body).toEqual(original);
     });
   });
 });

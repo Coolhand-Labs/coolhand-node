@@ -21,6 +21,38 @@ describe('DEFAULT_EXCLUDE_API_PATTERNS', () => {
     expect(Array.isArray(DEFAULT_EXCLUDE_API_PATTERNS)).toBe(true);
     expect(DEFAULT_EXCLUDE_API_PATTERNS.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    '/openai/files', '/openai/v1/files',
+    '/openai/batches', '/openai/v1/batches',
+    '/openai/fine_tuning', '/openai/v1/fine_tuning',
+    '/openai/models', '/openai/v1/models'
+  ])('contains the Azure OpenAI control-plane path %s (#245)', (pattern) => {
+    expect(DEFAULT_EXCLUDE_API_PATTERNS).toContain(pattern);
+  });
+
+  it('excludes both the legacy and GA-path spellings, since substring matching is contiguous', () => {
+    // "/openai/files" alone would not match "/openai/v1/files" — both spellings are required.
+    expect(matchesExcludePattern(
+      'https://myresource.openai.azure.com/openai/files',
+      [...DEFAULT_EXCLUDE_API_PATTERNS]
+    )).toBe(true);
+    expect(matchesExcludePattern(
+      'https://myresource.openai.azure.com/openai/v1/files',
+      [...DEFAULT_EXCLUDE_API_PATTERNS]
+    )).toBe(true);
+    expect(matchesExcludePattern(
+      'https://myresource.openai.azure.com/openai/v1/models',
+      [...DEFAULT_EXCLUDE_API_PATTERNS]
+    )).toBe(true);
+  });
+
+  it('does not exclude actual inference paths', () => {
+    expect(matchesExcludePattern(
+      'https://myresource.openai.azure.com/openai/deployments/gpt-4/chat/completions',
+      [...DEFAULT_EXCLUDE_API_PATTERNS]
+    )).toBe(false);
+  });
 });
 
 describe('matchesExcludePattern (shared helper)', () => {
@@ -80,6 +112,7 @@ describe('RequestMonitoringService excludeApiPatterns', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn().mockImplementation((headers: any) => ({ ...headers })),
       sanitizeURL: jest.fn().mockImplementation((url: string) => url),
+      sanitizeBody: jest.fn().mockImplementation((body: any) => body),
       getLoadedPatterns: jest.fn(),
       getPatternsCount: jest.fn(),
       getPatternsCountSync: jest.fn().mockReturnValue(1),

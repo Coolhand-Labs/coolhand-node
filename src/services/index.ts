@@ -4,5 +4,6 @@ export { RequestMonitoringService } from './RequestMonitoringService.js';
 export { LoggingService, type LoggingServiceConfig } from './LoggingService.js';
 export { FeedbackService, type FeedbackServiceConfig } from './FeedbackService.js';
 export { TemplateService, type TemplateServiceConfig } from './TemplateService.js';
+export { LlmReferenceService, type LlmReferenceServiceConfig } from './LlmReferenceService.js';
 export { McpService, type McpServiceConfig } from './McpService.js';
 export { ClientFileService, type ClientFileServiceConfig } from './ClientFileService.js';

@@ -34,8 +34,9 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 - Anthropic API calls (`api.anthropic.com`)
 - Google AI API calls (`generativelanguage.googleapis.com`)
 - GitHub Models API calls (`models.github.ai`, `models.inference.ai.azure.com`)
-- Cohere API calls (`api.cohere.ai`)
-- Hugging Face API calls (`api-inference.huggingface.co`)
+- Vertex AI API calls (`aiplatform.googleapis.com`)
+- OpenRouter API calls (`openrouter.ai`)
+- Cloudflare AI Gateway API calls (`gateway.ai.cloudflare.com`)
 - Custom AI APIs (configurable)
 
 ✅ **HTTP Methods Supported:**
@@ -72,7 +73,6 @@ require('coolhand-node/auto-monitor');
 **Environment Variables:**
 ```bash
 COOLHAND_API_KEY=your_api_key_here
-COOLHAND_ENVIRONMENT=production  # or 'local'
 COOLHAND_SILENT=true            # or 'false'
 ```
 
@@ -110,15 +110,20 @@ initializeMonitoring();
 | `apiKey` | string | *required* | Your Coolhand API key |
 | `silent` | boolean | `true` | Suppress console output |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
+| `debug` | boolean | `false` | Enable verbose logging (does not affect data submission) |
+| `dryRun` | boolean | `false` | Suppress all API submissions to Coolhand |
+| `baseUrl` | string | `undefined` | Self-hosted Coolhand endpoint, e.g. `'https://feedback.example.com'` |
 
 ### Environment Variables (Auto-Monitor)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `COOLHAND_API_KEY` | string | *required* | Your Coolhand API key |
-| `COOLHAND_ENVIRONMENT` | `'local'` \| `'production'` | `'production'` | Target environment |
 | `COOLHAND_SILENT` | `'true'` \| `'false'` | `'true'` | Suppress console output |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Custom patterns file path |
+| `COOLHAND_DEBUG` | `'true'` \| `'false'` | `'false'` | Enable verbose logging only |
+| `COOLHAND_DRY_RUN` | `'true'` \| `'false'` | `'false'` | Suppress all API submissions |
+| `COOLHAND_BASE_URL` | string | `undefined` | Self-hosted endpoint, e.g. `'https://feedback.example.com'` |
 
 ## 🚨 Runtime Environment Considerations
 
@@ -307,7 +312,7 @@ console.log('Stats:', {
 ```
 🌐 Global Coolhand monitoring initialized
 🎯 API Endpoint: https://coolhandlabs.com/api/v2/llm_request_logs
-📋 Loaded 5 AI API patterns
+📋 Loaded 7 AI API patterns
 🔍 Now monitoring ALL outbound HTTP requests for AI API calls...
 
 🌐 FETCH to: https://api.openai.com/v1/chat/completions
@@ -356,6 +361,23 @@ initializeGlobalMonitoring({
 ```
 
 A `domains` match applies to every path on that host, so `paths` isn't needed here — it only matters as a separate, domain-agnostic fallback for hosts that didn't match any pattern's `domains` at all (e.g. detecting a self-hosted proxy by its provider-shaped path alone), and only for a pattern that explicitly opts in via `allowPathMatchAcrossDomains: true`. That flag is off by default: a wrong opt-in would let unrelated hosts sharing a common path fragment (e.g. `/v1/chat`) get captured and forwarded to Coolhand.
+
+To make `paths` binding for one pattern, set `requiresPathMatch: true`. The pattern then matches only when the request path also starts with one of its `paths`, ending on a path-segment boundary (`/v1/embed` matches `/v1/embed?x=1` and `/v1/embed/x`, not `/v1/embed-jobs`). It is opt-in per pattern because making `paths` binding for every pattern would stop capturing traffic that is captured today. A `requiresPathMatch` pattern with no `paths` matches nothing, and the check applies identically to `http`/`https` requests and `fetch()`.
+
+Two pattern features are typically used together with `requiresPathMatch`:
+
+- `ports`: honored only together with `requiresPathMatch`, so a port alone can never capture a request. Numbers that identify the provider on any host. The built-in Ollama pattern uses `[11434]` plus the `/api/chat`, `/api/generate`, `/api/embed` and `/api/embeddings` paths, so a local Ollama at `localhost:11434` is captured while an unrelated app's own `/api/chat` on another port is not. An Ollama on a different port, or behind a custom hostname, needs its own pattern.
+- `*` in `domains`: works with or without `requiresPathMatch` (without it, every path on a matching host is captured, so pair it with `requiresPathMatch` unless that is what you want). Stands for exactly one DNS label, e.g. `bedrock-runtime.*.amazonaws.com` for every Bedrock region. Like plain domains, it also matches subdomains in front of it.
+
+```json
+{
+  "name": "My Ollama",
+  "domains": [],
+  "ports": [8080],
+  "paths": ["/api/chat", "/api/generate"],
+  "requiresPathMatch": true
+}
+```
 
 ### Conditional Initialization
 
@@ -607,7 +629,7 @@ Track AI usage during development:
 // See exactly what AI calls your app makes
 initializeGlobalMonitoring({
   apiKey: 'dev-key',
-  environment: 'local',
+  baseUrl: 'http://localhost:3000',
   silent: false // See all AI calls in console
 });
 ```
@@ -658,7 +680,7 @@ If you're using global monitoring with any framework:
 
 1. **Test the integration** with your framework
 2. **Verify AI API calls are being logged**
-3. **[Create an issue](https://github.com/anthropics/coolhand-node/issues)** with your results:
+3. **[Create an issue](https://github.com/Coolhand-Labs/coolhand-node/issues)** with your results:
    - ✅ Working: Share your setup for others
    - ❌ Issues: Help us fix and improve
    - 💡 Suggestions: Propose better approaches

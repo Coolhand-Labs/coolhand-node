@@ -20,6 +20,12 @@ This mirrors what CI runs (`.github/workflows/ci.yml` runs lint, typecheck, and 
 
 If a PR addresses one or more GitHub issues, prefix the PR title with a `[closes #N]` tag per issue, e.g. `[closes #111] [closes #505] fix for headers`. This lets GitHub auto-close the referenced issues when the PR merges.
 
+## Changelog and versioning
+
+Do not add `CHANGELOG.md` entries or bump `package.json`'s `version` field on feature/fix branches or in PRs. The `/prep-release` skill is the sole owner of both — it writes changelog entries for the PRs actually shipping in a release and bumps the version once, at release time.
+
+Per-PR changelog edits create merge conflicts across concurrent branches for no benefit, since the entries get rewritten from the final, user-approved set of merged PRs anyway. Leave `CHANGELOG.md` and `package.json`'s `version` alone in your PR.
+
 ## Running individual tools
 
 ```bash

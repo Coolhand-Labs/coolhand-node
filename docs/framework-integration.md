@@ -16,7 +16,7 @@ Coolhand's global monitoring works with **any Node.js framework** because it pat
 | **Cloudflare Workers** | ⚠️ Limited | Manual setup | Limited Node.js API support |
 | **Deno** | ❌ Not supported | N/A | Different runtime environment |
 
-> **📝 Contributing**: Only Next.js/T3 integration has been thoroughly tested. Other examples are theoretical and need community validation. Please [create an issue](https://github.com/anthropics/coolhand-node/issues) or submit a PR with improvements!
+> **📝 Contributing**: Only Next.js/T3 integration has been thoroughly tested. Other examples are theoretical and need community validation. Please [create an issue](https://github.com/Coolhand-Labs/coolhand-node/issues) or submit a PR with improvements!
 
 ## 📚 Framework-Specific Guides
 
@@ -71,7 +71,6 @@ For any Node.js application, regardless of framework:
 ```bash
 # .env
 COOLHAND_API_KEY=your_api_key_here
-COOLHAND_ENVIRONMENT=production
 COOLHAND_SILENT=true
 ```
 
@@ -90,7 +89,6 @@ const { initializeGlobalMonitoring } = require('coolhand-node');
 
 initializeGlobalMonitoring({
   apiKey: process.env.COOLHAND_API_KEY,
-  environment: process.env.NODE_ENV === 'production' ? 'production' : 'local',
   silent: process.env.NODE_ENV === 'production'
 });
 
@@ -116,7 +114,6 @@ initializeGlobalMonitoring({...});
 ```javascript
 const config = {
   apiKey: process.env.COOLHAND_API_KEY,
-  environment: process.env.NODE_ENV === 'production' ? 'production' : 'local',
   silent: process.env.NODE_ENV === 'production'
 };
 ```

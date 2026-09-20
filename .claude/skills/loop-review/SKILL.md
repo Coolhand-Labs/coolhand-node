@@ -165,8 +165,11 @@ reuse/simplification/efficiency, every round should also flag:
 **npm package publishing discipline**
 - Follow best practices for TypeScript & Node.js and for npm package
   publishing — don't break public interfaces unless necessary
-- If a break is necessary, it must come with: appropriate documentation
-  updates and a SemVer-consistent version bump
+- If a break is necessary, it must come with appropriate documentation
+  updates and a clear call-out of the SemVer bump it implies — but per
+  `CLAUDE.md`'s "Changelog and versioning" rule, don't expect (or ask for)
+  `package.json`'s version to actually be bumped on this branch; that
+  happens once, at release time, in `/prep-release`
 - Any change to the public API surface (`src/index.ts`, `Coolhand` class
   methods, exported types/classes) that was NOT the stated intention of
   this branch — flag these as breaking changes requiring explicit
@@ -191,14 +194,18 @@ reuse/simplification/efficiency, every round should also flag:
   API actually accepts/returns
 
 **Documentation & cross-SDK alignment**
-- Check whether `README.md`, `CHANGELOG.md`, or files under `docs/` need
-  updates to reflect the changes on this branch
+- Check whether `README.md` or files under `docs/` need updates to
+  reflect the changes on this branch
 - Verify any existing documentation touched by this diff is still
   accurate (no stale examples, field names, or descriptions)
 - Enforce the README/docs split from `CLAUDE.md` (README stays a
   scannable landing page; anything needing more than one code block
   belongs in `docs/`)
-- Flag missing `CHANGELOG.md` entries for user-visible changes
+- Flag a `CHANGELOG.md` or `package.json`-version edit on this branch as
+  a violation, per `CLAUDE.md`'s "Changelog and versioning" rule — those
+  are `/prep-release`'s to write, not this branch's. Skip this check on a
+  `release/v*` branch — that's exactly where `/prep-release` writes them
+  intentionally.
 - If this branch makes a structural change (new README section pattern,
   new `docs/` pattern, new configuration option), `CLAUDE.md` asks for a
   companion issue/PR on `coolhand-python` to keep the two SDKs in sync —

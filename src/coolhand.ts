@@ -1,10 +1,11 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
 import { ClientFileService } from './services/ClientFileService.js';
+import { LlmReferenceService } from './services/LlmReferenceService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
 
@@ -15,6 +16,7 @@ export class Coolhand {
   private feedbackService: FeedbackService;
   private templateService: TemplateService;
   private clientFileService: ClientFileService;
+  private llmReferenceService: LlmReferenceService;
   private silent: boolean;
 
   constructor(options: CoolhandOptions) {
@@ -54,6 +56,7 @@ export class Coolhand {
     this.feedbackService = new FeedbackService(serviceConfig);
     this.templateService = new TemplateService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
+    this.llmReferenceService = new LlmReferenceService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
     this.requestMonitoringService.setSelfApiEndpoint(this.loggingService.getApiEndpoint());
@@ -248,6 +251,49 @@ export class Coolhand {
    */
   public async getTemplate(id: string): Promise<LlmRequestTemplateDetail> {
     return this.templateService.getTemplate(id);
+  }
+
+  /**
+   * List the client's referenced files, aggregated to one row per distinct `file_path`, ranked by
+   * `reference_count` descending. Bounded to the last 90 days server-side — a file referenced only
+   * outside that window will not appear.
+   *
+   * Requires the **private** API key, same as {@link searchTemplates}.
+   *
+   * @param params Ransack-backed filters (`filePathContains`, `createdAtGteq`, `createdAtLteq`)
+   *   plus `page`/`per`. There is no `clientId` — the client is derived from the API key.
+   * @returns `{ files, pagination }` — `pagination` always comes from the endpoint's response
+   *   headers. See `LlmReferenceService#searchReferencedFiles`/`docs/llm-reference-search.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code — including `504` when the aggregate exceeds
+   *   the backend's statement timeout, which is retryable rather than a bug.
+   */
+  public async searchReferencedFiles(params?: SearchReferencedFilesParams): Promise<SearchReferencedFilesResponse> {
+    return this.llmReferenceService.searchReferencedFiles(params);
+  }
+
+  /**
+   * The per-file drill-down {@link searchReferencedFiles} intentionally omits: raw, un-aggregated
+   * rows for one exact `file_path`, newest first, bounded to the same 90-day window. There is no
+   * `GET /api/v2/llm_references/:file_path` show route — file paths aren't URL-safe path segments —
+   * so this hits the `sessions` collection route with a `file_path` query param instead.
+   *
+   * Requires the **private** API key, same as {@link searchReferencedFiles}.
+   *
+   * @param params `filePath` (required, exact match — not a substring search) plus `page`/`per`.
+   * @returns `{ sessions, pagination }`. `llm_request_log_id` on each row is a hashid — pass it to
+   *   {@link getLogContent} to inspect that session. An unmatched `filePath` returns an empty page,
+   *   not a 404.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code (`422` when `filePath` is missing/blank; `504`
+   *   when the pagination count for this `filePath` exceeds the backend's statement timeout — a
+   *   `filePath` referenced by very many sessions makes that count expensive too, retryable the
+   *   same as {@link searchReferencedFiles}'s `504`).
+   */
+  public async listReferencedFileSessions(
+    params: ListReferencedFileSessionsParams
+  ): Promise<ListReferencedFileSessionsResponse> {
+    return this.llmReferenceService.listReferencedFileSessions(params);
   }
 
   /**

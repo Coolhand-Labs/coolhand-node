@@ -86,6 +86,7 @@ describe('RequestMonitoringService', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn(),
       sanitizeURL: jest.fn(),
+      sanitizeBody: jest.fn(),
       getLoadedPatterns: jest.fn(),
       getPatternsCount: jest.fn(),
       loadAPIPatterns: jest.fn()
@@ -95,6 +96,8 @@ describe('RequestMonitoringService', () => {
     mockPatternMatchingService.sanitizeHeaders.mockImplementation((headers) => ({ ...headers }));
     // Mock sanitizeURL to return the URL unchanged
     mockPatternMatchingService.sanitizeURL.mockImplementation((url: string) => url);
+    // Mock sanitizeBody to return the body unchanged
+    mockPatternMatchingService.sanitizeBody.mockImplementation((body: any) => body);
 
     // Create service instance
     service = new RequestMonitoringService(mockPatternMatchingService, true); // silent mode
