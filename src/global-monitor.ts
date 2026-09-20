@@ -21,7 +21,7 @@ import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } fro
 import { extractRequestHostname } from './utils/extract-hostname.js';
 import { formatErrorMessage } from './utils/format-error.js';
 import { getState, _resetGlobalState as resetGlobalState } from './utils/global-state.js';
-import { captureRequestChunk, parseAndSanitizeBody } from './utils/request-capture.js';
+import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from './utils/request-capture.js';
 import type { PassThrough } from 'stream';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
@@ -831,16 +831,12 @@ async function interceptFetch(
   // real request would delay every intercepted fetch() behind it, or hang it indefinitely. The
   // capture promise never rejects, so a failure there can't reach the host or leave an
   // unhandledRejection.
-  const requestBodyPromise: Promise<void> = getFetchRequestBody(url, options).catch((err: unknown) => {
-    log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
-    return null;
-  }).then((requestBody) => {
-    callData.request_body = parseAndSanitizeBody(
-      requestBody,
-      (body) => state.globalPatternService?.sanitizeBody(body) ?? null,
-      (err) => log(`⚠️ Request body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
-    );
-  });
+  const requestBody = captureRequestBodyInBackground(
+    getFetchRequestBody(url, options),
+    callData,
+    (body) => state.globalPatternService?.sanitizeBody(body) ?? null,
+    log
+  );
 
   // Only the real fetch is inside the rethrowing try: an error here is the host's own, and must
   // reach it unchanged. Anything the interceptor does with the response afterwards is best-effort.
@@ -878,9 +874,10 @@ async function interceptFetch(
         log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
         callData.response_body = null;
       })
-      // Log only once the request body capture has settled too; it never rejects.
-      .then(() => requestBodyPromise)
+      // Log once the request body capture has settled too (bounded, so an endless body stream can't block logging).
+      .then(() => requestBody.waitForCapture())
       .finally(() => {
+        requestBody.markSubmitted();
         const s = getState();
         if (s.globalLoggingService) {
           s.globalLoggingService.logRequestToAPI(callData, matchedPattern, 'global-monitoring').catch(logFailedRequestSubmission);

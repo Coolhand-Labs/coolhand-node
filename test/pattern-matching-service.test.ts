@@ -1906,6 +1906,85 @@ describe('PatternMatchingService', () => {
         expect(sanitized).toContain('"key":"[REDACTED]"');
         expect(sanitized).toContain('https://x');
       });
+
+      it.each([
+        'say "hi {"password":"hunter2"}',
+        '{"a":"b"}\n{"x":"unterminated, {"password":"hunter2"}',
+        '"stray quote {"api_key": "hunter2", "other": "ok"} tail"',
+      ])('still redacts when an unbalanced quote precedes the credential: %s', (body) => {
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).not.toContain('hunter2');
+        expect(sanitized).toContain('[REDACTED]');
+      });
+
+      it('redacts a credential whose key contains an escape sequence, in an unparseable body', () => {
+        const sanitized = service.sanitizeBody('{"api\\u005fkey":"sk-live-123", "x":') as string;
+
+        expect(sanitized).not.toContain('sk-live-123');
+      });
+
+      it('redacts a credential whose key hides the credential word behind a \\u escape, in an unparseable body', () => {
+        const sanitized = service.sanitizeBody('{"pass\\u0077ord":"hunter2", "x":') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it.each([
+        ['credential words after a lone quote', '"' + 'keykey'.repeat(400_000) + ' {'],
+        ['credential words with no quotes at all', 'key'.repeat(800_000) + ' {'],
+        ['a quote before every credential word', '"key '.repeat(500_000) + ' {'],
+      ])('scans adversarial unparseable bodies in linear time: %s', (_name, body) => {
+        const start = Date.now();
+
+        service.sanitizeBody(body);
+
+        expect(Date.now() - start).toBeLessThan(2000);
+      });
+
+      it('redacts every credential in an unparseable body and keeps the rest', () => {
+        const sanitized = service.sanitizeBody('{"token":"aaa","note":"keep me","client_secret":"bbb" ,') as string;
+
+        expect(sanitized).not.toMatch(/aaa|bbb/);
+        expect(sanitized).toContain('keep me');
+      });
+
+      it('scans a large unparseable body with many escaped quotes in linear time', () => {
+        const body = '["' + '\\"a'.repeat(120_000) + '", {"password":"hunter2"} ';
+        const start = Date.now();
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts a credential value cut off by truncation', () => {
+        const sanitized = service.sanitizeBody('{"a":"b","password":"hunter2-trunc') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts in linear time when a non-pair string is full of escaped quotes', () => {
+        const embedded = '{\\"x\\":1,'.repeat(20000);
+        const body = `["${embedded}","q"] {"token":"live-token","tail":"trunc`;
+
+        const start = Date.now();
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('live-token');
+      });
+
+      it('redacts an unparseable body in linear time even with a long key-heavy string', () => {
+        const long = '{"note":"' + 'monkey '.repeat(40000) + '","token":"live-token","tail":"trunc';
+
+        const start = Date.now();
+        const sanitized = service.sanitizeBody(long) as string;
+
+        expect(Date.now() - start).toBeLessThan(1000);
+        expect(sanitized).not.toContain('live-token');
+      });
     });
 
     it('keeps a JSON __proto__ key in the sanitized body', () => {

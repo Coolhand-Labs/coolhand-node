@@ -377,8 +377,12 @@ describe('Global Monitor', () => {
       const https = require('https');
       https.request('https://api.test.com/v1/test', hostCallback);
 
-      // Let the setImmediate gap, stream flow, and interceptor's own async decompress/log chain flush.
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Let the setImmediate gap, stream flow, and interceptor's own async decompress/log chain
+      // flush. Polls for the outcome rather than sleeping a fixed time, which flaked under load.
+      const deadline = Date.now() + 5000;
+      while (!hostEnded && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       expect(hostReceived).toBe('{"ok":true}');
       expect(hostEnded).toBe(true);
@@ -1172,6 +1176,37 @@ describe('Global Monitor', () => {
       ).resolves.toMatchObject({ status: 200 });
       await flush();
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+    });
+
+    it('still logs the call, without a request body, when request body capture never settles', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+      try {
+        let finishBody: (text: string) => void = () => undefined;
+        const neverEndingReq = {
+          url: 'https://api.openai.com/v1/chat/completions',
+          method: 'POST',
+          headers: new Headers(),
+          clone: jest.fn().mockReturnValue({ text: () => new Promise<string>((resolve) => { finishBody = resolve; }) })
+        };
+
+        await expect(globalThis.fetch(neverEndingReq as any)).resolves.toMatchObject({ status: 200 });
+        await flush();
+        expect(mockLoggingService.logRequestToAPI).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(5_000);
+        await flush();
+
+        expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(callData.request_body).toBeNull();
+
+        // A capture that finishes after we gave up must not mutate the record already submitted.
+        finishBody('{"late":true}');
+        await flush();
+        expect(callData.request_body).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('sends req.end(callback) and still logs the call', async () => {

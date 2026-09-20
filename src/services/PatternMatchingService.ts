@@ -58,14 +58,29 @@ function normalizeMatchPath(path: string): string {
 // exists (CJS, and Jest — whose `jest.mock('fs')` only intercepts `require`); native ESM has no
 // `require`, so it falls back to `process.getBuiltinModule` (Node 20.16+ / 22.3+). Returns null
 // where neither is available (old Node in ESM, or non-Node runtimes).
-function getNodeBuiltin(name: 'fs' | 'path' | 'url'): any {
+interface NodeBuiltins {
+  fs: typeof import('fs');
+  path: typeof import('path');
+  url: typeof import('url');
+}
+
+function getNodeBuiltin<K extends keyof NodeBuiltins>(name: K): NodeBuiltins[K] | null {
   if (typeof require !== 'undefined') {
-    try { return require(name); } catch { /* fall through */ }
+    // Literal `require` calls (not `require(name)`) so bundlers can statically resolve/externalize
+    // them; inside `try` so the ESM build doesn't warn about them. `require()` returns `any`, so
+    // the per-key return type needs no cast.
+    try {
+      switch (name) {
+        case 'fs': return require('fs');
+        case 'path': return require('path');
+        case 'url': return require('url');
+      }
+    } catch { /* fall through */ }
   }
   try {
     const getBuiltinModule = (process as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
     if (typeof getBuiltinModule === 'function') {
-      return getBuiltinModule.call(process, name) ?? null;
+      return (getBuiltinModule.call(process, name) as NodeBuiltins[K] | undefined) ?? null;
     }
   } catch { /* not available */ }
   return null;
@@ -492,7 +507,8 @@ export class PatternMatchingService {
             const metaUrl: string = eval('import.meta.url');
             // Use fileURLToPath instead of new URL().pathname to handle
             // Windows paths correctly (e.g. /C:/foo/bar.js → C:\foo\bar.js)
-            const { fileURLToPath } = getNodeBuiltin('url');
+            const fileURLToPath = getNodeBuiltin('url')?.fileURLToPath;
+            if (!fileURLToPath) { throw new Error('url module unavailable'); }
             baseDir = _path.dirname(fileURLToPath(metaUrl));
           } catch {
             baseDir = process.cwd();
@@ -845,12 +861,83 @@ export class PatternMatchingService {
     return value;
   }
 
+  // Each letter of a credential word may also appear as a JSON `\\uXXXX` escape (`"pass\\u0077ord"`
+  // is the key `password` once parsed), so the words are matched escape-aware rather than literally.
+  private static escapeAwareWord(word: string): string {
+    return Array.from(word)
+      .map((ch) => {
+        const hex = (c: string) => c.charCodeAt(0).toString(16).padStart(4, '0');
+        return `(?:${ch}|\\\\u${hex(ch.toLowerCase())}|\\\\u${hex(ch.toUpperCase())})`;
+      })
+      .join('');
+  }
+
+  // The credential words, matched on their own (no surrounding context) so the scan is a single
+  // linear pass; redactCredentialStrings then checks the quotes around each hit.
+  private static readonly CREDENTIAL_WORD_PATTERN = (() => {
+    const word = (w: string) => PatternMatchingService.escapeAwareWord(w);
+    return new RegExp([
+      word('key'), word('secret'), word('password'), word('token'), word('authorization'),
+      `${word('connection')}(?:_|\\\\u005f)?${word('string')}`,
+    ].join('|'), 'gi');
+  })();
+
+  // A key must be at most this many characters on either side of the credential word, so a stray
+  // quote far away can't make a whole span of prose look like one key.
+  private static readonly MAX_KEY_AFFIX = 200;
+
+  // Replaces the string value of every `"<key containing a credential word>" : "..."` in an
+  // unparseable body (malformed or truncated — a body that parses as JSON never reaches this). The
+  // value may be unterminated: a body cut off at the capture cap can end mid-credential.
+  //
+  // Anchored on the key rather than tokenizing every string, so an unbalanced or stray quote
+  // elsewhere can't flip string parity and hide a credential. Linear on adversarial input: credential
+  // words are found in one pass, and the quotes around them come from a cursor that only moves
+  // forward (each quote is visited once) — per-hit `indexOf`/`lastIndexOf` would rescan a long
+  // quote-free span for every hit. Keys with an unescaped quote inside, or longer than MAX_KEY_AFFIX
+  // around the word, are not matched.
+  private redactCredentialStrings(text: string): string {
+    const words = new RegExp(PatternMatchingService.CREDENTIAL_WORD_PATTERN);
+    const keyTail = /\s*:\s*"/y;
+    const maxAffix = PatternMatchingService.MAX_KEY_AFFIX;
+
+    let prevQuote = -1; // last quote before the current word
+    let nextQuote = text.indexOf('"'); // first quote at/after the current word
+    const advanceTo = (position: number) => {
+      while (nextQuote !== -1 && nextQuote < position) {
+        prevQuote = nextQuote;
+        nextQuote = text.indexOf('"', nextQuote + 1);
+      }
+    };
+
+    let out = '';
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = words.exec(text)) !== null) {
+      const wordEnd = match.index + match[0].length;
+      advanceTo(match.index);
+      if (prevQuote === -1 || nextQuote === -1) { continue; }
+      if (match.index - prevQuote - 1 > maxAffix || nextQuote - wordEnd > maxAffix) { continue; }
+
+      keyTail.lastIndex = nextQuote + 1;
+      if (!keyTail.test(text)) { continue; }
+
+      const valueStart = keyTail.lastIndex;
+      let end = valueStart;
+      while (end < text.length && text[end] !== '"') {
+        end += text[end] === '\\' ? 2 : 1;
+      }
+      end = Math.min(end, text.length);
+      out += text.slice(last, valueStart) + '[REDACTED]';
+      last = end; // the closing quote (if any) is kept
+      words.lastIndex = end;
+    }
+    return out + text.slice(last);
+  }
+
   // Bodies reach us as strings whenever parseBody couldn't produce an object: a top-level JSON
   // array (re-joined as NDJSON), NDJSON itself, a BOM-prefixed document, or a body truncated at the
   // capture cap. They must be redacted like parsed bodies rather than logged verbatim.
-  private static readonly CREDENTIAL_JSON_STRING_PATTERN =
-    /("(?:[^"\\]|\\.)*?(?:key|secret|password|token|authorization|connection_?string)(?:[^"\\]|\\.)*?"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
-
   private sanitizeStringBody(text: string): string {
     const stripped = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 
@@ -869,7 +956,7 @@ export class PatternMatchingService {
 
     // Unparseable (truncated, malformed): can't know the structure, so redact by key name instead.
     // Deliberately over-inclusive — a body we can't parse is safer over-redacted than leaked.
-    return text.replace(PatternMatchingService.CREDENTIAL_JSON_STRING_PATTERN, '$1"[REDACTED]"');
+    return this.redactCredentialStrings(text);
   }
 
   public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {

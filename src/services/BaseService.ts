@@ -27,11 +27,14 @@ export interface BaseServiceConfig {
 // Every call's network wait is bounded: without a timeout, one hung endpoint would keep each
 // fire-and-forget promise — and the prompt/response payload it closes over — alive forever.
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+// A flat 30s would abort a large file upload over a slow link mid-transfer, so multipart uploads
+// get a much longer ceiling — still bounded, so a hung endpoint can't hold the payload forever.
+const UPLOAD_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
 // AbortSignal.timeout is Node 17.3+; on anything older, requests just go unbounded as before.
-function timeoutSignal(): AbortSignal | undefined {
+function timeoutSignal(ms: number = DEFAULT_REQUEST_TIMEOUT_MS): AbortSignal | undefined {
   return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS)
+    ? AbortSignal.timeout(ms)
     : undefined;
 }
 
@@ -214,7 +217,7 @@ export abstract class BaseService {
         headers: { 'X-API-Key': this.apiKey },
         body: formData,
         redirect: 'error',
-        signal: timeoutSignal()
+        signal: timeoutSignal(UPLOAD_REQUEST_TIMEOUT_MS)
       });
 
       return await this.parseJsonResponse<T>(response, successMessage);

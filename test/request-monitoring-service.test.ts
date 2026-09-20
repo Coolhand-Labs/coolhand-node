@@ -152,11 +152,25 @@ describe('RequestMonitoringService', () => {
       const fetchSpy = jest.spyOn(service as any, 'patchFetch');
       const fetchBefore = globalThis.fetch;
 
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
       service.setupMonitoring();
 
       expect(httpsSpy).not.toHaveBeenCalled();
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(globalThis.fetch).toBe(fetchBefore);
+      expect(warnSpy).not.toHaveBeenCalled(); // silent by default
+    });
+
+    it('warns that its config is unused when http/https was already patched and it is not silent', () => {
+      const state = (globalThis as any).__coolhand_node_v1__ ?? ((globalThis as any).__coolhand_node_v1__ = {});
+      state.httpPatched = true;
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const loudService = new RequestMonitoringService(mockPatternMatchingService, false);
+
+      loudService.setupMonitoring();
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('already active'));
     });
 
     it('marks http/https/fetch as patched so a later layer skips them', () => {

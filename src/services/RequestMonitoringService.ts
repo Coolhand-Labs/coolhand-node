@@ -13,7 +13,7 @@ import { computeSelfEndpoint, isSelfOrExcluded, SelfEndpoint } from '../utils/se
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 import { extractRequestHostname } from '../utils/extract-hostname.js';
 import { formatErrorMessage } from '../utils/format-error.js';
-import { captureRequestChunk, parseAndSanitizeBody } from '../utils/request-capture.js';
+import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from '../utils/request-capture.js';
 import { getState } from '../utils/global-state.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
@@ -109,7 +109,16 @@ export class RequestMonitoringService {
       if (state.httpPatched) {
         // Auto-monitor (or another copy of this SDK) already wrapped http/https — wrapping again
         // would log every request twice and hold two tees / 2 x 50 MB buffers per response.
-        this.log('🔄 http/https already patched by another Coolhand layer, skipping');
+        // Gated on `silent` like the fetch skip below: `new Coolhand()` always lands here when
+        // auto-monitor is also loaded, so warning regardless of `silent` would be noise for every
+        // default (silent) construction.
+        if (!this.silent) {
+          console.warn(
+            '⚠️  Coolhand: http/https interception is already active in this process (auto-monitor or another ' +
+            'Coolhand copy), so this instance did not patch it again. Requests are logged by the existing ' +
+            "interceptor — this instance's excludeApiPatterns, baseUrl and apiKey are NOT used for automatic interception."
+          );
+        }
       } else if (loadNodeModules()) {
         state.httpPatched = true;
 
@@ -557,16 +566,12 @@ export class RequestMonitoringService {
     // instantaneous, and awaiting it before dispatching the real request would delay every
     // intercepted fetch() behind request-body capture, or hang it indefinitely. The capture promise
     // never rejects, so a failure there can't reach the host or leave an unhandledRejection.
-    const requestBodyPromise: Promise<void> = getFetchRequestBody(url, options).catch((err: unknown) => {
-      this.log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
-      return null;
-    }).then((requestBody) => {
-      callData.request_body = parseAndSanitizeBody(
-        requestBody,
-        (body) => this.patternMatchingService.sanitizeBody(body),
-        (err) => this.log(`⚠️ Request body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
-      );
-    });
+    const requestBody = captureRequestBodyInBackground(
+      getFetchRequestBody(url, options),
+      callData,
+      (body) => this.patternMatchingService.sanitizeBody(body),
+      this.log.bind(this)
+    );
 
     // Only the real fetch is inside the rethrowing try: an error here is the host's own, and must
     // reach it unchanged. Anything the interceptor does with the response afterwards is best-effort.
@@ -603,9 +608,10 @@ export class RequestMonitoringService {
           this.log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
           callData.response_body = null;
         })
-        // Complete only once the request body capture has settled too; it never rejects.
-        .then(() => requestBodyPromise)
+        // Complete once the request body capture has settled too (bounded, so an endless body stream can't block it).
+        .then(() => requestBody.waitForCapture())
         .finally(() => {
+          requestBody.markSubmitted();
           this.onRequestComplete(callData, matchedPattern);
         })
         .catch((err) => {
