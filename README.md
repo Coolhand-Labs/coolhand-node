@@ -2,7 +2,7 @@
 
 [![npm version](https://badge.fury.io/js/coolhand-node.svg)](https://badge.fury.io/js/coolhand-node)
 
-Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, DeepSeek, Mistral, Perplexity, xAI, Cohere, Ollama, Amazon Bedrock, ElevenLabs, TypeSafe Jev, and more) to the Coolhand analytics platform.
+Monitor and log LLM API calls from multiple providers (OpenAI, Anthropic, Google AI, GitHub Models, Vertex AI, OpenRouter, OpenCode, Cloudflare AI Gateway, Azure OpenAI, DeepSeek, Mistral, Perplexity, xAI, Cohere, Ollama, Amazon Bedrock, ElevenLabs, TypeSafe Jev, and more) to the Coolhand analytics platform.
 
 ## Related Packages
 
@@ -402,6 +402,9 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - OpenRouter (`openrouter.ai`, unified access to 200+ models)
 - OpenCode (`opencode.ai`, OpenCode Zen model gateway)
 - Cloudflare AI Gateway (`gateway.ai.cloudflare.com`, proxying any upstream provider)
+- Azure OpenAI (`*.openai.azure.com`, dedicated Azure OpenAI resources)
+- Azure AI Services and Azure AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/` and `/models/` inference paths only; serverless endpoints on `*.inference.ai.azure.com` and `*.models.ai.azure.com`)
+- Azure Machine Learning managed online endpoints (`*.inference.ml.azure.com`)
 - DeepSeek (`api.deepseek.com`)
 - Mistral (`api.mistral.ai`)
 - Perplexity (`api.perplexity.ai`)

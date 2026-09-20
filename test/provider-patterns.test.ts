@@ -12,7 +12,8 @@ const ORIGINAL_PATTERNS = [
   'OpenAI', 'Anthropic', 'Google AI', 'GitHub Models', 'Vertex AI', 'OpenRouter', 'OpenCode', 'Cloudflare AI Gateway'
 ];
 const NEW_PATTERNS = [
-  'DeepSeek', 'Mistral', 'Perplexity', 'xAI', 'Cohere', 'TypeSafe Jev', 'Ollama', 'Bedrock', 'ElevenLabs'
+  'DeepSeek', 'Mistral', 'Perplexity', 'xAI', 'Cohere', 'TypeSafe Jev', 'Ollama', 'Bedrock', 'ElevenLabs',
+  'Azure OpenAI', 'Azure AI Services', 'Azure AI Foundry (Serverless)', 'Azure Machine Learning'
 ];
 
 function nodeService(): PatternMatchingService {
@@ -90,6 +91,19 @@ const URL_CASES: Array<[string, string | null]> = [
   ['https://bedrock-runtime.us-east-1.amazonaws.com.evil.example/model/x/invoke', null],
   ['https://notbedrock-runtime.us-east-1.amazonaws.com/model/x/invoke', null],
   ['https://s3.us-east-1.amazonaws.com/model/x/invoke', null],
+  // Azure OpenAI dedicated hosts: host-wide
+  ['https://myres.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-10-21', 'Azure OpenAI'],
+  ['https://myres.openai.azure.us/openai/v1/chat/completions', 'Azure OpenAI'],
+  // Azure AI Services shares its host with Speech/Vision/etc., so only /openai/ and /models/ count
+  ['https://myres.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions', 'Azure AI Services'],
+  ['https://myres.services.ai.azure.com/models/chat/completions?api-version=2024-05-01-preview', 'Azure AI Services'],
+  ['https://myres.services.ai.azure.com/api/projects/p1/openai/v1/responses', 'Azure AI Services'],
+  ['https://myres.cognitiveservices.azure.com/speech/recognition/conversation', null],
+  ['https://myres.cognitiveservices.azure.com/', null],
+  ['https://myres.cognitiveservices.azure.com.evil.example/openai/deployments/x/chat/completions', null],
+  // Azure AI Foundry serverless and Azure ML managed online endpoints: host-wide
+  ['https://mymodel.eastus2.models.ai.azure.com/v1/chat/completions', 'Azure AI Foundry (Serverless)'],
+  ['https://myendpoint.eastus.inference.ml.azure.com/score', 'Azure Machine Learning'],
   // ElevenLabs: host-wide
   ['https://api.elevenlabs.io/v1/text-to-speech/abc', 'ElevenLabs'],
   ['https://api.elevenlabs.io/v1/convai/conversations', 'ElevenLabs'],
@@ -135,6 +149,12 @@ describe('provider patterns added for #247', () => {
       };
       expect((await service.matchesAPIPatternFromURL(url))?.pattern.name ?? null).toBe(expected);
       expect((await service.matchesAPIPattern(options))?.pattern.name ?? null).toBe(expected);
+    });
+
+    it('matches request-option hostnames case-insensitively', () => {
+      expect(service.matchesAPIPatternSync({ hostname: 'API.DeepSeek.com', path: '/chat/completions' })?.pattern.name).toBe('DeepSeek');
+      expect(service.matchesAPIPatternSync({ hostname: 'Bedrock-Runtime.US-East-1.amazonaws.com', path: '/model/x/invoke' })?.pattern.name)
+        .toBe('Bedrock');
     });
 
     it('accepts a numeric-string port in request options (as Node does)', () => {

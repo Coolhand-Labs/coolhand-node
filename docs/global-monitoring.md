@@ -364,10 +364,10 @@ A `domains` match applies to every path on that host, so `paths` isn't needed he
 
 To make `paths` binding for one pattern, set `requiresPathMatch: true`. The pattern then matches only when the request path also starts with one of its `paths`, ending on a path-segment boundary (`/v1/embed` matches `/v1/embed?x=1` and `/v1/embed/x`, not `/v1/embed-jobs`). It is opt-in per pattern because making `paths` binding for every pattern would stop capturing traffic that is captured today. A `requiresPathMatch` pattern with no `paths` matches nothing, and the check applies identically to `http`/`https` requests and `fetch()`.
 
-Two pattern features only work together with `requiresPathMatch`, so they can never capture on their own:
+Two pattern features are typically used together with `requiresPathMatch`:
 
-- `ports`: numbers that identify the provider on any host. The built-in Ollama pattern uses `[11434]` plus the `/api/chat`, `/api/generate`, `/api/embed` and `/api/embeddings` paths, so a local Ollama at `localhost:11434` is captured while an unrelated app's own `/api/chat` on another port is not. An Ollama on a different port, or behind a custom hostname, needs its own pattern.
-- `*` in `domains`: stands for exactly one DNS label, e.g. `bedrock-runtime.*.amazonaws.com` for every Bedrock region. Like plain domains, it also matches subdomains in front of it.
+- `ports`: honored only together with `requiresPathMatch`, so a port alone can never capture a request. Numbers that identify the provider on any host. The built-in Ollama pattern uses `[11434]` plus the `/api/chat`, `/api/generate`, `/api/embed` and `/api/embeddings` paths, so a local Ollama at `localhost:11434` is captured while an unrelated app's own `/api/chat` on another port is not. An Ollama on a different port, or behind a custom hostname, needs its own pattern.
+- `*` in `domains`: works with or without `requiresPathMatch` (without it, every path on a matching host is captured, so pair it with `requiresPathMatch` unless that is what you want). Stands for exactly one DNS label, e.g. `bedrock-runtime.*.amazonaws.com` for every Bedrock region. Like plain domains, it also matches subdomains in front of it.
 
 ```json
 {

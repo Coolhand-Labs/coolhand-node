@@ -74,6 +74,43 @@
       }
     },
     {
+      "name": "Azure OpenAI",
+      "domains": ["openai.azure.com", "openai.azure.us", "openai.azure.cn"],
+      "paths": [],
+      "headers": {
+        "api-key": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Azure AI Services",
+      "domains": [
+        "cognitiveservices.azure.com", "cognitiveservices.azure.us", "cognitiveservices.azure.cn",
+        "services.ai.azure.com", "services.ai.azure.us"
+      ],
+      "paths": ["/openai/", "/models/", "/api/projects/"],
+      "requiresPathMatch": true,
+      "headers": {
+        "api-key": "[REDACTED]",
+        "ocp-apim-subscription-key": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Azure AI Foundry (Serverless)",
+      "domains": ["inference.ai.azure.com", "models.ai.azure.com"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
+      "name": "Azure Machine Learning",
+      "domains": ["inference.ml.azure.com", "inference.ml.azure.us"],
+      "paths": [],
+      "headers": {
+        "authorization": "[REDACTED]"
+      }
+    },
+    {
       "name": "DeepSeek",
       "domains": ["api.deepseek.com"],
       "paths": [],

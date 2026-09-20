@@ -441,7 +441,7 @@ export class RequestMonitoringService {
       if (chunk) {
         requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      callData.request_body = parseBody(requestBuffer.concat().toString('utf-8'));
+      callData.request_body = this.patternMatchingService.sanitizeBody(parseBody(requestBuffer.concat().toString('utf-8')));
       this.log(`📤 Request complete for call #${callData.id}`);
       return originalEnd(chunk, encoding, callback);
     }).bind(this);
@@ -493,7 +493,7 @@ export class RequestMonitoringService {
         originalFetch.call(globalThis, url, options)
       ]);
 
-      callData.request_body = parseBody(requestBody);
+      callData.request_body = this.patternMatchingService.sanitizeBody(parseBody(requestBody));
       callData.status_code = response.status;
       callData.response_headers = this.patternMatchingService.sanitizeHeaders(
         Object.fromEntries(response.headers.entries()),

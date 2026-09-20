@@ -739,7 +739,8 @@ function interceptRequest(
     if (chunk) {
       requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    callData.request_body = parseBody(requestBuffer.concat().toString('utf-8'));
+    const parsedRequestBody = parseBody(requestBuffer.concat().toString('utf-8'));
+    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
     log(`📤 Request complete for call #${callData.id}`);
     return originalEnd(chunk, encoding, callback);
   });
@@ -794,7 +795,8 @@ async function interceptFetch(
       originalFetch.call(globalThis, url, options)
     ]);
 
-    callData.request_body = parseBody(requestBody);
+    const parsedRequestBody = parseBody(requestBody);
+    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
     callData.status_code = response.status;
     callData.response_headers = state.globalPatternService?.sanitizeHeaders(
       Object.fromEntries(response.headers.entries()),
