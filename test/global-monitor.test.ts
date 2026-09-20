@@ -52,7 +52,7 @@ describe('Global Monitor', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn(),
       sanitizeURL: jest.fn(),
-      sanitizeBody: jest.fn(),
+      sanitizeBody: jest.fn().mockImplementation((body: any) => body),
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(5),
@@ -841,6 +841,22 @@ describe('Global Monitor', () => {
           headers: expect.objectContaining({ authorization: 'Bearer token' }),
           request_body: { prompt: 'a' }
         }),
+        mockPattern,
+        'global-monitoring'
+      );
+    });
+
+    it('logs no request body, not the raw one, when sanitizeBody fails closed with null', async () => {
+      mockPatternMatchingService.sanitizeBody.mockReturnValueOnce(null);
+
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        body: '{"data_sources":[{"parameters":{"key":"admin-secret"}}]}'
+      });
+      await flush();
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ request_body: null }),
         mockPattern,
         'global-monitoring'
       );

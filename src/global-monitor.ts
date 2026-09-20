@@ -740,7 +740,11 @@ function interceptRequest(
       requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
     const parsedRequestBody = parseBody(requestBuffer.concat().toString('utf-8'));
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
+    // No `?? parsedRequestBody` fallback: sanitizeBody returns null when redaction itself fails,
+    // and substituting the raw body there would log exactly the credentials it couldn't strip.
+    callData.request_body = state.globalPatternService
+      ? state.globalPatternService.sanitizeBody(parsedRequestBody)
+      : parsedRequestBody;
     log(`📤 Request complete for call #${callData.id}`);
     return originalEnd(chunk, encoding, callback);
   });
@@ -796,7 +800,11 @@ async function interceptFetch(
     ]);
 
     const parsedRequestBody = parseBody(requestBody);
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
+    // No `?? parsedRequestBody` fallback: sanitizeBody returns null when redaction itself fails,
+    // and substituting the raw body there would log exactly the credentials it couldn't strip.
+    callData.request_body = state.globalPatternService
+      ? state.globalPatternService.sanitizeBody(parsedRequestBody)
+      : parsedRequestBody;
     callData.status_code = response.status;
     callData.response_headers = state.globalPatternService?.sanitizeHeaders(
       Object.fromEntries(response.headers.entries()),

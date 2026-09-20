@@ -294,11 +294,18 @@ export class PatternMatchingService {
   // fallback-to-defaults path as invalid JSON, instead of crashing every request later.
   private validatePatternsShape(patternsData: unknown, sourceFile: string): CoolhandAPIPattern[] {
     const patterns = (patternsData as { patterns?: unknown } | null)?.patterns;
-    const isValid = Array.isArray(patterns) && patterns.every(
-      (pattern) => pattern && typeof pattern === 'object' && Array.isArray((pattern as CoolhandAPIPattern).domains)
-    );
+    const isStringArray = (value: unknown): boolean => Array.isArray(value) && value.every((item) => typeof item === 'string');
+    const isValid = Array.isArray(patterns) && patterns.every((pattern) => {
+      if (!pattern || typeof pattern !== 'object') { return false; }
+      const { domains, paths, ports } = pattern as CoolhandAPIPattern;
+      // `paths`/`ports` are read on every request by findDomainMatch, so a wrong type here would
+      // throw inside the hot path and disable matching for every pattern after this one.
+      return isStringArray(domains)
+        && (paths === undefined || isStringArray(paths))
+        && (ports === undefined || (Array.isArray(ports) && ports.every((port) => Number.isInteger(port))));
+    });
     if (!isValid) {
-      throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], ... }] })`);
+      throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], paths?: string[], ports?: number[], ... }] })`);
     }
     return patterns as CoolhandAPIPattern[];
   }
@@ -627,10 +634,31 @@ export class PatternMatchingService {
     });
   }
 
+  // http(s).request accepts `options.headers` as an array too — either flat
+  // (`['Authorization', 'Bearer ...']`) or as `[name, value]` pairs — whose Object.entries() keys
+  // would be array indexes, so nothing below would ever match a credential header.
+  private static headerEntries(headers: unknown): Array<[string, unknown]> {
+    if (!Array.isArray(headers)) {
+      return Object.entries((headers ?? {}) as Record<string, unknown>);
+    }
+    if (headers.some((item) => Array.isArray(item))) {
+      return headers.filter((item): item is [string, unknown] => Array.isArray(item) && typeof item[0] === 'string');
+    }
+    const entries: Array<[string, unknown]> = [];
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      if (typeof headers[i] === 'string') { entries.push([headers[i], headers[i + 1]]); }
+    }
+    return entries;
+  }
+
   public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
-    const sanitized: Record<string, any> = Object.fromEntries(
-      Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
-    );
+    const sanitized: Record<string, any> = {};
+    for (const [key, value] of PatternMatchingService.headerEntries(headers)) {
+      const name = key.toLowerCase();
+      // A repeated name (flat/pair arrays can repeat one) collects into an array, which the
+      // normalization pass below joins.
+      sanitized[name] = name in sanitized ? [sanitized[name], value].flat() : value;
+    }
 
     // Default sanitization rules — applied unconditionally, independent of pattern match
     for (const headerName of DEFAULT_REDACTED_HEADERS) {
@@ -663,8 +691,15 @@ export class PatternMatchingService {
   public sanitizeURL(url: string): string {
     try {
       const urlObj = new URL(url);
+      let redacted = false;
+      // Credentials embedded as `https://user:pass@host/...` are never legitimately needed in a log.
+      if (urlObj.username || urlObj.password) {
+        urlObj.username = '';
+        urlObj.password = '';
+        redacted = true;
+      }
       if (!urlObj.search) {
-        return url;
+        return redacted ? urlObj.toString() : url;
       }
       // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
       // api-patterns.json) — included here too as defense-in-depth for callers that pass it
@@ -675,9 +710,9 @@ export class PatternMatchingService {
         'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
         'password', 'signature', 'sig', 'x-goog-api-key',
         'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
-        'subscription-key'
+        'subscription-key', 'ocp-apim-subscription-key', 'api-key', 'x-api-key',
+        'client_secret', 'refresh_token', 'id_token', 'access-token'
       ]);
-      let redacted = false;
       for (const [name] of urlObj.searchParams.entries()) {
         if (sensitiveParams.has(name.toLowerCase())) {
           urlObj.searchParams.set(name, '[REDACTED]');

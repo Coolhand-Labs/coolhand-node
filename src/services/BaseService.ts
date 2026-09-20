@@ -150,7 +150,7 @@ export abstract class BaseService {
       return result;
     } else {
       const errorText = await response.text();
-      console.error(`❌ Request failed: ${response.status} - ${errorText}`);
+      console.error(`❌ Request failed: ${response.status} - ${errorText.slice(0, 2000)}`);
       return null;
     }
   }
@@ -221,8 +221,8 @@ export abstract class BaseService {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {
-            console.error(`❌ Request failed: ${res.statusCode} - ${data}`);
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            console.error(`❌ Request failed: ${res.statusCode} - ${data.slice(0, 2000)}`);
+            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 2000)}`));
           }
         });
       });
