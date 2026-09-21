@@ -64,6 +64,11 @@ export class McpService extends BaseService {
       throw new Error(`MCP response was not valid JSON: ${text.slice(0, 2000)}`);
     }
 
+    // `JSON.parse('null')` (and bare scalars) succeed, but there is no envelope to read from them.
+    if (json === null || typeof json !== 'object') {
+      throw new Error(`MCP response was not a JSON object: ${text.slice(0, 2000)}`);
+    }
+
     if (json.error) {
       throw new Error(`MCP error: ${json.error.message ?? JSON.stringify(json.error)}`);
     }

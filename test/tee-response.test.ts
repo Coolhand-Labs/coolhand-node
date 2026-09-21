@@ -328,4 +328,33 @@ describe('createResponseTee', () => {
     res.push(Buffer.alloc(20, 'a'));
     res.push(null);
   });
+
+  it('does not destroy a host that drains promptly, even when cumulative bytes exceed the cap', (done) => {
+    const res = makeRes();
+    const onCapExceeded = jest.fn();
+    const hostStream = createResponseTee(res, PassThrough, 10, onCapExceeded);
+
+    let received = 0;
+    hostStream.on('data', (chunk: Buffer) => { received += chunk.length; });
+    hostStream.on('end', () => {
+      try {
+        expect(received).toBe(40);
+        expect(onCapExceeded).not.toHaveBeenCalled();
+        expect(hostStream.destroyed).toBe(false);
+        done();
+      } catch (e) {
+        done(e);
+      }
+    });
+
+    // Four 10-byte chunks (40 cumulative > 10 cap), each pushed after the previous was drained.
+    let sent = 0;
+    const pushNext = () => {
+      if (sent === 4) { res.push(null); return; }
+      sent++;
+      res.push(Buffer.alloc(10, 'a'));
+      setImmediate(pushNext);
+    };
+    pushNext();
+  });
 });

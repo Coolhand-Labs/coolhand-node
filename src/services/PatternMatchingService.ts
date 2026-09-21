@@ -1,4 +1,5 @@
 import { CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
+import { normalizeHostname } from '../utils/self-endpoint.js';
 
 // Credential-bearing headers redacted unconditionally, regardless of which (if any)
 // pattern matched — closes the gap where an unmatched/misdetected request or a custom
@@ -18,6 +19,72 @@ const DEFAULT_REDACTED_HEADERS = [
   'subscription-key',
   'xi-api-key',
 ];
+
+// Header names that look credential-bearing even though they aren't in the exact-name list above
+// (`x-auth-token`, `cf-access-client-secret`, `x-csrf-token`, ...). Rate-limit telemetry such as
+// `anthropic-ratelimit-tokens-remaining` matches "token" but carries no secret and is genuinely
+// useful in logs, so it is exempt.
+const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie/;
+const CREDENTIAL_HEADER_EXEMPT_PATTERN = /rate-?limit/;
+
+function isCredentialHeaderName(lowerName: string): boolean {
+  return CREDENTIAL_HEADER_PATTERN.test(lowerName) && !CREDENTIAL_HEADER_EXEMPT_PATTERN.test(lowerName);
+}
+
+// A `domains` entry made only of `*` and `.` (e.g. `*`, `**`, `*.*`) has no label to anchor on and
+// would match every host — self-inflicted by a custom patternsFile, but still worth refusing.
+function isWildcardOnlyDomain(domain: string): boolean {
+  return /^[*.\s]*$/.test(domain);
+}
+
+// Canonical path used for `paths`/`requiresPathMatch` matching, so a request can't dodge (or
+// spuriously trigger) a match by how its path is spelled. `URL` already normalizes URL-derived
+// pathnames but `http.request({ path })` reaches us verbatim, so both go through here: the query
+// is dropped, dot-segments are resolved (`/x/../model/` -> `/model/`) and duplicate slashes
+// collapsed (`//model/x` -> `/model/x`).
+function normalizeMatchPath(path: string): string {
+  const raw = path.split(/[?#]/, 1)[0];
+  // Leading slashes are stripped before parsing: `//model/x` would otherwise read as a
+  // protocol-relative host rather than a path.
+  const resolved = raw.replace(/^\/+/, '');
+  try {
+    return new URL('http://coolhand.invalid/' + resolved).pathname.replace(/\/{2,}/g, '/');
+  } catch {
+    return '/' + resolved.replace(/\/{2,}/g, '/');
+  }
+}
+
+// Synchronously resolves a Node built-in from either module format. `require` is preferred where it
+// exists (CJS, and Jest — whose `jest.mock('fs')` only intercepts `require`); native ESM has no
+// `require`, so it falls back to `process.getBuiltinModule` (Node 20.16+ / 22.3+). Returns null
+// where neither is available (old Node in ESM, or non-Node runtimes).
+interface NodeBuiltins {
+  fs: typeof import('fs');
+  path: typeof import('path');
+  url: typeof import('url');
+}
+
+function getNodeBuiltin<K extends keyof NodeBuiltins>(name: K): NodeBuiltins[K] | null {
+  if (typeof require !== 'undefined') {
+    // Literal `require` calls (not `require(name)`) so bundlers can statically resolve/externalize
+    // them; inside `try` so the ESM build doesn't warn about them. `require()` returns `any`, so
+    // the per-key return type needs no cast.
+    try {
+      switch (name) {
+        case 'fs': return require('fs');
+        case 'path': return require('path');
+        case 'url': return require('url');
+      }
+    } catch { /* fall through */ }
+  }
+  try {
+    const getBuiltinModule = (process as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+    if (typeof getBuiltinModule === 'function') {
+      return (getBuiltinModule.call(process, name) as NodeBuiltins[K] | undefined) ?? null;
+    }
+  } catch { /* not available */ }
+  return null;
+}
 
 // Runtime detection utility
 const isEdgeRuntime = () => {
@@ -73,15 +140,24 @@ export class PatternMatchingService {
     } else {
       // In Node.js runtime, try to load from filesystem synchronously
       try {
-        // Check if require is available (CommonJS) or if we need to use dynamic import (ES modules)
-        if (typeof require !== 'undefined') {
-          const fs = require('fs');
-          const path = require('path');
+        const fs = getNodeBuiltin('fs');
+        const path = getNodeBuiltin('path');
+        if (fs && path) {
           this.loadAPIPatternsSync(customPatternsFile, fs, path);
         } else {
-          // In ES modules, we can't use require synchronously, so fall back to default patterns
-          // The async initialization will handle proper loading later
-          if (!this.silent) { console.log('📋 ES module environment detected, using default patterns. File system patterns will be loaded asynchronously.'); }
+          // Native ESM on a Node without process.getBuiltinModule (< 20.16 / 22.3): there is no
+          // synchronous way to reach fs from here, so only the built-in patterns are available.
+          // A custom patterns file being silently ignored would be a surprise, so say so even in
+          // silent mode.
+          if (customPatternsFile) {
+            console.warn(
+              `⚠️  Coolhand: patternsFile "${customPatternsFile}" was NOT loaded — synchronous file loading ` +
+              'is unavailable in native ESM on this Node.js version (needs 20.16+ / 22.3+, or use the CommonJS build). ' +
+              'Using the built-in patterns instead.'
+            );
+          } else if (!this.silent) {
+            console.log('📋 ES module environment without synchronous fs access detected, using built-in patterns.');
+          }
           this.loadDefaultPatternsForEdge();
         }
       } catch {
@@ -300,7 +376,16 @@ export class PatternMatchingService {
     if (!isValid) {
       throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], ... }] })`);
     }
-    return patterns as CoolhandAPIPattern[];
+    return (patterns as CoolhandAPIPattern[]).map((pattern) => {
+      const domains = pattern.domains.filter((domain) => {
+        if (typeof domain === 'string' && isWildcardOnlyDomain(domain)) {
+          if (!this.silent) { console.warn(`⚠️  Coolhand: ignoring domain "${domain}" in "${pattern.name}" (${sourceFile}) — it would match every host`); }
+          return false;
+        }
+        return true;
+      });
+      return domains.length === pattern.domains.length ? pattern : { ...pattern, domains };
+    });
   }
 
   private async loadAPIPatterns(customPatternsFile?: string): Promise<void> {
@@ -422,7 +507,8 @@ export class PatternMatchingService {
             const metaUrl: string = eval('import.meta.url');
             // Use fileURLToPath instead of new URL().pathname to handle
             // Windows paths correctly (e.g. /C:/foo/bar.js → C:\foo\bar.js)
-            const { fileURLToPath } = require('url');
+            const fileURLToPath = getNodeBuiltin('url')?.fileURLToPath;
+            if (!fileURLToPath) { throw new Error('url module unavailable'); }
             baseDir = _path.dirname(fileURLToPath(metaUrl));
           } catch {
             baseDir = process.cwd();
@@ -462,7 +548,7 @@ export class PatternMatchingService {
 
   private hostnameMatchesDomain(hostname: string, domain: string): boolean {
     if (domain.includes('*')) {
-      return this.wildcardDomainRegex(domain).test(hostname);
+      return !isWildcardOnlyDomain(domain) && this.wildcardDomainRegex(domain).test(hostname);
     }
     // `hostname` is already lowercased by findDomainMatch; lowercase the configured domain too
     // so a custom pattern written as `API.Example.com` keeps matching.
@@ -477,7 +563,9 @@ export class PatternMatchingService {
   private wildcardDomainRegex(domain: string): RegExp {
     let regex = this.wildcardDomainCache.get(domain);
     if (!regex) {
-      const body = domain.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
+      // Consecutive `*`s mean the same as one (a label), and left as-is they would build a regex
+      // with polynomial backtracking (`[a-z0-9-]+[a-z0-9-]+...`).
+      const body = domain.replace(/\*+/g, '*').split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+');
       regex = new RegExp(`(^|\\.)${body}$`, 'i');
       this.wildcardDomainCache.set(domain, regex);
     }
@@ -504,7 +592,8 @@ export class PatternMatchingService {
     let pathname: string | undefined;
     // Hostnames are case-insensitive, and `options.hostname` reaches us exactly as the host
     // app wrote it (only URL-derived hostnames are already lowercased).
-    const lowerHostname = hostname.toLowerCase();
+    // Also drops a trailing dot: `api.openai.com.` is the same DNS name as `api.openai.com`.
+    const lowerHostname = normalizeHostname(hostname);
     for (const pattern of this.apiPatterns) {
       const matchedDomain = pattern.domains.find((domain) => this.hostnameMatchesDomain(lowerHostname, domain));
       const portMatches = pattern.requiresPathMatch === true && port !== undefined && pattern.ports?.includes(port) === true;
@@ -516,7 +605,7 @@ export class PatternMatchingService {
       }
 
       if (path === undefined) { continue; }
-      pathname ??= path.split(/[?#]/, 1)[0];
+      pathname ??= normalizeMatchPath(path);
       const requestPathname = pathname;
       const matchedPath = pattern.paths?.find((entry) => this.pathnameMatchesEntry(requestPathname, entry));
       if (matchedPath === undefined) { continue; }
@@ -536,7 +625,7 @@ export class PatternMatchingService {
   }
 
   private pathFromOptions(options: CoolhandRequestOptions): string | undefined {
-    if (options.path) { return options.path; }
+    if (options.path) { return options.path; } // normalized in findDomainMatch
     const full = options.href || options.url;
     if (full) {
       try { return new URL(full).pathname; } catch { return undefined; }
@@ -612,7 +701,7 @@ export class PatternMatchingService {
       for (const pattern of this.apiPatterns) {
         if (pattern.paths && pattern.allowPathMatchAcrossDomains) {
           for (const pathPattern of pattern.paths) {
-            if (urlObj.pathname.includes(pathPattern)) {
+            if (normalizeMatchPath(urlObj.pathname).includes(pathPattern)) {
               return {
                 pattern,
                 matchType: 'path',
@@ -638,6 +727,11 @@ export class PatternMatchingService {
         sanitized[headerName] = '[REDACTED]';
       }
     }
+    for (const headerName of Object.keys(sanitized)) {
+      if (sanitized[headerName] !== undefined && isCredentialHeaderName(headerName)) {
+        sanitized[headerName] = '[REDACTED]';
+      }
+    }
 
     // Pattern-specific sanitization
     if (pattern?.headers) {
@@ -660,28 +754,36 @@ export class PatternMatchingService {
     return sanitized;
   }
 
+  // Compared via normalizeKey (lowercased, `_`/`-` stripped) so `accessToken`, `access_token` and
+  // `access-token` are all one entry.
+  // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
+  // api-patterns.json) — included here too as defense-in-depth for callers that pass it
+  // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
+  // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
+  // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
+  private static readonly SENSITIVE_QUERY_PARAMS = new Set([
+    'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
+    'password', 'signature', 'sig', 'x-goog-api-key',
+    'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
+    'subscription-key', 'client_secret', 'refresh_token', 'id_token', 'authorization'
+  ].map((name) => PatternMatchingService.normalizeKey(name)));
+
   public sanitizeURL(url: string): string {
     try {
       const urlObj = new URL(url);
-      if (!urlObj.search) {
-        return url;
-      }
-      // x-goog-api-key is normally sent as a header (already redacted via sanitizeHeaders/
-      // api-patterns.json) — included here too as defense-in-depth for callers that pass it
-      // as a query param instead. X-Amz-Signature/X-Amz-Credential are genuinely query params
-      // on AWS SigV4-presigned URLs. subscription-key is APIM's query-param form of the
-      // Ocp-Apim-Subscription-Key header (Azure Cognitive Services / AI Foundry family).
-      const sensitiveParams = new Set([
-        'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
-        'password', 'signature', 'sig', 'x-goog-api-key',
-        'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
-        'subscription-key'
-      ]);
       let redacted = false;
-      for (const [name] of urlObj.searchParams.entries()) {
-        if (sensitiveParams.has(name.toLowerCase())) {
-          urlObj.searchParams.set(name, '[REDACTED]');
-          redacted = true;
+      // `https://user:pass@host/...` — userinfo is a credential too.
+      if (urlObj.username || urlObj.password) {
+        urlObj.username = '';
+        urlObj.password = '';
+        redacted = true;
+      }
+      if (urlObj.search) {
+        for (const [name] of urlObj.searchParams.entries()) {
+          if (PatternMatchingService.SENSITIVE_QUERY_PARAMS.has(PatternMatchingService.normalizeKey(name))) {
+            urlObj.searchParams.set(name, '[REDACTED]');
+            redacted = true;
+          }
         }
       }
       return redacted ? urlObj.toString() : url;
@@ -699,24 +801,58 @@ export class PatternMatchingService {
     return key.toLowerCase().replace(/[_-]/g, '');
   }
 
-  // Azure OpenAI's "On Your Data" feature embeds datastore credentials in the request body
-  // under data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo
-  // connection string) — sanitizeHeaders/sanitizeURL never see these. Scoped to that
-  // subtree so message content and tool schemas outside it stay verbatim. See issue #245.
-  private redactDataSourceCredentials(value: unknown, insideDataSources: boolean): unknown {
+  // Credential-bearing keys that are redacted wherever they appear in a body, normalized as above:
+  //  - Anthropic `mcp_servers[].authorization_token`
+  //  - OpenAI realtime `client_secret` (an ephemeral key returned in *response* bodies)
+  private static readonly ALWAYS_REDACTED_BODY_KEYS = new Set(['authorizationtoken', 'clientsecret']);
+
+  // `authorization` / `headers` are only credentials on an MCP tool/server definition — OpenAI
+  // Responses MCP tools carry `{ type: 'mcp', server_url, authorization, headers }`. Scoped to
+  // those objects because a bare `headers` or `authorization` key elsewhere (tool schemas, message
+  // content) is ordinary data.
+  private static readonly MCP_CREDENTIAL_KEYS = new Set(['authorization', 'headers']);
+
+  // Deeper subtrees are replaced rather than walked, so a pathologically nested body can't blow the
+  // stack — and, failing closed, whatever is in them is never logged.
+  private static readonly MAX_BODY_DEPTH = 64;
+
+  private static isMcpDefinition(node: Record<string, unknown>): boolean {
+    return node.type === 'mcp' || 'server_url' in node || 'serverUrl' in node || 'server_label' in node || 'serverLabel' in node;
+  }
+
+  // Credentials that appear in request/response bodies rather than headers/URLs, which
+  // sanitizeHeaders/sanitizeURL never see:
+  //  - Azure OpenAI's "On Your Data" feature embeds datastore credentials under
+  //    data_sources/dataSources (e.g. an Azure AI Search admin key, or a Cosmos/Mongo connection
+  //    string). Scoped to that subtree so message content and tool schemas outside it stay
+  //    verbatim. See issue #245.
+  //  - MCP server/tool credentials and realtime client secrets (see the key sets above).
+  private redactBodyCredentials(value: unknown, insideDataSources: boolean, depth: number): unknown {
+    if (depth > PatternMatchingService.MAX_BODY_DEPTH) {
+      return '[REDACTED: nested too deeply]';
+    }
+
     if (Array.isArray(value)) {
-      return value.map((item) => this.redactDataSourceCredentials(item, insideDataSources));
+      return value.map((item) => this.redactBodyCredentials(item, insideDataSources, depth + 1));
     }
 
     if (value && typeof value === 'object') {
+      const node = value as Record<string, unknown>;
+      const isMcp = PatternMatchingService.isMcpDefinition(node);
       const result: Record<string, unknown> = {};
-      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      for (const [key, val] of Object.entries(node)) {
         const normalizedKey = PatternMatchingService.normalizeKey(key);
         const nowInside = insideDataSources || normalizedKey === 'datasources';
-        if (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) {
-          result[key] = '[REDACTED]';
+        const redact =
+          (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) ||
+          PatternMatchingService.ALWAYS_REDACTED_BODY_KEYS.has(normalizedKey) ||
+          (isMcp && PatternMatchingService.MCP_CREDENTIAL_KEYS.has(normalizedKey));
+        const next = redact ? '[REDACTED]' : this.redactBodyCredentials(val, nowInside, depth + 1);
+        if (key === '__proto__') {
+          // A plain assignment would set the prototype and silently drop the key from the log.
+          Object.defineProperty(result, key, { value: next, enumerable: true, writable: true, configurable: true });
         } else {
-          result[key] = this.redactDataSourceCredentials(val, nowInside);
+          result[key] = next;
         }
       }
       return result;
@@ -725,12 +861,116 @@ export class PatternMatchingService {
     return value;
   }
 
+  // Each letter of a credential word may also appear as a JSON `\\uXXXX` escape (`"pass\\u0077ord"`
+  // is the key `password` once parsed), so the words are matched escape-aware rather than literally.
+  private static escapeAwareWord(word: string): string {
+    return Array.from(word)
+      .map((ch) => {
+        const hex = (c: string) => c.charCodeAt(0).toString(16).padStart(4, '0');
+        return `(?:${ch}|\\\\u${hex(ch.toLowerCase())}|\\\\u${hex(ch.toUpperCase())})`;
+      })
+      .join('');
+  }
+
+  // The credential words, matched on their own (no surrounding context) so the scan is a single
+  // linear pass; redactCredentialStrings then checks the quotes around each hit.
+  private static readonly CREDENTIAL_WORD_PATTERN = (() => {
+    const word = (w: string) => PatternMatchingService.escapeAwareWord(w);
+    return new RegExp([
+      word('key'), word('secret'), word('password'), word('token'), word('authorization'),
+      `${word('connection')}(?:_|\\\\u005f)?${word('string')}`,
+    ].join('|'), 'gi');
+  })();
+
+  // A key must be at most this many characters on either side of the credential word, so a stray
+  // quote far away can't make a whole span of prose look like one key.
+  private static readonly MAX_KEY_AFFIX = 200;
+
+  // Replaces the string value of every `"<key containing a credential word>" : "..."` in an
+  // unparseable body (malformed or truncated — a body that parses as JSON never reaches this). The
+  // value may be unterminated: a body cut off at the capture cap can end mid-credential.
+  //
+  // Anchored on the key rather than tokenizing every string, so an unbalanced or stray quote
+  // elsewhere can't flip string parity and hide a credential. Linear on adversarial input: credential
+  // words are found in one pass, and the quotes around them come from a cursor that only moves
+  // forward (each quote is visited once) — per-hit `indexOf`/`lastIndexOf` would rescan a long
+  // quote-free span for every hit. Keys with an unescaped quote inside, or longer than MAX_KEY_AFFIX
+  // around the word, are not matched.
+  private redactCredentialStrings(text: string): string {
+    const words = new RegExp(PatternMatchingService.CREDENTIAL_WORD_PATTERN);
+    const keyTail = /\s*:\s*"/y;
+    const maxAffix = PatternMatchingService.MAX_KEY_AFFIX;
+
+    let prevQuote = -1; // last quote before the current word
+    let nextQuote = text.indexOf('"'); // first quote at/after the current word
+    const advanceTo = (position: number) => {
+      while (nextQuote !== -1 && nextQuote < position) {
+        prevQuote = nextQuote;
+        nextQuote = text.indexOf('"', nextQuote + 1);
+      }
+    };
+
+    let out = '';
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = words.exec(text)) !== null) {
+      const wordEnd = match.index + match[0].length;
+      advanceTo(match.index);
+      if (prevQuote === -1 || nextQuote === -1) { continue; }
+      if (match.index - prevQuote - 1 > maxAffix || nextQuote - wordEnd > maxAffix) { continue; }
+
+      keyTail.lastIndex = nextQuote + 1;
+      if (!keyTail.test(text)) { continue; }
+
+      const valueStart = keyTail.lastIndex;
+      let end = valueStart;
+      while (end < text.length && text[end] !== '"') {
+        end += text[end] === '\\' ? 2 : 1;
+      }
+      end = Math.min(end, text.length);
+      out += text.slice(last, valueStart) + '[REDACTED]';
+      last = end; // the closing quote (if any) is kept
+      words.lastIndex = end;
+    }
+    return out + text.slice(last);
+  }
+
+  // Bodies reach us as strings whenever parseBody couldn't produce an object: a top-level JSON
+  // array (re-joined as NDJSON), NDJSON itself, a BOM-prefixed document, or a body truncated at the
+  // capture cap. They must be redacted like parsed bodies rather than logged verbatim.
+  private sanitizeStringBody(text: string): string {
+    const stripped = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+
+    try {
+      return JSON.stringify(this.redactBodyCredentials(JSON.parse(stripped), false, 0));
+    } catch { /* not a single JSON document */ }
+
+    const lines = stripped.split('\n');
+    if (lines.length > 1) {
+      try {
+        return lines
+          .map((line) => (line.trim() === '' ? line : JSON.stringify(this.redactBodyCredentials(JSON.parse(line), false, 0))))
+          .join('\n');
+      } catch { /* not NDJSON either */ }
+    }
+
+    // Unparseable (truncated, malformed): can't know the structure, so redact by key name instead.
+    // Deliberately over-inclusive — a body we can't parse is safer over-redacted than leaked.
+    return this.redactCredentialStrings(text);
+  }
+
   public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {
-    if (!body || typeof body !== 'object') {
+    if (!body) {
       return body;
     }
     try {
-      return this.redactDataSourceCredentials(body, false) as Record<string, unknown>;
+      if (typeof body === 'string') {
+        return this.sanitizeStringBody(body);
+      }
+      if (typeof body !== 'object') {
+        return body;
+      }
+      return this.redactBodyCredentials(body, false, 0) as Record<string, unknown>;
     } catch (error) {
       if (!this.silent) { console.warn(`⚠️  Coolhand: body sanitization failed, request body will not be captured:`, (error as Error).message); }
       return null;

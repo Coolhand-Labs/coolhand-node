@@ -328,5 +328,50 @@ describe('provider patterns added for #247', () => {
       expect(svc.matchesAPIPatternFromURL('https://svcXeu1Xexample.com/x')).toBeNull();
       expect(svc.matchesAPIPatternFromURL('https://svc.eu1.example.com.evil.net/x')).toBeNull();
     });
+
+    describe('host matching hardening (#250)', () => {
+      it.each([
+        'https://api.openai.com./v1/chat/completions',
+        'https://API.OpenAI.com./v1/chat/completions',
+      ])('matches a trailing-dot FQDN: %s', (url) => {
+        expect(nodeService().matchesAPIPatternFromURL(url)?.pattern.name).toBe('OpenAI');
+      });
+
+      it('matches a trailing-dot hostname passed via request options', () => {
+        expect(nodeService().matchesAPIPatternSync({ hostname: 'api.openai.com.', path: '/v1/chat/completions' })?.pattern.name).toBe('OpenAI');
+      });
+
+      const bound = [{ name: 'Bound', domains: ['a.example.com'], paths: ['/model/'], requiresPathMatch: true }];
+
+      it.each([
+        ['//model/x', true],
+        ['/x/../model/x', true],
+        ['/model/x?y=1', true],
+        ['/model/../admin', false],
+        ['/openai/../admin', false],
+      ])('normalizes options.path %s before path matching (match: %s)', (optionPath, shouldMatch) => {
+        const svc = fromFile(bound);
+        const match = svc.matchesAPIPatternSync({ hostname: 'a.example.com', path: optionPath });
+        expect(match?.pattern.name).toBe(shouldMatch ? 'Bound' : undefined);
+      });
+
+      it('normalizes duplicate slashes in URL-derived paths too', () => {
+        expect(fromFile(bound).matchesAPIPatternFromURL('https://a.example.com//model/x')?.pattern.name).toBe('Bound');
+      });
+
+      it.each(['*', '**', '*.*', ' '])('ignores a wildcard-only domain %j so it cannot match every host', (domain) => {
+        const svc = fromFile([{ name: 'Everything', domains: [domain] }]);
+        expect(svc.matchesAPIPatternFromURL('https://evil.com/x')).toBeNull();
+        expect(svc.matchesAPIPatternFromURL('http://localhost/x')).toBeNull();
+      });
+
+      it('collapses consecutive wildcards instead of building a backtracking regex', () => {
+        const svc = fromFile([{ name: 'Wild', domains: ['svc.***.example.com'] }]);
+        expect(svc.matchesAPIPatternFromURL('https://svc.eu1.example.com/x')?.pattern.name).toBe('Wild');
+        const start = Date.now();
+        svc.matchesAPIPatternFromURL(`https://svc.${'a'.repeat(60)}.example.com.evil/x`);
+        expect(Date.now() - start).toBeLessThan(500);
+      });
+    });
   });
 });
