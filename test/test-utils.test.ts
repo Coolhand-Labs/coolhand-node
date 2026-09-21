@@ -39,6 +39,7 @@ describe('test-utils', () => {
       matchesAPIPatternFromURL: jest.fn(),
       sanitizeHeaders: jest.fn().mockImplementation((headers: any) => ({ ...headers })),
       sanitizeURL: jest.fn().mockImplementation((url: string) => url),
+      sanitizeBody: jest.fn().mockImplementation((body: any) => body),
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(1),
