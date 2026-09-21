@@ -430,6 +430,19 @@ Sensitive headers are automatically redacted:
 }
 ```
 
+Any header whose name contains `auth`, `key`, `token`, `secret` or `cookie` (for example
+`x-auth-token` or `cf-access-client-secret`) is redacted too. Rate-limit headers such as
+`anthropic-ratelimit-tokens-remaining` are left intact.
+
+### Query Parameter, URL and Body Sanitization
+
+- **URLs:** credential-like query parameters (`key`, `api_key`, `accessToken`, `signature`, ...) and
+  `user:password@` userinfo are redacted.
+- **Request and response bodies:** Azure OpenAI `data_sources` credentials, Anthropic
+  `mcp_servers[].authorization_token`, OpenAI Responses MCP tool `authorization`/`headers`, and
+  OpenAI realtime `client_secret` are redacted. Bodies that are not a single JSON document (NDJSON,
+  truncated bodies) are scrubbed too.
+
 ### Configurable Sanitization
 
 ```json

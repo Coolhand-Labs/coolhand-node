@@ -21,7 +21,7 @@ function effectivePort(url: URL): string {
 // NOT normalize a trailing-dot FQDN (e.g. `coolhandlabs.com.`, a semantically identical DNS name
 // some proxies/resolvers canonicalize to) against its dotless form, so without this an intercepted
 // request whose host happens to arrive dotted would silently bypass the self-endpoint check.
-function normalizeHostname(hostname: string): string {
+export function normalizeHostname(hostname: string): string {
   const lower = hostname.toLowerCase();
   return lower.endsWith('.') ? lower.slice(0, -1) : lower;
 }
