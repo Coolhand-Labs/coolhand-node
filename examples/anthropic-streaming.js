@@ -19,7 +19,7 @@
 import http from 'http';
 import https from 'https';
 import zlib from 'zlib';
-import { RequestMonitoringService, PatternMatchingService } from '../dist/index.js';
+import { RequestMonitoringService, PatternMatchingService, LoggingService } from '../dist/index.js';
 
 async function startMockAnthropicServer() {
   const events = [
@@ -118,9 +118,29 @@ async function main() {
   if (!hasInputUsage || !hasOutputUsage) {
     console.log('\n⚠️  Usage tokens were NOT fully captured from the streamed response.');
     process.exitCode = 1;
-  } else {
-    console.log('\n✅ Full streaming usage was captured.');
+    return;
   }
+  console.log('\n✅ Full streaming usage was captured.');
+
+  // Capture-only by default (no COOLHAND_API_KEY needed) — this script's default job is
+  // confirming what interception captured from a *streaming* response, not exercising the
+  // log-upload path (that's what openai-example.js/anthropic-example.js/feedback-example.js are
+  // for). Set COOLHAND_API_KEY to additionally prove this exact captured streaming call is
+  // deliverable end to end.
+  if (!process.env.COOLHAND_API_KEY) {
+    console.log('\nℹ️  Set COOLHAND_API_KEY to also deliver this captured call to Coolhand and confirm delivery.');
+    return;
+  }
+
+  console.log('\n📤 COOLHAND_API_KEY set — delivering the captured streaming call to Coolhand...');
+  const loggingService = new LoggingService({ apiKey: process.env.COOLHAND_API_KEY, silent: false });
+  const logResult = await loggingService.logRequestToAPI(captured, matchedPattern, 'manual');
+  if (!logResult?.id) {
+    console.log('\n❌ Delivery failed — logRequestToAPI returned null. See the ❌ line above for the cause.');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`✅ Streaming call delivered to Coolhand, id=${logResult.id}`);
 }
 
 main().catch((err) => {
