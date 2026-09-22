@@ -24,7 +24,7 @@ const DEFAULT_REDACTED_HEADERS = [
 // (`x-auth-token`, `cf-access-client-secret`, `x-csrf-token`, ...). Rate-limit telemetry such as
 // `anthropic-ratelimit-tokens-remaining` matches "token" but carries no secret and is genuinely
 // useful in logs, so it is exempt.
-const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie/;
+const CREDENTIAL_HEADER_PATTERN = /auth|key|token|secret|cookie|passw|credential|bearer|jwt|signature/;
 const CREDENTIAL_HEADER_EXEMPT_PATTERN = /rate-?limit/;
 
 function isCredentialHeaderName(lowerName: string): boolean {
@@ -370,11 +370,18 @@ export class PatternMatchingService {
   // fallback-to-defaults path as invalid JSON, instead of crashing every request later.
   private validatePatternsShape(patternsData: unknown, sourceFile: string): CoolhandAPIPattern[] {
     const patterns = (patternsData as { patterns?: unknown } | null)?.patterns;
-    const isValid = Array.isArray(patterns) && patterns.every(
-      (pattern) => pattern && typeof pattern === 'object' && Array.isArray((pattern as CoolhandAPIPattern).domains)
-    );
+    const isStringArray = (value: unknown): boolean => Array.isArray(value) && value.every((item) => typeof item === 'string');
+    const isValid = Array.isArray(patterns) && patterns.every((pattern) => {
+      if (!pattern || typeof pattern !== 'object') { return false; }
+      const { domains, paths, ports } = pattern as CoolhandAPIPattern;
+      // `paths`/`ports` are read on every request by findDomainMatch, so a wrong type here would
+      // throw inside the hot path and disable matching for every pattern after this one.
+      return isStringArray(domains)
+        && (paths === undefined || isStringArray(paths))
+        && (ports === undefined || (Array.isArray(ports) && ports.every((port) => Number.isInteger(port))));
+    });
     if (!isValid) {
-      throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], ... }] })`);
+      throw new Error(`Coolhand: patterns file "${sourceFile}" is not shaped correctly (expected { patterns: [{ domains: string[], paths?: string[], ports?: number[], ... }] })`);
     }
     return (patterns as CoolhandAPIPattern[]).map((pattern) => {
       const domains = pattern.domains.filter((domain) => {
@@ -716,9 +723,35 @@ export class PatternMatchingService {
     });
   }
 
+  // http(s).request accepts `options.headers` as an array too — either flat
+  // (`['Authorization', 'Bearer ...']`) or as `[name, value]` pairs — whose Object.entries() keys
+  // would be array indexes, so nothing below would ever match a credential header.
+  private static headerEntries(headers: unknown): Array<[string, unknown]> {
+    if (!Array.isArray(headers)) {
+      return Object.entries((headers ?? {}) as Record<string, unknown>);
+    }
+    if (headers.some((item) => Array.isArray(item))) {
+      return headers.filter((item): item is [string, unknown] => Array.isArray(item) && typeof item[0] === 'string');
+    }
+    const entries: Array<[string, unknown]> = [];
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      if (typeof headers[i] === 'string') { entries.push([headers[i], headers[i + 1]]); }
+    }
+    return entries;
+  }
+
   public sanitizeHeaders(headers: any, pattern?: CoolhandAPIPattern): Record<string, any> {
+    // Repeated names (flat/pair arrays can repeat one) are collected first and joined by the
+    // normalization pass below; a Map keeps this linear and immune to names like `constructor`
+    // colliding with Object.prototype.
+    const collected = new Map<string, unknown[]>();
+    for (const [key, value] of PatternMatchingService.headerEntries(headers)) {
+      const name = key.toLowerCase();
+      const values = collected.get(name);
+      if (values) { values.push(value); } else { collected.set(name, [value]); }
+    }
     const sanitized: Record<string, any> = Object.fromEntries(
-      Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
+      Array.from(collected, ([name, values]) => [name, values.length === 1 ? values[0] : values.flat()])
     );
 
     // Default sanitization rules — applied unconditionally, independent of pattern match
@@ -765,7 +798,8 @@ export class PatternMatchingService {
     'key', 'api_key', 'apikey', 'token', 'access_token', 'secret',
     'password', 'signature', 'sig', 'x-goog-api-key',
     'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
-    'subscription-key', 'client_secret', 'refresh_token', 'id_token', 'authorization'
+    'subscription-key', 'ocp-apim-subscription-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'authorization',
+    'api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd'
   ].map((name) => PatternMatchingService.normalizeKey(name)));
 
   public sanitizeURL(url: string): string {
@@ -779,11 +813,21 @@ export class PatternMatchingService {
         redacted = true;
       }
       if (urlObj.search) {
-        for (const [name] of urlObj.searchParams.entries()) {
+        // Rebuilt in one pass rather than calling searchParams.set() per sensitive name: set() has
+        // to drop every duplicate of that name and is quadratic on a URL with many repeated params.
+        const params = new URLSearchParams();
+        let paramRedacted = false;
+        for (const [name, value] of urlObj.searchParams) {
           if (PatternMatchingService.SENSITIVE_QUERY_PARAMS.has(PatternMatchingService.normalizeKey(name))) {
-            urlObj.searchParams.set(name, '[REDACTED]');
-            redacted = true;
+            params.append(name, '[REDACTED]');
+            paramRedacted = true;
+          } else {
+            params.append(name, value);
           }
+        }
+        if (paramRedacted) {
+          urlObj.search = params.toString();
+          redacted = true;
         }
       }
       return redacted ? urlObj.toString() : url;
@@ -795,7 +839,7 @@ export class PatternMatchingService {
   // Substrings (not exact key names) so e.g. Elasticsearch's `encoded_api_key` is caught
   // even though it isn't literally `api_key`. Normalized/compared with separators stripped
   // so `connection_string` and `connectionString` are both caught by one entry.
-  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'token', 'connectionstring'];
+  private static readonly CREDENTIAL_KEY_FRAGMENTS = ['key', 'secret', 'password', 'passwd', 'pwd', 'token', 'credential', 'connectionstring'];
 
   private static normalizeKey(key: string): string {
     return key.toLowerCase().replace(/[_-]/g, '');

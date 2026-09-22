@@ -38,14 +38,19 @@ function timeoutSignal(ms: number = DEFAULT_REQUEST_TIMEOUT_MS): AbortSignal | u
     : undefined;
 }
 
-// Error messages quote the configured baseUrl, which may carry `user:pass@` credentials — never
-// echo those back into logs/exceptions.
-function redactUserinfo(raw: string): string {
-  return raw.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i, '$1');
+// Error messages quote the configured baseUrl, which may carry credentials — as `user:pass@`
+// userinfo (with or without a scheme, or leading whitespace) or in a query string/fragment
+// (`?apikey=...`). Never echo those back into logs/exceptions: drop the query/fragment and mask
+// everything up to the last `@` of the authority.
+function redactForMessage(raw: unknown): string {
+  const text = String(raw);
+  const cut = text.search(/[?#]/);
+  const withoutQuery = cut === -1 ? text : `${text.slice(0, cut)}…`;
+  return withoutQuery.replace(/^(\s*(?:[a-z][a-z0-9+.-]*:\/\/)?)[^/\s]*@/i, '$1***@');
 }
 
 function validateBaseUrl(raw: string): void {
-  const shown = redactUserinfo(raw);
+  const shown = redactForMessage(raw);
   let url: URL;
   try {
     url = new URL(raw);
@@ -179,7 +184,7 @@ export abstract class BaseService {
       return result;
     } else {
       const errorText = await response.text();
-      console.error(`❌ Request failed: ${response.status} - ${errorText}`);
+      console.error(`❌ Request failed: ${response.status} - ${errorText.slice(0, 2000)}`);
       return null;
     }
   }
@@ -251,8 +256,8 @@ export abstract class BaseService {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {
-            console.error(`❌ Request failed: ${res.statusCode} - ${data}`);
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            console.error(`❌ Request failed: ${res.statusCode} - ${data.slice(0, 2000)}`);
+            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 2000)}`));
           }
         });
       });

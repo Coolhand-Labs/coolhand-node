@@ -858,6 +858,22 @@ describe('Global Monitor', () => {
       );
     });
 
+    it('logs no request body, not the raw one, when sanitizeBody fails closed with null', async () => {
+      mockPatternMatchingService.sanitizeBody.mockReturnValueOnce(null);
+
+      await globalThis.fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        body: '{"data_sources":[{"parameters":{"key":"admin-secret"}}]}'
+      });
+      await flush();
+
+      expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ request_body: null }),
+        mockPattern,
+        'global-monitoring'
+      );
+    });
+
     it('logs only init headers when fetch(Request, { headers }) is called', async () => {
       const request = new Request('https://api.openai.com/v1/chat/completions', {
         method: 'POST',

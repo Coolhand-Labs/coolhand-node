@@ -145,7 +145,10 @@ describe('PatternMatchingService', () => {
       ['patterns is not an array', { patterns: 'oops' }],
       ['root is a bare array', [{ name: 'OpenAI', domains: ['api.openai.com'] }]],
       ['a pattern entry is missing domains', { patterns: [{ name: 'NoDomains' }] }],
-      ['a pattern entry has non-array domains', { patterns: [{ name: 'BadDomains', domains: 'api.openai.com' }] }]
+      ['a pattern entry has non-array domains', { patterns: [{ name: 'BadDomains', domains: 'api.openai.com' }] }],
+      ['a pattern entry has a non-string domain', { patterns: [{ name: 'BadDomain', domains: [null] }] }],
+      ['a pattern entry has non-array paths', { patterns: [{ name: 'BadPaths', domains: ['a.com'], paths: '/api/chat', requiresPathMatch: true }] }],
+      ['a pattern entry has non-integer ports', { patterns: [{ name: 'BadPorts', domains: ['a.com'], ports: ['11434'], requiresPathMatch: true }] }]
     ];
 
     it.each(shapeInvalidCases)('falls back to default patterns when %s (default patterns file)', (_label, badData) => {
@@ -481,6 +484,75 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
       service = new PatternMatchingService();
+    });
+
+    it('redacts credentials from flat array-form headers (http.request accepts them)', () => {
+      const sanitized = service.sanitizeHeaders(['Authorization', 'Bearer sk-test123', 'Content-Type', 'application/json']);
+
+      expect(sanitized).toEqual({ authorization: '[REDACTED]', 'content-type': 'application/json' });
+    });
+
+    it('redacts credentials from array-of-pairs headers and joins repeated names', () => {
+      const sanitized = service.sanitizeHeaders([['X-Api-Key', 'secret'], ['Accept', 'a'], ['accept', 'b']]);
+
+      expect(sanitized).toEqual({ 'x-api-key': '[REDACTED]', accept: 'a, b' });
+    });
+
+    it('ignores a dangling or non-string entry in a malformed flat header array', () => {
+      expect(service.sanitizeHeaders(['Authorization', 'Bearer x', 'X-Orphan'])).toEqual({ authorization: '[REDACTED]' });
+      expect(service.sanitizeHeaders([1, 2, 'Authorization', 'Bearer x'])).toEqual({ authorization: '[REDACTED]' });
+    });
+
+    it('strips userinfo credentials from URLs, with or without a query string', () => {
+      expect(service.sanitizeURL('http://user:pass@localhost:11434/api/chat')).toBe('http://localhost:11434/api/chat');
+      expect(service.sanitizeURL('https://user:pass@a.com/x?key=abc&q=1')).toBe('https://a.com/x?key=%5BREDACTED%5D&q=1');
+      expect(service.sanitizeURL('https://a.com/x')).toBe('https://a.com/x');
+    });
+
+    it.each(['x-password', 'x-passwd', 'x-credentials', 'x-bearer', 'x-jwt', 'x-signature'])('redacts the %s header by name', (name) => {
+      expect(service.sanitizeHeaders({ [name]: 'secret-value', accept: 'a' })).toEqual({ [name]: '[REDACTED]', accept: 'a' });
+    });
+
+    it('keeps a header named like an Object.prototype member as its own value', () => {
+      expect(service.sanitizeHeaders(['constructor', 'a', 'constructor', 'b'])).toEqual({ constructor: 'a, b' });
+      expect(service.sanitizeHeaders({ constructor: 'x' })).toEqual({ constructor: 'x' });
+    });
+
+    it('sanitizes headers with tens of thousands of repeated names in linear time', () => {
+      const flat: string[] = [];
+      for (let i = 0; i < 40_000; i++) { flat.push('X-Dup', 'v'); }
+      const started = Date.now();
+      const sanitized = service.sanitizeHeaders(flat);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(String(sanitized['x-dup']).split(', ')).toHaveLength(40_000);
+    });
+
+    it.each(['api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd'])(
+      'redacts the %s query param', (param) => {
+        expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain(`${param}=%5BREDACTED%5D`);
+      }
+    );
+
+    it('redacts a URL with tens of thousands of sensitive params in linear time', () => {
+      const url = `https://a.com/x?${Array.from({ length: 100_000 }, () => 'key=1').join('&')}`;
+      const started = Date.now();
+      const out = service.sanitizeURL(url);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(out).not.toContain('key=1');
+    });
+
+    it('redacts passwd/pwd/credential keys inside data_sources', () => {
+      const body = { data_sources: [{ parameters: { passwd: 'a', PWD: 'b', credential: 'c', endpoint: 'https://x' } }] };
+      expect(service.sanitizeBody(body)).toEqual({
+        data_sources: [{ parameters: { passwd: '[REDACTED]', PWD: '[REDACTED]', credential: '[REDACTED]', endpoint: 'https://x' } }]
+      });
+    });
+
+    it.each([
+      'ocp-apim-subscription-key', 'api-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'access-token'
+    ])('redacts the %s query param', (param) => {
+      expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain(`${param}=%5BREDACTED%5D`);
+      expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain('q=1');
     });
 
     it('should apply default header sanitization', () => {
