@@ -556,3 +556,29 @@ export interface ListReferencedFileSessionsResponse {
   sessions: LlmReferenceSession[];
   pagination: Pagination;
 }
+
+// Optional note attached to a feedback link. Length-limited server-side (422 if too long).
+export interface LinkFeedbackOptions {
+  note?: string | null;
+}
+
+// 201 body of POST /api/v2/optimizations/{optimization_id}/feedback_links in single mode.
+export interface OptimizationFeedbackLink {
+  /** The link's hashid — pass it to unlinkFeedback. Not the feedback id. */
+  id: string;
+  optimization_id: string;
+  feedback_id: string;
+  note: string | null;
+  /** ISO-8601 UTC. */
+  created_at: string;
+}
+
+// 200 body of the same endpoint in bulk mode (`feedback_ids`). bulkLinkFeedback sums `linked`,
+// `already_linked` and `errored`, and concatenates `not_found`, across its 100-id batches.
+export interface BulkLinkFeedbackResult {
+  linked: number;
+  already_linked: number;
+  errored: number;
+  /** Unknown, malformed and other-client ids, reported together. */
+  not_found: string[];
+}

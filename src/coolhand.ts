@@ -1,10 +1,11 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
 import { ClientFileService } from './services/ClientFileService.js';
+import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
@@ -17,6 +18,7 @@ export class Coolhand {
   private templateService: TemplateService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
+  private optimizationFeedbackLinkService: OptimizationFeedbackLinkService;
   private silent: boolean;
 
   constructor(options: CoolhandOptions) {
@@ -57,6 +59,7 @@ export class Coolhand {
     this.templateService = new TemplateService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
+    this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
     this.requestMonitoringService.setSelfApiEndpoint(this.loggingService.getApiEndpoint());
@@ -294,6 +297,38 @@ export class Coolhand {
     params: ListReferencedFileSessionsParams
   ): Promise<ListReferencedFileSessionsResponse> {
     return this.llmReferenceService.listReferencedFileSessions(params);
+  }
+
+  /**
+   * Link one feedback to an optimization as evidence. Requires the **private** API key.
+   * See `OptimizationFeedbackLinkService#linkFeedback`.
+   */
+  public async linkFeedback(
+    optimizationId: string,
+    feedbackId: string,
+    options?: LinkFeedbackOptions
+  ): Promise<OptimizationFeedbackLink> {
+    return this.optimizationFeedbackLinkService.linkFeedback(optimizationId, feedbackId, options);
+  }
+
+  /**
+   * Link many feedbacks to an optimization, batching 100 ids per request and merging the counts.
+   * Requires the **private** API key. See `OptimizationFeedbackLinkService#bulkLinkFeedback`.
+   */
+  public async bulkLinkFeedback(
+    optimizationId: string,
+    feedbackIds: string[],
+    options?: LinkFeedbackOptions
+  ): Promise<BulkLinkFeedbackResult> {
+    return this.optimizationFeedbackLinkService.bulkLinkFeedback(optimizationId, feedbackIds, options);
+  }
+
+  /**
+   * Remove a feedback link (by the link's hashid, not the feedback's). Requires the **private**
+   * API key. See `OptimizationFeedbackLinkService#unlinkFeedback`.
+   */
+  public async unlinkFeedback(optimizationId: string, linkId: string): Promise<void> {
+    return this.optimizationFeedbackLinkService.unlinkFeedback(optimizationId, linkId);
   }
 
   /**
