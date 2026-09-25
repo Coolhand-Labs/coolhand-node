@@ -321,6 +321,11 @@ and so have no `GET .../:file_path` show route. Both are bounded to the last 90 
 See [docs/llm-reference-search.md](./docs/llm-reference-search.md) for the full filter reference,
 pagination, and error handling (including the retryable `504` both methods can throw under load).
 
+### Link Feedback to an Optimization
+
+`linkFeedback`, `bulkLinkFeedback` (batches of 100) and `unlinkFeedback` attach feedback to an
+optimization as evidence. Private API key required. See [docs/feedback-links.md](./docs/feedback-links.md).
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
