@@ -270,7 +270,10 @@ child" exactly:
    anything, would wake it up early. `ack` tells it you have started without telling it you
    are finished.
 2. Verify the path is actually that child's checkout before you touch anything
-   (`git -C <path> rev-parse --show-toplevel`).
+   (`git -C <path> rev-parse --show-toplevel`). Also check `git -C <path> status --porcelain`
+   is empty — step 4 stages everything in the checkout, not only what the review touches, so
+   a scratch file the child left behind would ride along into its PR. If it isn't empty,
+   reply (still `ack`, you haven't started) asking the child to commit or remove it first.
 3. **Do not use the Skill tool for this.** It resolves `loop-review` against your own
    session's project — `coolhand-node` — not the child's repo. Read the file directly:
    `cat <path>/.claude/skills/loop-review/SKILL.md`, and execute it as a recipe against
@@ -280,9 +283,13 @@ child" exactly:
    files, it does not commit them, and this is not your own repo where you would do that
    automatically.** `git -C <path> add -A && git -C <path> commit -m "Address loop-review findings"`.
    Nothing to fix means nothing to commit here.
-5. Reply on the child's channel with the Iteration Breakdown (or `CLEAN`) as a `resolution`,
-   naming the repo and the sha that resulted (`git -C <path> rev-parse HEAD` — after step 4,
-   not the sha the child originally escalated with).
+5. **Reply with a `resolution` carrying the full Iteration Breakdown table and an explicit
+   `CLEAN`/`capped` verdict — never one without the other.** The child copies this straight
+   into its own PR comment (R8 → "Requesting a review from your parent" step 5), so a bare
+   `CLEAN` gives it nothing to post, and a `capped` review that looks identical to a clean
+   one defeats the point of the comment existing. Also name the repo and the sha that
+   resulted (`git -C <path> rev-parse HEAD` — after step 4, not the sha the child originally
+   escalated with).
 6. **Record it yourself; the child does not.** `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha from step 5> --by node --result clean|capped`.
 
 You will do this up to three times — once per child in `clients` plus the CLI if
