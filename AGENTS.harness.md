@@ -283,14 +283,21 @@ child" exactly:
    files, it does not commit them, and this is not your own repo where you would do that
    automatically.** `git -C <path> add -A && git -C <path> commit -m "Address loop-review findings"`.
    Nothing to fix means nothing to commit here.
-5. **Reply with a `resolution` carrying the full Iteration Breakdown table and an explicit
+5. **Record it yourself, before you reply to the child — the child does not record.** Get
+   the sha fresh, after step 4, not the sha the child originally escalated with:
+   ```
+   git -C <path> rev-parse HEAD
+   node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha> --by node --result clean|capped
+   ```
+   The child treats your reply (next step) as its signal to push and open a PR — recording
+   first, not after, is what stops a crash between the two steps from letting a PR exist with
+   no review on record despite one having genuinely run.
+6. **Reply with a `resolution` carrying the full Iteration Breakdown table and an explicit
    `CLEAN`/`capped` verdict — never one without the other.** The child copies this straight
-   into its own PR comment (R8 → "Requesting a review from your parent" step 5), so a bare
+   into its own PR comment (R8 → "Requesting a review from your parent" step 6), so a bare
    `CLEAN` gives it nothing to post, and a `capped` review that looks identical to a clean
-   one defeats the point of the comment existing. Also name the repo and the sha that
-   resulted (`git -C <path> rev-parse HEAD` — after step 4, not the sha the child originally
-   escalated with).
-6. **Record it yourself; the child does not.** `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha from step 5> --by node --result clean|capped`.
+   one defeats the point of the comment existing. Also name the repo and the sha you just
+   recorded in step 5.
 
 You will do this up to three times — once per child in `clients` plus the CLI if
 `cliEnabled` — on top of your own review in section 6. Budget for it; it is not a formality
