@@ -272,8 +272,11 @@ child" exactly:
 2. Verify the path is actually that child's checkout before you touch anything
    (`git -C <path> rev-parse --show-toplevel`). Also check `git -C <path> status --porcelain`
    is empty — step 4 stages everything in the checkout, not only what the review touches, so
-   a scratch file the child left behind would ride along into its PR. If it isn't empty,
-   reply (still `ack`, you haven't started) asking the child to commit or remove it first.
+   a scratch file the child left behind would ride along into its PR. **If it isn't empty,
+   reply asking the child to commit or remove it, then treat its fresh escalation as a brand
+   new request: go back to step 1 — a new `ack`, then this check again — rather than picking
+   up where you left off.** The child tells your two acks apart only by their order, so your
+   second message here has to be a fresh "running your review now" `ack`, not a continuation.
 3. **Do not use the Skill tool for this.** It resolves `loop-review` against your own
    session's project — `coolhand-node` — not the child's repo. Read the file directly:
    `cat <path>/.claude/skills/loop-review/SKILL.md`, and execute it as a recipe against
