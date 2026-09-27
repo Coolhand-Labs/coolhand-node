@@ -114,6 +114,10 @@ Off by default. Skip this section when `reviewLoop` is false.
 
 ## 6. Run your review skill
 
+**Commit first.** The skill diffs `origin/main...HEAD`, so it has nothing to look at
+against an uncommitted working tree — use this repo's own convention (section 7 covers the
+PR itself, but nothing stops you committing here).
+
 **Mandatory, before you push.** Follow `<workspaceRoot>/coolhand/harness/RESIST_RULES.md`
 → "Before you push: run your repo's review skill" (R8) — load
 `.claude/skills/loop-review/SKILL.md` off disk and run it for real against your diff. Do
@@ -121,8 +125,13 @@ not approximate its steps manually. You are at depth 2, so per R8's table you ha
 Agent/Task access here — this is your own review, over your own diff, and there is no
 excuse to substitute a self-review for it.
 
-After it exits, post the Iteration Breakdown as a PR comment (section 7) and record it:
-`node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo node --sha <your commit sha> --by node --result clean|capped`.
+**If the loop applies fixes, commit those too (or amend) before you record anything below.**
+The sha you record must be the one that actually ends up in your PR, not the one you
+committed before the loop ran.
+
+After it exits, post the Iteration Breakdown as a PR comment (section 7) and record it,
+using your current `HEAD` (after any fix commits above):
+`node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo node --sha <HEAD sha> --by node --result clean|capped`.
 
 **You will run this same review two more times, later, for repos that are not your own —
 see section 8d.** python, ruby and the CLI cannot run their own copy of this section; that
@@ -137,7 +146,8 @@ but your children still launch and still build (`RESIST_RULES.md` → Dry runs: 
 tree runs, it just leaves no trace on GitHub"). Launch them with the run's `branch` name in
 place of an issue url.
 
-1. Push and open the PR in `coolhand-node`.
+1. Push whatever is at `HEAD` (you already committed in section 6, before and possibly
+   after the review loop) and open the PR in `coolhand-node`.
 2. **Prefix the PR title with `[closes #N]`**, using your issue number from section 0.
    That is this repo's documented convention (`CLAUDE.md` → Pull requests) and it is what
    auto-closes the issue on merge. Keep the shared `branch` name as-is — it is what makes
@@ -254,7 +264,11 @@ path, branch and `HEAD` sha — see `RESIST_RULES.md` → R8 → "Requesting a r
 parent"), you run the review **against that repo**, following R8 → "Serving a review for a
 child" exactly:
 
-1. Acknowledge immediately (`--kind resolution`) so its `wait` has something to stop on.
+1. **Acknowledge with `--kind ack`, not `--kind resolution`.** The child treats any
+   `resolution` on its channel as "the review is done" — see R8 → "Requesting a review from
+   your parent" step 3 — so replying with one now, before you have actually reviewed
+   anything, would wake it up early. `ack` tells it you have started without telling it you
+   are finished.
 2. Verify the path is actually that child's checkout before you touch anything
    (`git -C <path> rev-parse --show-toplevel`).
 3. **Do not use the Skill tool for this.** It resolves `loop-review` against your own
@@ -262,8 +276,14 @@ child" exactly:
    `cat <path>/.claude/skills/loop-review/SKILL.md`, and execute it as a recipe against
    `<path>` yourself, the same way you already treat `AGENTS.harness.md` as something to
    read off disk rather than trust from memory.
-4. Reply with the Iteration Breakdown (or `CLEAN`), naming the repo and the sha.
-5. Record it: `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha> --by node --result clean|capped`.
+4. **If the loop applies fixes, commit them into `<path>` before you reply — the skill edits
+   files, it does not commit them, and this is not your own repo where you would do that
+   automatically.** `git -C <path> add -A && git -C <path> commit -m "Address loop-review findings"`.
+   Nothing to fix means nothing to commit here.
+5. Reply on the child's channel with the Iteration Breakdown (or `CLEAN`) as a `resolution`,
+   naming the repo and the sha that resulted (`git -C <path> rev-parse HEAD` — after step 4,
+   not the sha the child originally escalated with).
+6. **Record it yourself; the child does not.** `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha from step 5> --by node --result clean|capped`.
 
 You will do this up to three times — once per child in `clients` plus the CLI if
 `cliEnabled` — on top of your own review in section 6. Budget for it; it is not a formality
