@@ -117,8 +117,17 @@ Off by default. Skip this section when `reviewLoop` is false.
 **Mandatory, before you push.** Follow `<workspaceRoot>/coolhand/harness/RESIST_RULES.md`
 → "Before you push: run your repo's review skill" (R8) — load
 `.claude/skills/loop-review/SKILL.md` off disk and run it for real against your diff. Do
-not approximate its steps manually; if you cannot spawn the reviewer subagent it calls
-for, escalate to server (R8) and STOP rather than substitute a self-review.
+not approximate its steps manually. You are at depth 2, so per R8's table you have
+Agent/Task access here — this is your own review, over your own diff, and there is no
+excuse to substitute a self-review for it.
+
+After it exits, post the Iteration Breakdown as a PR comment (section 7) and record it:
+`node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo node --sha <your commit sha> --by node --result clean|capped`.
+
+**You will run this same review two more times, later, for repos that are not your own —
+see section 8d.** python, ruby and the CLI cannot run their own copy of this section; that
+is not a per-run surprise, it is what R8's table says about depth 3. Plan your attention
+accordingly once you reach section 8.
 
 ## 7. Open your PR
 
@@ -212,7 +221,53 @@ Answer the same way the server answers you. **If it is a question about the API
 definition, you do not answer it — you pass it up to server**, then relay the reply back
 down. You own the wrapper pattern; the server owns the definition.
 
+**Poll every live child's channel on a short cycle, not one long wait on one channel.**
+python, ruby and the CLI can be working (or blocked) at the same time, and a single
+900-second `wait` on one of them leaves the other two invisible to you for that whole
+window. Round-robin instead:
+
+```
+for each child that has not yet finished or escalated to a human:
+  node <workspaceRoot>/coolhand/harness/harness.mjs inbox --run <RUN_DIR> --channel <child> --for node
+node <workspaceRoot>/coolhand/harness/harness.mjs wait --run <RUN_DIR> --channel <a-child-still-waiting> --for node --timeout 120
+```
+
+**An R8 review request (section 8d) gets answered on your very next pass through this
+loop, not deferred until you finish something else.** A child that asked to be reviewed and
+then sat through a full `wait` timeout with no reply from you is exactly the failure this
+section exists to prevent — it already happened once. If you cannot start the review
+immediately, at minimum acknowledge the request now (8d step 1) so the child's own `wait`
+has something to stop on.
+
 Do not stop until every child has finished or escalated to a human.
+
+### 8d. Serve review for your children — they can never do this themselves (R8)
+
+**python, ruby and the CLI have no Agent/Task tool.** They are three levels deep in this
+tree, and the platform does not let an agent that deep spawn a further subagent. This is
+not something any of them can fix by trying again, and it is not a surprise you should be
+finding out for the first time when one of them escalates — expect it from all three, every
+run.
+
+When a child sends an R8 escalation saying it is ready for review (it will name its repo
+path, branch and `HEAD` sha — see `RESIST_RULES.md` → R8 → "Requesting a review from your
+parent"), you run the review **against that repo**, following R8 → "Serving a review for a
+child" exactly:
+
+1. Acknowledge immediately (`--kind resolution`) so its `wait` has something to stop on.
+2. Verify the path is actually that child's checkout before you touch anything
+   (`git -C <path> rev-parse --show-toplevel`).
+3. **Do not use the Skill tool for this.** It resolves `loop-review` against your own
+   session's project — `coolhand-node` — not the child's repo. Read the file directly:
+   `cat <path>/.claude/skills/loop-review/SKILL.md`, and execute it as a recipe against
+   `<path>` yourself, the same way you already treat `AGENTS.harness.md` as something to
+   read off disk rather than trust from memory.
+4. Reply with the Iteration Breakdown (or `CLEAN`), naming the repo and the sha.
+5. Record it: `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha> --by node --result clean|capped`.
+
+You will do this up to three times — once per child in `clients` plus the CLI if
+`cliEnabled` — on top of your own review in section 6. Budget for it; it is not a formality
+you can wave through to keep the run moving.
 
 ## 9. Done means
 
@@ -220,9 +275,11 @@ Do not stop until every child has finished or escalated to a human.
 - [ ] `npm test`, `npm run typecheck`, `npm run lint` all pass
 - [ ] At least one test hit the real local server, not a mock
 - [ ] PR opened, titled `[closes #N]`, recorded, and states its dependency on the server PR
-- [ ] Your review skill ran for real (not approximated) and its Iteration Breakdown table
-      is posted as a comment on your PR
+- [ ] Your review skill ran for real (not approximated), its Iteration Breakdown table is
+      posted as a comment on your PR, and recorded with `harness.mjs loop-review`
 - [ ] **One issue opened per child, each complete enough to build from without you**, each
       recorded with `harness.mjs issue`, each linking your PR as the reference
 - [ ] **No child was launched before its issue existed**
+- [ ] **You ran the review for every child that could not run its own** (all of them, by
+      construction — section 8d), each recorded with `harness.mjs loop-review --by node`
 - [ ] Every child finished or escalated — none failed silently
