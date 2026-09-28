@@ -1401,6 +1401,77 @@ describe('RequestMonitoringService', () => {
     }, 20000);
   });
 
+  describe('Deferred request body capture (issue #252)', () => {
+    const run = (onEnd: () => void, body: string | (() => void), done: jest.DoneCallback, assertion: (callData: any) => void) => {
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = 200;
+      mockRes.headers = { 'content-type': 'application/json' };
+      mockRes.destroyed = false;
+      mockRes.destroy = jest.fn();
+
+      const originalRequest = jest.fn().mockImplementation(() => {
+        const mockReq = new EventEmitter() as any;
+        mockReq.write = jest.fn().mockReturnValue(true);
+        mockReq.end = jest.fn(() => { onEnd(); });
+        // Response completes before any setImmediate, so the flush-before-complete path is used.
+        queueMicrotask(() => {
+          mockReq.emit('response', mockRes);
+          mockRes.emit('end');
+        });
+        return mockReq;
+      });
+
+      onRequestCompleteMock.mockImplementationOnce((callData: any) => {
+        try { assertion(callData); done(); } catch (e: any) { done(e); }
+      });
+
+      const req: any = (service as any).interceptRequest(
+        originalRequest,
+        { hostname: 'api.test.com', path: '/test', method: 'POST' },
+        jest.fn(),
+        'https',
+        mockMatchedPattern
+      );
+      req.end(body);
+    };
+
+    it('calls the original end() before parsing or sanitizing the request body', (done) => {
+      const sanitizeBody = mockPatternMatchingService.sanitizeBody as jest.Mock;
+      const payload = { model: 'm', content: 'x'.repeat(5 * 1024 * 1024) };
+      let sanitizeCallsAtEnd = -1;
+
+      run(() => { sanitizeCallsAtEnd = sanitizeBody.mock.calls.length; }, JSON.stringify(payload), done, (callData) => {
+        expect(sanitizeCallsAtEnd).toBe(0);
+        expect(sanitizeBody).toHaveBeenCalledTimes(1);
+        expect(callData.request_body).toEqual(payload);
+      });
+    }, 20000);
+
+    it('populates the sanitized request_body before onRequestComplete fires', (done) => {
+      (mockPatternMatchingService.sanitizeBody as jest.Mock).mockImplementationOnce((body: any) => ({ ...body, redacted: true }));
+      run(() => undefined, JSON.stringify({ prompt: 'a' }), done, (callData) => {
+        expect(callData.request_body).toEqual({ prompt: 'a', redacted: true });
+      });
+    });
+
+    it('does not throw or capture when end() is called with only a callback', (done) => {
+      const endCallback = jest.fn();
+      run(() => undefined, endCallback as any, done, (callData) => {
+        expect(callData.request_body).toBeNull();
+      });
+    });
+
+    it.each([
+      ['returns null', () => null],
+      ['throws', () => { throw new Error('boom'); }]
+    ])('never logs the unsanitized request body when sanitizeBody %s', (_label, impl, done?: any) => {
+      (mockPatternMatchingService.sanitizeBody as jest.Mock).mockImplementationOnce(impl);
+      run(() => undefined, JSON.stringify({ secret: 'sk-live-123' }), done, (callData) => {
+        expect(callData.request_body).toBeNull();
+      });
+    });
+  });
+
   describe('Edge Cases and Error Handling', () => {
     it('should handle undefined options in pattern matching', () => {
       expect(() => {

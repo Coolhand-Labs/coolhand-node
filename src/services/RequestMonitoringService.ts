@@ -5,6 +5,7 @@ import { PatternMatchingService } from './PatternMatchingService.js';
 import { parseBody } from '../utils/parse-body.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from '../utils/decompress.js';
 import { CappedBuffer } from '../utils/capped-buffer.js';
+import { createDeferredBodyCapture } from '../utils/deferred-body-capture.js';
 import { isNonInferenceURL } from '../non-inference-filter.js';
 import { createResponseTee } from '../utils/tee-response.js';
 import { readCappedResponseText } from '../utils/capped-fetch-body.js';
@@ -13,6 +14,7 @@ import { patchResponseEmit } from '../utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded, SelfEndpoint } from '../utils/self-endpoint.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 import { extractRequestHostname } from '../utils/extract-hostname.js';
+import { formatErrorMessage } from '../utils/format-error.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -365,6 +367,15 @@ export class RequestMonitoringService {
       this.log(`⚠️ Request body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
     });
 
+    // Parsing + sanitizing a large body is expensive, so it runs after the host's send (see req.end
+    // below) and is flushed before logging, so the logged body is always the sanitized one.
+    const requestBodyCapture = createDeferredBodyCapture(
+      requestBuffer,
+      (parsed) => this.patternMatchingService.sanitizeBody(parsed),
+      (body) => { callData.request_body = body; },
+      (err) => this.log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+    );
+
     // No callback passed here — patchResponseEmit below substitutes the delivered response for
     // every 'response' listener uniformly, whether registered via a callback passed to
     // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
@@ -396,6 +407,7 @@ export class RequestMonitoringService {
       });
 
       res.on('end', async () => {
+        requestBodyCapture.flush();
         try {
           const rawBuffer = responseBuffer.concat();
           const contentEncoding = res.headers?.['content-encoding'];
@@ -438,12 +450,14 @@ export class RequestMonitoringService {
     };
 
     req.end = ((chunk?: any, encoding?: any, callback?: any) => {
-      if (chunk) {
+      if (chunk && typeof chunk !== 'function') {
         requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      callData.request_body = this.patternMatchingService.sanitizeBody(parseBody(requestBuffer.concat().toString('utf-8')));
+      // Send first; capture the body afterwards so it can't delay the host's request.
+      const result = originalEnd(chunk, encoding, callback);
+      requestBodyCapture.schedule();
       this.log(`📤 Request complete for call #${callData.id}`);
-      return originalEnd(chunk, encoding, callback);
+      return result;
     }).bind(this);
 
     req.on('error', (err) => {

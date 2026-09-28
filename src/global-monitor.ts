@@ -11,6 +11,7 @@ import { LoggingService } from './services/LoggingService.js';
 import { parseBody } from './utils/parse-body.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
 import { CappedBuffer } from './utils/capped-buffer.js';
+import { createDeferredBodyCapture } from './utils/deferred-body-capture.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
 import { readCappedResponseText } from './utils/capped-fetch-body.js';
@@ -655,6 +656,20 @@ function interceptRequest(
     log(`⚠️ Request body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
   });
 
+  // Parsing + sanitizing a large body is expensive, so it runs after the host's send (see req.end
+  // below) and is flushed before logging, so the logged body is always the sanitized one.
+  const requestBodyCapture = createDeferredBodyCapture(
+    requestBuffer,
+    // No sanitizer available (e.g. monitoring was reset before the deferred capture ran): drop the body.
+    (parsed) => {
+      // Re-read state: `state` above was captured at request start and outlives a reset.
+      const sanitizer = getState().globalPatternService;
+      return sanitizer ? sanitizer.sanitizeBody(parsed) : null;
+    },
+    (body) => { callData.request_body = body; },
+    (err) => log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+  );
+
   // No callback passed here — patchResponseEmit below substitutes the delivered response for
   // every 'response' listener uniformly, whether registered via a callback passed to
   // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
@@ -687,6 +702,7 @@ function interceptRequest(
     });
 
     res.on('end', async () => {
+      requestBodyCapture.flush();
       try {
         const rawBuffer = responseBuffer.concat();
         const contentEncoding = res.headers?.['content-encoding'];
@@ -736,13 +752,14 @@ function interceptRequest(
   };
 
   req.end = ((chunk?: any, encoding?: any, callback?: any) => {
-    if (chunk) {
+    if (chunk && typeof chunk !== 'function') {
       requestBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    const parsedRequestBody = parseBody(requestBuffer.concat().toString('utf-8'));
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
+    // Send first; capture the body afterwards so it can't delay the host's request.
+    const result = originalEnd(chunk, encoding, callback);
+    requestBodyCapture.schedule();
     log(`📤 Request complete for call #${callData.id}`);
-    return originalEnd(chunk, encoding, callback);
+    return result;
   });
 
   req.on('error', (err: Error) => {
@@ -796,7 +813,7 @@ async function interceptFetch(
     ]);
 
     const parsedRequestBody = parseBody(requestBody);
-    callData.request_body = state.globalPatternService?.sanitizeBody(parsedRequestBody) ?? parsedRequestBody;
+    callData.request_body = state.globalPatternService ? state.globalPatternService.sanitizeBody(parsedRequestBody) : null;
     callData.status_code = response.status;
     callData.response_headers = state.globalPatternService?.sanitizeHeaders(
       Object.fromEntries(response.headers.entries()),
