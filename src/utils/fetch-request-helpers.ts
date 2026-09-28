@@ -61,11 +61,37 @@ export function getFetchHeaders(url: string | URL | Request, options: RequestIni
   return isRequestLike(url) ? headersToRecord(url.headers) : {};
 }
 
+// Text-like MIME types worth reading from a Blob body; anything else (images, archives, ...) would
+// only log mojibake. An empty type is allowed — `new Blob(['{"a":1}'])` has none.
+const TEXT_BLOB_TYPE = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml))|$)/i;
+
+// Serializes a FormData body field by field as a JSON object (repeated keys become arrays) so
+// `parseBody` + `sanitizeBody` treat it like a JSON body and redact by key name. File parts are
+// skipped — they're binary uploads, not loggable text. Stops once `maxBytes` of values are collected.
+function formDataToText(form: FormData, maxBytes: number): string {
+  // Null-prototype so field names like `constructor` / `__proto__` are plain keys, not inherited members.
+  const fields: Record<string, string | string[]> = Object.create(null);
+  let size = 0;
+  for (const [key, value] of form.entries()) {
+    if (typeof value !== 'string') { continue; }
+    size += key.length + value.length;
+    if (size > maxBytes) { break; }
+    const existing = fields[key];
+    if (existing === undefined) {
+      fields[key] = value;
+    } else {
+      fields[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
+    }
+  }
+  return JSON.stringify(fields);
+}
+
 // Decodes a `RequestInit.body` for logging, by type, capped at `maxBytes`. A bare `toString()` is
 // wrong for everything but strings/URLSearchParams: typed arrays become "123,34,..." and
 // Blob/FormData/ReadableStream become "[object ...]" — and it copies Buffer bodies uncapped.
-// Bodies that can't be read synchronously (Blob, FormData, streams) are not captured.
-function initBodyToText(body: unknown, maxBytes: number): string | null {
+// A ReadableStream body is not captured: reading it would consume the caller's only copy, and
+// swapping in a tee'd stream would change the request we forward.
+async function initBodyToText(body: unknown, maxBytes: number): Promise<string | null> {
   if (typeof body === 'string') {
     return body.length > maxBytes ? body.slice(0, maxBytes) : body;
   }
@@ -78,12 +104,22 @@ function initBodyToText(body: unknown, maxBytes: number): string | null {
   if (body instanceof ArrayBuffer) {
     return Buffer.from(body, 0, Math.min(body.byteLength, maxBytes)).toString('utf-8');
   }
+  if (typeof Blob !== 'undefined' && body instanceof Blob) {
+    return TEXT_BLOB_TYPE.test(body.type) ? body.slice(0, maxBytes).text() : null;
+  }
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    return formDataToText(body, maxBytes);
+  }
   return null;
 }
 
 export async function getFetchRequestBody(url: string | URL | Request, options: RequestInit): Promise<string | null> {
   if (options.body !== undefined) {
-    return initBodyToText(options.body, MAX_DECOMPRESSED_BYTES);
+    try {
+      return await initBodyToText(options.body, MAX_DECOMPRESSED_BYTES);
+    } catch {
+      return null;
+    }
   }
 
   if (isRequestLike(url) && typeof url.clone === 'function') {

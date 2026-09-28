@@ -34,17 +34,28 @@ export function readCappedRequestText(
 }
 
 function readCappedBodyText(
-  bodyHolder: { body: ReadableStream<Uint8Array> | null; text(): Promise<string> },
+  bodyHolder: { body: ReadableStream<Uint8Array> | null; headers?: Headers; text(): Promise<string> },
   maxBytes: number,
   onTruncate?: () => void
 ): Promise<string> {
   const body = bodyHolder.body;
   if (!body || typeof body.getReader !== 'function') {
+    // `.text()` buffers the whole body, so when the declared Content-Length already exceeds the
+    // cap, skip the read entirely rather than allocate memory we'd only discard. (A chunked body
+    // with no Content-Length can't be judged up front and is still buffered.) Only when a body
+    // object exists: a real Response for HEAD/204/304 has `body === null` yet may still carry the
+    // resource's Content-Length, and there's nothing to read (or truncate) in that case.
+    const declared = Number(bodyHolder.headers?.get?.('content-length'));
+    if (body && Number.isInteger(declared) && declared > maxBytes) {
+      onTruncate?.();
+      return Promise.resolve('');
+    }
     // Not an `async` wrapper — that would add extra microtask ticks versus calling
     // response.text() inline, which callers upstream rely on for ordering (see the fetch
     // interception's "drain and log in the background" comment). `.text()` has already buffered
     // the whole body by the time it resolves (a polyfilled fetch gives us no stream to bound), so
-    // this can only cap what gets *logged*, not memory.
+    // this can only cap what gets *logged*, not memory (the Content-Length check above is the
+    // only memory guard).
     return bodyHolder.text().then((text) => {
       if (text.length <= maxBytes) { return text; }
       onTruncate?.();

@@ -136,6 +136,7 @@ interface GlobalMonitorConfig {
   debug?: boolean;
   dryRun?: boolean;
   baseUrl?: string;
+  requestTimeoutMs?: number;
   excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; this shim will be removed in a future release. */
   environment?: 'local' | 'production';
@@ -187,7 +188,8 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
     silent,
     debug: config.debug,
     dryRun: config.dryRun,
-    baseUrl: resolvedBaseUrl
+    baseUrl: resolvedBaseUrl,
+    requestTimeoutMs: config.requestTimeoutMs
   });
 
   state.silent = silent;

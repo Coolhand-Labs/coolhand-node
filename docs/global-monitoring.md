@@ -117,6 +117,7 @@ initializeMonitoring();
 | `debug` | boolean | `false` | Enable verbose logging (does not affect data submission) |
 | `dryRun` | boolean | `false` | Suppress all API submissions to Coolhand |
 | `baseUrl` | string | `undefined` | Self-hosted Coolhand endpoint, e.g. `'https://feedback.example.com'` |
+| `requestTimeoutMs` | number | `30000` | Timeout in ms for Coolhand API calls (positive integer). File uploads use a separate, longer limit. |
 
 ### Environment Variables (Auto-Monitor)
 
