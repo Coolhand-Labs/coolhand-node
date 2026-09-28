@@ -57,7 +57,8 @@
   ],
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
-    "build": "npm run sync-version && tsup && node scripts/fix-cjs-imports.cjs && cp src/api-patterns.json dist/",
+    "generate-patterns": "node scripts/generate-default-patterns.mjs",
+    "build": "npm run sync-version && npm run generate-patterns && tsup && node scripts/fix-cjs-imports.cjs && cp src/api-patterns.json dist/",
     "prepare": "npm run build",
     "prepublishOnly": "npm run typecheck && npm run build && npm run test:cjs && npm run test:esm",
     "test": "jest",

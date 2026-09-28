@@ -33,7 +33,8 @@ describe('Global Monitor — excludeApiPatterns and self-endpoint exclusion', ()
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(1),
-      getPatternsCountSync: jest.fn().mockReturnValue(1)
+      getPatternsCountSync: jest.fn().mockReturnValue(1),
+      loadPatterns: jest.fn().mockResolvedValue(undefined)
     } as any;
 
     mockLoggingService = {

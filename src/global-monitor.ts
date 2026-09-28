@@ -20,6 +20,7 @@ import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js'
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
 import { extractRequestHostname } from './utils/extract-hostname.js';
 import { formatErrorMessage } from './utils/format-error.js';
+import { createRequireBase } from './utils/require-base.js';
 import { getState, _resetGlobalState as resetGlobalState } from './utils/global-state.js';
 import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from './utils/request-capture.js';
 import type { PassThrough } from 'stream';
@@ -46,16 +47,6 @@ let PassThroughCtor: (new () => PassThrough) | null = null;
 // evaluation time in edge runtimes before isEdgeRuntime() can guard against it.
 let _createRequire: ((id: string) => any) | null = null;
 try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM or Edge */ }
-
-// createRequire accepts a file URL string or an absolute path. The fallback is an
-// absolute path, not a hand-built 'file://' + process.cwd(): that produces
-// 'file://C:\Users\...' on Windows (drive letter in the URL host slot), and building
-// a valid URL would need url.pathToFileURL — a Node import this file must not take.
-// eval() keeps import.meta.url out of the CJS build, where it is a compile error.
-const createRequireBase = (): string => {
-  try { return eval('import.meta.url') as string; } catch { /* CJS — no import.meta */ }
-  return process.cwd() + '/';
-};
 
 // Synchronous module loader — used by initGlobalMonitoringCore so patching happens
 // immediately when auto-monitor is imported in CJS builds.
@@ -210,6 +201,14 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
  * No-op if modules were already loaded by the synchronous path (CJS builds).
  */
 export async function loadAndPatchNodeModulesIfNeeded(): Promise<void> {
+  // Completes a custom patternsFile that native ESM on older Node couldn't read synchronously
+  // (a no-op everywhere else). Deliberately sequential, before the http/https patching below: until
+  // the file loads, the built-in patterns are active, and patching http/https concurrently would
+  // extend the set of requests captured with patterns the user meant to replace. (fetch is already
+  // patched by initGlobalMonitoringCore, so this narrows that window rather than closing it.)
+  // Optional call: the state lives on globalThis and may have been created by an older copy of the
+  // package whose PatternMatchingService has no loadPatterns().
+  await getState().globalPatternService?.loadPatterns?.();
   if (https !== null) { return; } // already loaded synchronously
   if (getState().httpPatched) { return; } // another copy/layer already patched
   if (isEdgeRuntime()) { return; }
@@ -228,6 +227,9 @@ export async function initializeGlobalMonitoring(config: GlobalMonitorConfig): P
 
   if (state.isGloballyPatched) {
     log('🔄 Global monitoring already initialized, skipping...');
+    // auto-monitor may have initialized first while its async patternsFile load is still in
+    // flight (native ESM, older Node); resolve only once that file is active. Idempotent.
+    await state.globalPatternService?.loadPatterns?.();
     return;
   }
 

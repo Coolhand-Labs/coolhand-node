@@ -51,7 +51,7 @@ describe('Edge Runtime Detection and Loading', () => {
       // Should use Edge runtime patterns (21 default patterns)
       expect(service.getPatternsCountSync()).toBe(21);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 21 default API patterns')
       );
     });
 
@@ -64,7 +64,7 @@ describe('Edge Runtime Detection and Loading', () => {
       // Should use Edge runtime patterns
       expect(service.getPatternsCountSync()).toBe(21);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 21 default API patterns')
       );
     });
 
@@ -77,7 +77,7 @@ describe('Edge Runtime Detection and Loading', () => {
       // Should use Edge runtime patterns
       expect(service.getPatternsCountSync()).toBe(21);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 21 default API patterns')
       );
     });
 
@@ -126,7 +126,7 @@ describe('Edge Runtime Detection and Loading', () => {
       const openAIPattern = patterns.find(p => p.name === 'OpenAI');
       expect(openAIPattern).toBeDefined();
       expect(openAIPattern?.domains).toContain('api.openai.com');
-      expect(openAIPattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
+      expect(openAIPattern?.headers).toHaveProperty('authorization', '[REDACTED]');
     });
 
     it('should load Anthropic pattern with correct configuration', () => {
@@ -146,7 +146,7 @@ describe('Edge Runtime Detection and Loading', () => {
       const googlePattern = patterns.find(p => p.name === 'Google AI');
       expect(googlePattern).toBeDefined();
       expect(googlePattern?.domains).toContain('generativelanguage.googleapis.com');
-      expect(googlePattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
+      expect(googlePattern?.headers).toHaveProperty('authorization', '[REDACTED]');
     });
 
     it('should load GitHub Models pattern with correct configuration', () => {
@@ -157,7 +157,7 @@ describe('Edge Runtime Detection and Loading', () => {
       expect(githubPattern).toBeDefined();
       expect(githubPattern?.domains).toContain('models.github.ai');
       expect(githubPattern?.domains).toContain('models.inference.ai.azure.com');
-      expect(githubPattern?.headers).toHaveProperty('authorization', 'Bearer [REDACTED]');
+      expect(githubPattern?.headers).toHaveProperty('authorization', '[REDACTED]');
     });
 
     it('should ignore custom patterns file in Edge runtime', () => {
@@ -167,13 +167,13 @@ describe('Edge Runtime Detection and Loading', () => {
       // Should still load default Edge patterns, not attempt to read custom file
       expect(service.getPatternsCountSync()).toBe(21);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 21 default API patterns')
       );
     });
   });
 
   describe('Node.js vs Edge Runtime Behavior', () => {
-    it('should use different loading strategies for Node.js vs Edge runtime', () => {
+    it('should load the same built-in patterns in Node.js and Edge runtimes', () => {
       // Test Edge runtime
       (globalThis as any).EdgeRuntime = 'edge';
       const edgeService = new PatternMatchingService();
@@ -184,18 +184,13 @@ describe('Edge Runtime Detection and Loading', () => {
       delete (globalThis as any).window;
       delete process.env.NEXT_RUNTIME;
 
-      // Test Node.js runtime (will load from filesystem with 4 patterns)
+      // Node.js runtime
       const nodeService = new PatternMatchingService();
       const nodePatterns = nodeService.getLoadedPatternsSync();
 
-      // Edge runtime uses 21 default patterns, Node.js loads 21 from file
+      // Both runtimes get the compiled-in defaults (no filesystem involved)
       expect(edgePatterns).toHaveLength(21);
-      expect(nodePatterns).toHaveLength(21);
-
-      // But the loading paths should be different (check console output)
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
-      );
+      expect(nodePatterns).toEqual(edgePatterns);
     });
 
     it('should handle mixed runtime environments correctly', () => {
@@ -209,7 +204,7 @@ describe('Edge Runtime Detection and Loading', () => {
       // Should still work correctly with multiple indicators
       expect(service.getPatternsCountSync()).toBe(21);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 21 default API patterns for Edge runtime')
+        expect.stringContaining('Loaded 21 default API patterns')
       );
     });
   });
@@ -264,7 +259,7 @@ describe('Edge Runtime Detection and Loading', () => {
       const openAIMatch = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
       if (openAIMatch) {
         const sanitized = service.sanitizeHeaders(headers, openAIMatch.pattern);
-        expect(sanitized.authorization).toBe('Bearer [REDACTED]');
+        expect(sanitized.authorization).toBe('[REDACTED]');
         expect(sanitized['content-type']).toBe('application/json'); // Should be preserved
       }
 

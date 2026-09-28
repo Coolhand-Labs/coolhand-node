@@ -99,6 +99,16 @@ export class Coolhand {
   // Public API methods
 
   /**
+   * Finish loading a custom `patternsFile`. Only needed in native ESM on Node < 20.16 / < 22.3,
+   * where the constructor cannot read the file synchronously and starts on the built-in patterns
+   * (it logs a warning saying so). Everywhere else the file is already loaded and this resolves
+   * immediately. Never rejects — a missing or invalid file keeps the built-in patterns.
+   */
+  public loadPatterns(): Promise<void> {
+    return this.patternMatchingService.loadPatterns();
+  }
+
+  /**
    * Manually submit a single captured LLM request/response to Coolhand.
    *
    * Use this for logs that did not flow through automatic monitoring — for example the

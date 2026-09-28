@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
 const pkg = require('../dist/index.cjs');
 
@@ -9,11 +11,13 @@ assert.equal(typeof pkg.getGlobalStats, 'function', 'getGlobalStats should be ex
 assert.equal(typeof pkg.isGlobalMonitoringActive, 'function', 'isGlobalMonitoringActive should be exported');
 assert.equal(typeof pkg.PatternMatchingService, 'function', 'PatternMatchingService should be exported');
 
-// Verify api-patterns.json is found and loaded correctly.
-// getPatternsCountSync() === 0 means the JSON was not found (bundling path regression).
+// The built-in patterns must be the packaged dist/api-patterns.json.
 const svc = new pkg.PatternMatchingService({ silent: true });
 const count = svc.getPatternsCountSync();
-assert.ok(count > 0, `PatternMatchingService loaded ${count} patterns — expected > 0 (api-patterns.json not found?)`);
+const packaged = JSON.parse(readFileSync(join(__dirname, '..', 'dist', 'api-patterns.json'), 'utf-8')).patterns;
+assert.ok(count > 0, `PatternMatchingService loaded ${count} patterns — expected > 0`);
+assert.deepEqual(svc.getLoadedPatternsSync(), packaged,
+  'default patterns should equal the packaged dist/api-patterns.json');
 
 // Verify a well-known AI domain matches
 const match = svc.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');

@@ -56,7 +56,8 @@ describe('Global Monitor', () => {
       getLoadedPatterns: jest.fn(),
       getLoadedPatternsSync: jest.fn(),
       getPatternsCount: jest.fn().mockResolvedValue(5),
-      getPatternsCountSync: jest.fn().mockReturnValue(5)
+      getPatternsCountSync: jest.fn().mockReturnValue(5),
+      loadPatterns: jest.fn().mockResolvedValue(undefined)
     } as any;
 
     mockLoggingService = {
@@ -156,6 +157,15 @@ describe('Global Monitor', () => {
 
       // Should not throw
       await expect(globalMonitor.initializeGlobalMonitoring(config)).resolves.not.toThrow();
+    });
+
+    it('completes loading of a custom patterns file when finishing async init (native ESM on older Node)', async () => {
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-api-key', silent: true });
+      mockPatternMatchingService.loadPatterns.mockClear();
+
+      await globalMonitor.loadAndPatchNodeModulesIfNeeded();
+
+      expect(mockPatternMatchingService.loadPatterns).toHaveBeenCalledTimes(1);
     });
 
     it('should accept configuration with custom patterns file', async () => {
