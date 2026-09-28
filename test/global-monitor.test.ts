@@ -1,6 +1,7 @@
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { LoggingService } from '../src/services/LoggingService';
 import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
+import { CAPTURE_IDLE_TIMEOUT_MS } from '../src/utils/capped-fetch-body';
 
 // Mock the modules
 jest.mock('https');
@@ -1146,7 +1147,9 @@ describe('Global Monitor', () => {
         new Response(stream, { status: 200, headers: { 'content-type': 'text/plain' } })
       );
 
-      await globalThis.fetch('https://api.openai.com/v1/chat/completions');
+      const hostResponse = await globalThis.fetch('https://api.openai.com/v1/chat/completions');
+      // Capture follows the host's reads (see teeResponseForCapture), so the host must consume the body.
+      await hostResponse.arrayBuffer();
       await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
 
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalled();
@@ -1154,6 +1157,98 @@ describe('Global Monitor', () => {
       expect(typeof callData.response_body).toBe('string');
       expect((callData.response_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
     }, 20000);
+
+    describe('host body consumption (issue #251)', () => {
+      const url = 'https://api.openai.com/v1/stream-251';
+      const dedupKey = `FETCH-GET:${url}`;
+      const activeRequests = () => (globalThis as any).__coolhand_node_v1__.globalActiveRequests as Map<string, unknown>;
+
+      function endlessSource(chunkSize = 1024) {
+        const stats = { pulls: 0, cancelled: false };
+        const stream = new ReadableStream<Uint8Array>(
+          {
+            pull(controller) {
+              stats.pulls++;
+              controller.enqueue(new Uint8Array(chunkSize).fill(97));
+            },
+            cancel() { stats.cancelled = true; }
+          },
+          { highWaterMark: 0 }
+        );
+        return { stream, stats };
+      }
+
+      it('does not read ahead of a slow host, and keeps the request active while the host holds the body', async () => {
+        const { stream, stats } = endlessSource();
+        underlyingFetchMock.mockResolvedValueOnce(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+
+        const response = await globalThis.fetch(url);
+        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(stats.pulls).toBe(1);
+        expect(mockLoggingService.logRequestToAPI).not.toHaveBeenCalled();
+        expect(activeRequests().has(dedupKey)).toBe(true);
+
+        await reader.cancel();
+      });
+
+      it('cancels the download, logs the partial body and releases the dedup entry when the host cancels', async () => {
+        const { stream, stats } = endlessSource();
+        underlyingFetchMock.mockResolvedValueOnce(new Response(stream, { status: 200, headers: { 'content-type': 'text/plain' } }));
+
+        const response = await globalThis.fetch(url);
+        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        await reader.read();
+        await reader.cancel();
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(stats.cancelled).toBe(true);
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(callData.response_body).toBe('a'.repeat(2048));
+        expect(activeRequests().has(dedupKey)).toBe(false);
+      });
+
+      it('logs and releases the dedup entry when the host never reads the body (status-only check)', async () => {
+        jest.useFakeTimers();
+        try {
+          const { stream, stats } = endlessSource();
+          underlyingFetchMock.mockResolvedValueOnce(new Response(stream, { status: 500, headers: { 'content-type': 'application/json' } }));
+
+          const response = await globalThis.fetch(url);
+          expect(response.status).toBe(500); // ...and the host walks away without touching the body.
+          expect(activeRequests().has(dedupKey)).toBe(true);
+
+          await jest.advanceTimersByTimeAsync(CAPTURE_IDLE_TIMEOUT_MS);
+
+          expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
+          const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+          expect(callData.status_code).toBe(500);
+          expect(activeRequests().has(dedupKey)).toBe(false);
+          expect(stats.pulls).toBe(0);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('stops an endless SSE stream once the host cancels it', async () => {
+        const { stream, stats } = endlessSource(16);
+        underlyingFetchMock.mockResolvedValueOnce(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+
+        const response = await globalThis.fetch(url);
+        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+        for (let i = 0; i < 10; i++) { await reader.read(); }
+        await reader.cancel();
+        const pullsAtCancel = stats.pulls;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(stats.cancelled).toBe(true);
+        expect(stats.pulls).toBe(pullsAtCancel);
+        expect(activeRequests().has(dedupKey)).toBe(false);
+      });
+    });
 
     it('fires originalFetch before awaiting a slow Request body', async () => {
       const events: string[] = [];

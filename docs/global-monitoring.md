@@ -25,7 +25,7 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 
 **Not covered**: this only applies when the response is delivered via the callback argument to `http.request()`/`https.request()`. Code that instead does `const req = https.request(options); req.on('response', handler)` still receives the raw `res` directly from Node, bypassing the tee — `handler` remains exposed to the original starvation bug if it consumes the response asynchronously. The callback form is by far the more common pattern and is what this fix targets; if you monitor code using the `req.on('response', ...)` form, be aware it isn't covered yet.
 
-`fetch()` interception is unaffected — it already reads the body via `response.clone()` and returns the original `Response` object untouched.
+`fetch()` interception is unaffected by that race — the body is captured as your code reads it. The `Response` you receive is a thin wrapper (same status, headers, `url`, `redirected` and `type`) around a pull-driven stream, rather than a `response.clone()` tee: nothing is buffered ahead of your reads, and cancelling the body (e.g. aborting an SSE stream) cancels the underlying download. The request is logged once your code finishes reading or cancels the body. If your code stops asking for data for 30 seconds (including never reading it, e.g. a status-only `if (!res.ok)` check), the request is logged with the body read so far (empty if none) and the body stays usable. Default readers, async iteration, `pipeTo()` and `.text()`/`.json()` all work; BYOB readers (`getReader({ mode: 'byob' })`) are not supported on the wrapped body.
 
 ### What Gets Monitored
 
