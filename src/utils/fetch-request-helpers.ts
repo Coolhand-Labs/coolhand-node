@@ -1,4 +1,5 @@
 import { readCappedRequestText } from './capped-fetch-body.js';
+import { MAX_DECOMPRESSED_BYTES } from './decompress.js';
 
 /**
  * Shared helpers for reading a fetch() call's effective URL/method/headers/body across both
@@ -60,9 +61,29 @@ export function getFetchHeaders(url: string | URL | Request, options: RequestIni
   return isRequestLike(url) ? headersToRecord(url.headers) : {};
 }
 
+// Decodes a `RequestInit.body` for logging, by type, capped at `maxBytes`. A bare `toString()` is
+// wrong for everything but strings/URLSearchParams: typed arrays become "123,34,..." and
+// Blob/FormData/ReadableStream become "[object ...]" — and it copies Buffer bodies uncapped.
+// Bodies that can't be read synchronously (Blob, FormData, streams) are not captured.
+function initBodyToText(body: unknown, maxBytes: number): string | null {
+  if (typeof body === 'string') {
+    return body.length > maxBytes ? body.slice(0, maxBytes) : body;
+  }
+  if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
+    return body.toString().slice(0, maxBytes);
+  }
+  if (ArrayBuffer.isView(body)) {
+    return Buffer.from(body.buffer, body.byteOffset, Math.min(body.byteLength, maxBytes)).toString('utf-8');
+  }
+  if (body instanceof ArrayBuffer) {
+    return Buffer.from(body, 0, Math.min(body.byteLength, maxBytes)).toString('utf-8');
+  }
+  return null;
+}
+
 export async function getFetchRequestBody(url: string | URL | Request, options: RequestInit): Promise<string | null> {
   if (options.body !== undefined) {
-    return options.body !== null ? options.body.toString() : null;
+    return initBodyToText(options.body, MAX_DECOMPRESSED_BYTES);
   }
 
   if (isRequestLike(url) && typeof url.clone === 'function') {

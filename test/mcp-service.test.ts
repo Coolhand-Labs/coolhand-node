@@ -79,6 +79,18 @@ describe('McpService', () => {
     await expect(service.mcpCall('list_workloads', {})).rejects.toThrow('MCP response was not valid JSON');
   });
 
+  it.each(['null', '42'])('throws a clear error when the body is the JSON literal %s', async (literal) => {
+    (global as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: () => Promise.resolve(literal),
+    });
+
+    const service = new McpService(config);
+    await expect(service.mcpCall('list_workloads', {})).rejects.toThrow('MCP response was not a JSON object');
+  });
+
   it('throws when the JSON-RPC payload carries an error', async () => {
     (global as any).fetch = mockFetch({ jsonrpc: '2.0', id: 1, error: { message: 'unknown tool' } });
 

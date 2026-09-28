@@ -55,6 +55,40 @@ describe('ClientFileService', () => {
       expect(result).toEqual(mockResponse);
     });
 
+    it.each(['a][b', 'a[b', 'a]', '', 'bad\nkey'])('rejects metadata key %j instead of injecting a multipart field name', async (key) => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      const service = new ClientFileService({ apiKey: 'secret-key', silent: true });
+
+      await expect(service.createClientFile({
+        name: 'deck.pdf',
+        file: Buffer.from('pdf-bytes'),
+        filename: 'deck.pdf',
+        metadata: { [key]: 'v' }
+      })).rejects.toThrow(/Invalid client file metadata key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('skips metadata values that cannot be serialized rather than sending "undefined"', async () => {
+      let capturedBody: FormData | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (_url: string, options: any) => {
+        capturedBody = options.body;
+        return { ok: true, status: 201, json: jest.fn().mockResolvedValue(buildResponse()), text: jest.fn().mockResolvedValue('') };
+      });
+
+      const service = new ClientFileService({ apiKey: 'secret-key', silent: true });
+      await service.createClientFile({
+        name: 'deck.pdf',
+        file: Buffer.from('pdf-bytes'),
+        filename: 'deck.pdf',
+        metadata: { keep: 'yes', gone: undefined as unknown as string }
+      });
+
+      expect(capturedBody!.get('client_file[metadata][keep]')).toBe('yes');
+      expect(capturedBody!.has('client_file[metadata][gone]')).toBe(false);
+    });
+
     it('should structure the multipart form data correctly, including flattened metadata', async () => {
       let capturedBody: FormData | undefined;
       let capturedHeaders: any;

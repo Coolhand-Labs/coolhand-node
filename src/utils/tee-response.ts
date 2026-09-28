@@ -67,7 +67,7 @@ export function createResponseTee(
   onCapExceeded?: () => void
 ): ResponseTee {
   const hostStream = new PassThroughCtor() as ResponseTee;
-  let hostBytesWritten = 0;
+  let capTripped = false;
 
   // Prevents an uncaught 'error' throw if `res` errors before the host has attached its own
   // 'error' listener (e.g. during an awaited gap) — degrades to a silent stall instead of
@@ -87,11 +87,14 @@ export function createResponseTee(
 
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 
-    // Bounds the tee's total lifetime buffering regardless of read state — a host that never
+    // Bounds the tee's *currently buffered* bytes regardless of read state — a host that never
     // reads (or reads too slowly to keep up) can't grow it past `maxBytes`, whether that's during
     // an async gap before the first listener attaches or an indefinitely-slow drain afterward.
-    hostBytesWritten += buf.length;
-    if (hostBytesWritten > maxBytes) {
+    // Deliberately not cumulative: a host that drains promptly may legitimately stream a body far
+    // larger than `maxBytes` (a batch/file download, long audio) without the tee ever holding more
+    // than a few chunks. A PassThrough buffers on both its writable and readable sides.
+    if (hostStream.writableLength + hostStream.readableLength + buf.length > maxBytes) {
+      capTripped = true;
       onCapExceeded?.();
       hostStream.destroy(new Error(`Host response stream exceeded ${maxBytes} bytes; destroying to bound memory growth`));
       return;
@@ -151,7 +154,7 @@ export function createResponseTee(
   hostStream.on('close', () => {
     // A cap-triggered destroy only abandons the host's copy — `res` and the interceptor's own
     // (independently capped) capture listeners on it must keep running to completion.
-    if (hostBytesWritten > maxBytes) {
+    if (capTripped) {
       return;
     }
     if (!res.destroyed) {

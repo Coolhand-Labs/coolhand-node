@@ -36,7 +36,11 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 - GitHub Models API calls (`models.github.ai`, `models.inference.ai.azure.com`)
 - Vertex AI API calls (`aiplatform.googleapis.com`)
 - OpenRouter API calls (`openrouter.ai`)
+- OpenCode API calls (`opencode.ai`)
 - Cloudflare AI Gateway API calls (`gateway.ai.cloudflare.com`)
+- Azure OpenAI (`*.openai.azure.com`), Azure AI Services and AI Foundry (`*.cognitiveservices.azure.com`, `*.services.ai.azure.com` — `/openai/`, `/models/` and `/api/projects/` paths only), Azure AI Foundry serverless endpoints (`*.inference.ai.azure.com`, `*.models.ai.azure.com`) and Azure Machine Learning managed online endpoints (`*.inference.ml.azure.com`)
+- DeepSeek, Mistral, Perplexity, xAI and ElevenLabs API calls (`api.deepseek.com`, `api.mistral.ai`, `api.perplexity.ai`, `api.x.ai`, `api.elevenlabs.io`)
+- Cohere (`api.cohere.com`, `api.cohere.ai` — v2 chat and v1/v2 embed only), TypeSafe Jev (`api.typesafe.ai`, `/v1/systemone` only), Ollama (port `11434` or `ollama.com` — chat, generate and embedding endpoints only) and Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com` — `/model/` and `/openai/` paths only)
 - Custom AI APIs (configurable)
 
 ✅ **HTTP Methods Supported:**
@@ -429,6 +433,19 @@ Sensitive headers are automatically redacted:
   "content-type": "application/json"
 }
 ```
+
+Any header whose name contains `auth`, `key`, `token`, `secret` or `cookie` (for example
+`x-auth-token` or `cf-access-client-secret`) is redacted too. Rate-limit headers such as
+`anthropic-ratelimit-tokens-remaining` are left intact.
+
+### Query Parameter, URL and Body Sanitization
+
+- **URLs:** credential-like query parameters (`key`, `api_key`, `accessToken`, `signature`, ...) and
+  `user:password@` userinfo are redacted.
+- **Request and response bodies:** Azure OpenAI `data_sources` credentials, Anthropic
+  `mcp_servers[].authorization_token`, OpenAI Responses MCP tool `authorization`/`headers`, and
+  OpenAI realtime `client_secret` are redacted. Bodies that are not a single JSON document (NDJSON,
+  truncated bodies) are scrubbed too.
 
 ### Configurable Sanitization
 

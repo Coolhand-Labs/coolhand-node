@@ -20,6 +20,26 @@ const match = svc.matchesAPIPatternSync('https://api.openai.com/v1/chat/completi
 assert.notEqual(match, null, 'Expected api.openai.com to match a pattern');
 assert.equal(match.pattern.name, 'OpenAI', `Expected pattern name "OpenAI", got "${match.pattern.name}"`);
 
+// A custom patternsFile must actually take effect in native ESM (regression: `typeof require`
+// gating silently fell back to the 21 built-in patterns). The custom file holds a single pattern
+// for a host no built-in pattern knows about.
+if (typeof process.getBuiltinModule === 'function') {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'coolhand-esm-'));
+  try {
+    const file = join(dir, 'patterns.json');
+    writeFileSync(file, JSON.stringify({ patterns: [{ name: 'Custom Host', domains: ['llm.custom-host.example'] }] }));
+    const custom = new PatternMatchingService({ customPatternsFile: file, silent: true });
+    assert.equal(custom.getPatternsCountSync(), 1, 'custom patternsFile should replace the built-in patterns in ESM');
+    const customMatch = custom.matchesAPIPatternSync('https://llm.custom-host.example/v1/chat');
+    assert.equal(customMatch?.pattern.name, 'Custom Host', 'custom patternsFile host should match in ESM');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // Singleton test: initialise via auto-monitor's exported function, then assert the
 // state is visible from the index entry point. Without a shared global-monitor
 // module instance this cross-entry check would return false.

@@ -18,6 +18,26 @@ const fakeCallData: CoolhandCallData = {
   protocol: 'https'
 };
 
+describe('baseUrl validation errors never echo credentials', () => {
+  it.each([
+    ['user:SECRETPW@host.com', 'scheme forgotten'],
+    ['  https://user:SECRETPW@', 'leading whitespace'],
+    ['https://user:p@SECRETPW@', 'password containing @'],
+    ['https://host.com?apikey=SECRETPW', 'query string'],
+    ['https://host.com#SECRETPW', 'fragment'],
+    ['http://user:SECRETPW@example.com', 'non-https with userinfo'],
+  ])('%s (%s)', (baseUrl) => {
+    let message = '';
+    try { new Coolhand({ apiKey: 'test-key', baseUrl, silent: true }); } catch (err) { message = (err as Error).message; }
+    expect(message).not.toBe('');
+    expect(message).not.toContain('SECRETPW');
+  });
+
+  it('rejects a non-string baseUrl with a validation error rather than a TypeError from the message builder', () => {
+    expect(() => new Coolhand({ apiKey: 'test-key', baseUrl: 123 as unknown as string, silent: true })).toThrow(/baseUrl/);
+  });
+});
+
 describe('baseUrl configuration', () => {
   describe('Coolhand constructor', () => {
     it('uses the default endpoint when baseUrl is omitted', () => {
@@ -188,6 +208,74 @@ describe('baseUrl configuration', () => {
           'https://self-hosted.example.com/api/v2/llm_request_log_feedbacks',
           expect.objectContaining({ method: 'POST' })
         );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('baseUrl shape validation (#250)', () => {
+    it('rejects userinfo without echoing the credentials in the error', () => {
+      let message = '';
+      try {
+        new Coolhand({ apiKey: 'k', silent: true, baseUrl: 'https://admin:hunter2@feedback.example.com' });
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toMatch(/credentials/);
+      expect(message).not.toContain('hunter2');
+      expect(message).not.toContain('admin');
+    });
+
+    it('does not echo userinfo from other validation errors either', () => {
+      expect(() => new Coolhand({ apiKey: 'k', silent: true, baseUrl: 'ftp://admin:hunter2@feedback.example.com' }))
+        .toThrow(expect.objectContaining({ message: expect.not.stringContaining('hunter2') }));
+    });
+
+    it.each(['https://feedback.example.com?x=1', 'https://feedback.example.com/base#frag', 'https://feedback.example.com?'])(
+      'rejects a baseUrl with a query string or fragment: %s',
+      (baseUrl) => {
+        expect(() => new Coolhand({ apiKey: 'k', silent: true, baseUrl })).toThrow(/query string or fragment/);
+      }
+    );
+  });
+
+  describe('request timeout (#250)', () => {
+    it.each([
+      ['sendRequest', async () => new LoggingService({ apiKey: 'k', silent: true }).logRequestToAPI(fakeCallData)],
+      ['sendMultipart', async () => new ClientFileService({ apiKey: 'k', silent: true })
+        .createClientFile({ name: 't', filename: 't.txt', file: Buffer.from('hi') })],
+      ['fetchWithHeaders', async () => new FeedbackService({ apiKey: 'k', silent: true }).getFeedback('1').catch(() => null)],
+    ])('attaches an AbortSignal to the %s fetch', async (_name, run) => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers(),
+        json: () => Promise.resolve({ id: 1 }),
+        text: () => Promise.resolve('{"id":1}')
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+      try {
+        await run();
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('read-path response shape (#250)', () => {
+    it.each(['null', '42', '"text"'])('rejects a non-object JSON body (%s) instead of returning it to callers', async (text) => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200, headers: new Headers(), text: () => Promise.resolve(text)
+      }) as any;
+      try {
+        await expect(new FeedbackService({ apiKey: 'k', silent: true }).getFeedback('1'))
+          .rejects.toThrow(/was not a JSON object/);
       } finally {
         globalThis.fetch = originalFetch;
       }

@@ -24,15 +24,49 @@ export interface BaseServiceConfig {
   baseUrl?: string;
 }
 
+// Every call's network wait is bounded: without a timeout, one hung endpoint would keep each
+// fire-and-forget promise — and the prompt/response payload it closes over — alive forever.
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+// A flat 30s would abort a large file upload over a slow link mid-transfer, so multipart uploads
+// get a much longer ceiling — still bounded, so a hung endpoint can't hold the payload forever.
+const UPLOAD_REQUEST_TIMEOUT_MS = 10 * 60_000;
+
+// AbortSignal.timeout is Node 17.3+; on anything older, requests just go unbounded as before.
+function timeoutSignal(ms: number = DEFAULT_REQUEST_TIMEOUT_MS): AbortSignal | undefined {
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : undefined;
+}
+
+// Error messages quote the configured baseUrl, which may carry credentials — as `user:pass@`
+// userinfo (with or without a scheme, or leading whitespace) or in a query string/fragment
+// (`?apikey=...`). Never echo those back into logs/exceptions: drop the query/fragment and mask
+// everything up to the last `@` of the authority.
+function redactForMessage(raw: unknown): string {
+  const text = String(raw);
+  const cut = text.search(/[?#]/);
+  const withoutQuery = cut === -1 ? text : `${text.slice(0, cut)}…`;
+  return withoutQuery.replace(/^(\s*(?:[a-z][a-z0-9+.-]*:\/\/)?)[^/\s]*@/i, '$1***@');
+}
+
 function validateBaseUrl(raw: string): void {
+  const shown = redactForMessage(raw);
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new Error(`Invalid baseUrl: "${raw}" is not a valid URL`);
+    throw new Error(`Invalid baseUrl: "${shown}" is not a valid URL`);
   }
   if (!url.hostname) {
-    throw new Error(`baseUrl must include a hostname. Got: "${raw}"`);
+    throw new Error(`baseUrl must include a hostname. Got: "${shown}"`);
+  }
+  if (url.username || url.password) {
+    throw new Error('baseUrl must not include credentials (user:password@). Use the apiKey option instead.');
+  }
+  // The endpoint path is appended to baseUrl as a plain string, so a query or fragment would
+  // swallow it (`https://host?x=1` + `/v2/llm_request_logs` -> path lives inside the query string).
+  if (url.search || url.hash || raw.includes('?') || raw.includes('#')) {
+    throw new Error(`baseUrl must not include a query string or fragment. Got: "${shown}"`);
   }
   if (url.protocol === 'https:') { return; }
   if (url.protocol === 'http:') {
@@ -40,7 +74,7 @@ function validateBaseUrl(raw: string): void {
     if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') { return; }
   }
   throw new Error(
-    `baseUrl must use https:// (got: "${raw}"). For local dev, http://localhost is allowed.`
+    `baseUrl must use https:// (got: "${shown}"). For local dev, http://localhost is allowed.`
   );
 }
 
@@ -125,7 +159,7 @@ export abstract class BaseService {
       const requestOptions = this.createRequestOptions(payload);
 
       if (typeof fetch !== 'undefined') {
-        const response = await fetch(this.apiEndpoint, requestOptions);
+        const response = await fetch(this.apiEndpoint, { signal: timeoutSignal(), ...requestOptions });
         return await this.parseJsonResponse<T>(response, successMessage);
       } else {
         // Fallback to using https/http modules
@@ -150,7 +184,7 @@ export abstract class BaseService {
       return result;
     } else {
       const errorText = await response.text();
-      console.error(`❌ Request failed: ${response.status} - ${errorText}`);
+      console.error(`❌ Request failed: ${response.status} - ${errorText.slice(0, 2000)}`);
       return null;
     }
   }
@@ -187,7 +221,8 @@ export abstract class BaseService {
         method: 'POST',
         headers: { 'X-API-Key': this.apiKey },
         body: formData,
-        redirect: 'error'
+        redirect: 'error',
+        signal: timeoutSignal(UPLOAD_REQUEST_TIMEOUT_MS)
       });
 
       return await this.parseJsonResponse<T>(response, successMessage);
@@ -221,12 +256,15 @@ export abstract class BaseService {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {
-            console.error(`❌ Request failed: ${res.statusCode} - ${data}`);
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            console.error(`❌ Request failed: ${res.statusCode} - ${data.slice(0, 2000)}`);
+            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 2000)}`));
           }
         });
       });
 
+      req.setTimeout(DEFAULT_REQUEST_TIMEOUT_MS, () => {
+        req.destroy(new Error(`Request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`));
+      });
       req.on('error', reject);
       req.write(postData);
       req.end();
@@ -259,7 +297,7 @@ export abstract class BaseService {
 
     let res: Response;
     try {
-      res = await fetch(url, { ...init, redirect: 'error' });
+      res = await fetch(url, { signal: timeoutSignal(), ...init, redirect: 'error' });
     } catch (err) {
       throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
     }
@@ -317,11 +355,18 @@ export abstract class BaseService {
       `${noun} request failed`
     );
 
+    let parsed: unknown;
     try {
-      return { body: JSON.parse(text) as T, headers };
+      parsed = JSON.parse(text);
     } catch {
       throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
     }
+    // Callers dereference the result (`body.data`, `body.pagination`, ...); `null` or a bare
+    // scalar would otherwise surface as an unrelated TypeError far from here.
+    if (parsed === null || typeof parsed !== 'object') {
+      throw new Error(`${noun} response was not a JSON object: ${text.slice(0, 2000)}`);
+    }
+    return { body: parsed as T, headers };
   }
 
   /**

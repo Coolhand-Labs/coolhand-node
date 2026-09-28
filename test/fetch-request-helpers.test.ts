@@ -87,6 +87,32 @@ describe('getFetchRequestBody', () => {
   it('returns null for a plain string url with no body anywhere', async () => {
     expect(await getFetchRequestBody('https://api.test.com', {})).toBeNull();
   });
+
+  it('decodes a Uint8Array body as text instead of "123,34,..." (#250)', async () => {
+    const body = new TextEncoder().encode('{"a":1}');
+    expect(await getFetchRequestBody('https://api.test.com', { body })).toBe('{"a":1}');
+  });
+
+  it('decodes only the viewed window of a Buffer/typed array body (#250)', async () => {
+    const backing = Buffer.from('xx{"a":1}yy');
+    const view = new Uint8Array(backing.buffer, backing.byteOffset + 2, 7);
+    expect(await getFetchRequestBody('https://api.test.com', { body: view })).toBe('{"a":1}');
+  });
+
+  it('decodes an ArrayBuffer and URLSearchParams body (#250)', async () => {
+    const ab = new TextEncoder().encode('hello').buffer as ArrayBuffer;
+    expect(await getFetchRequestBody('https://api.test.com', { body: ab })).toBe('hello');
+    expect(await getFetchRequestBody('https://api.test.com', { body: new URLSearchParams({ a: '1' }) })).toBe('a=1');
+  });
+
+  it('does not capture bodies that cannot be read synchronously (#250)', async () => {
+    expect(await getFetchRequestBody('https://api.test.com', { body: new FormData() })).toBeNull();
+    expect(await getFetchRequestBody('https://api.test.com', { body: new Blob(['x']) })).toBeNull();
+  });
+
+  it('does not throw for a null init body (#250)', async () => {
+    expect(await getFetchRequestBody('https://api.test.com', { body: null })).toBeNull();
+  });
 });
 
 describe('headersToRecord', () => {
