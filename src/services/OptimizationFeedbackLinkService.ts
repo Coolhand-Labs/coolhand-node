@@ -12,7 +12,8 @@ const BULK_LINK_BATCH_SIZE = 100;
  * one route; the body picks the mode) and `DELETE .../feedback_links/{id}`.
  *
  * Requires the client's **private** API key — the public key is write-only and gets a `401`. Like
- * the read services, every method throws on failure rather than logging and returning `null`.
+ * the read services, every method throws on failure rather than logging and returning `null`. The
+ * only `null`/no-op result is `dryRun` mode, where no request is sent.
  */
 export class OptimizationFeedbackLinkService extends BaseService {
   constructor(config: OptimizationFeedbackLinkServiceConfig) {
@@ -25,7 +26,8 @@ export class OptimizationFeedbackLinkService extends BaseService {
    * @param optimizationId Optimization hashid.
    * @param feedbackId Feedback hashid.
    * @param options Optional `note` explaining the link.
-   * @returns The created link; its `id` is what {@link unlinkFeedback} takes.
+   * @returns The created link (its `id` is what {@link unlinkFeedback} takes), or `null` in
+   *   `dryRun` mode, where no request is sent.
    * @throws Error if an id is blank. {@link HttpError} with `status` on a non-2xx response: `422`
    *   if the feedback is already linked or `note` is too long, `404` for an unknown optimization
    *   or feedback (or one belonging to another client), `401` for a missing/public key.
@@ -34,9 +36,11 @@ export class OptimizationFeedbackLinkService extends BaseService {
     optimizationId: string,
     feedbackId: string,
     options: LinkFeedbackOptions = {}
-  ): Promise<OptimizationFeedbackLink> {
+  ): Promise<OptimizationFeedbackLink | null> {
     this.assertId(feedbackId, 'linkFeedback: feedbackId must be a non-empty string');
-    return this.postLinks<OptimizationFeedbackLink>(optimizationId, 'linkFeedback', {
+    const url = this.linksUrl(optimizationId, 'linkFeedback');
+    if (this.skipForDryRun('linkFeedback', optimizationId)) {return null;}
+    return this.postLinks<OptimizationFeedbackLink>(url, {
       feedback_id: feedbackId,
       ...this.noteField(options)
     });
@@ -53,6 +57,7 @@ export class OptimizationFeedbackLinkService extends BaseService {
    * @param optimizationId Optimization hashid.
    * @param feedbackIds One or more feedback hashids.
    * @param options Optional `note`, applied to every link created.
+   * @returns The merged counts, or `null` in `dryRun` mode, where no request is sent.
    * @throws Error if `feedbackIds` is empty or contains a blank id. {@link HttpError} with
    *   `status` on a non-2xx response: `404` for an unknown optimization, `422` for invalid input
    *   or a too-long `note`, `401` for a missing/public key.
@@ -61,18 +66,31 @@ export class OptimizationFeedbackLinkService extends BaseService {
     optimizationId: string,
     feedbackIds: string[],
     options: LinkFeedbackOptions = {}
-  ): Promise<BulkLinkFeedbackResult> {
+  ): Promise<BulkLinkFeedbackResult | null> {
     if (!Array.isArray(feedbackIds) || feedbackIds.length === 0) {
       throw new Error('bulkLinkFeedback: feedbackIds must be a non-empty array');
     }
     feedbackIds.forEach((id) => this.assertId(id, 'bulkLinkFeedback: every feedback id must be a non-empty string'));
 
+    const url = this.linksUrl(optimizationId, 'bulkLinkFeedback');
+    if (this.skipForDryRun('bulkLinkFeedback', optimizationId)) {return null;}
+
     const total: BulkLinkFeedbackResult = { linked: 0, already_linked: 0, errored: 0, not_found: [] };
     for (let i = 0; i < feedbackIds.length; i += BULK_LINK_BATCH_SIZE) {
-      const result = await this.postLinks<BulkLinkFeedbackResult>(optimizationId, 'bulkLinkFeedback', {
+      const result = await this.postLinks<BulkLinkFeedbackResult>(url, {
         feedback_ids: feedbackIds.slice(i, i + BULK_LINK_BATCH_SIZE),
         ...this.noteField(options)
       });
+      // Validate the shape so a malformed body fails loudly here instead of turning the totals
+      // into NaN or throwing a TypeError mid-run, after earlier batches were already applied.
+      if (
+        !Number.isFinite(result.linked) ||
+        !Number.isFinite(result.already_linked) ||
+        !Number.isFinite(result.errored) ||
+        !Array.isArray(result.not_found)
+      ) {
+        throw new Error(`Feedback link response was not a valid bulk result: ${JSON.stringify(result).slice(0, 2000)}`);
+      }
       total.linked += result.linked;
       total.already_linked += result.already_linked;
       total.errored += result.errored;
@@ -86,12 +104,14 @@ export class OptimizationFeedbackLinkService extends BaseService {
    *
    * @param optimizationId Optimization hashid.
    * @param linkId The link's hashid — the `id` returned by {@link linkFeedback}, not the feedback id.
+   * @returns Resolves without sending a request in `dryRun` mode.
    * @throws Error if an id is blank. {@link HttpError} with `status` on a non-2xx response: `404`
    *   if the link does not exist, `401` for a missing/public key.
    */
   public async unlinkFeedback(optimizationId: string, linkId: string): Promise<void> {
     this.assertId(linkId, 'unlinkFeedback: linkId must be a non-empty string');
     const url = `${this.linksUrl(optimizationId, 'unlinkFeedback')}/${encodeURIComponent(linkId)}`;
+    if (this.skipForDryRun('unlinkFeedback', optimizationId)) {return;}
     await this.fetchOrThrow(
       url,
       { method: 'DELETE', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
@@ -116,9 +136,16 @@ export class OptimizationFeedbackLinkService extends BaseService {
     return `${this.apiEndpoint}/${encodeURIComponent(optimizationId)}/feedback_links`;
   }
 
-  private async postLinks<T>(optimizationId: string, method: string, payload: Record<string, unknown>): Promise<T> {
+  // Callers validate ids first, so a dry run still rejects the input a live run would.
+  private skipForDryRun(method: string, optimizationId: string): boolean {
+    if (!this.dryRun) {return false;}
+    this.log(`🚫 DRY RUN: Skipping ${method} for optimization ${optimizationId}`);
+    return true;
+  }
+
+  private async postLinks<T>(url: string, payload: Record<string, unknown>): Promise<T> {
     const text = await this.fetchOrThrow(
-      this.linksUrl(optimizationId, method),
+      url,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-API-Key': this.apiKey },

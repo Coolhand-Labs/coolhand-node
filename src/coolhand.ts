@@ -301,25 +301,27 @@ export class Coolhand {
 
   /**
    * Link one feedback to an optimization as evidence. Requires the **private** API key.
+   * Resolves to `null` in `dryRun` mode (no request is sent).
    * See `OptimizationFeedbackLinkService#linkFeedback`.
    */
   public async linkFeedback(
     optimizationId: string,
     feedbackId: string,
     options?: LinkFeedbackOptions
-  ): Promise<OptimizationFeedbackLink> {
+  ): Promise<OptimizationFeedbackLink | null> {
     return this.optimizationFeedbackLinkService.linkFeedback(optimizationId, feedbackId, options);
   }
 
   /**
    * Link many feedbacks to an optimization, batching 100 ids per request and merging the counts.
-   * Requires the **private** API key. See `OptimizationFeedbackLinkService#bulkLinkFeedback`.
+   * Requires the **private** API key. Resolves to `null` in `dryRun` mode (no request is sent).
+   * See `OptimizationFeedbackLinkService#bulkLinkFeedback`.
    */
   public async bulkLinkFeedback(
     optimizationId: string,
     feedbackIds: string[],
     options?: LinkFeedbackOptions
-  ): Promise<BulkLinkFeedbackResult> {
+  ): Promise<BulkLinkFeedbackResult | null> {
     return this.optimizationFeedbackLinkService.bulkLinkFeedback(optimizationId, feedbackIds, options);
   }
 

@@ -116,6 +116,11 @@ describe('OptimizationFeedbackLinkService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('rejects a malformed bulk response instead of summing NaN', async () => {
+      (global as any).fetch = mockFetch({ status: 200, body: { linked: 1 } });
+      await expect(newService().bulkLinkFeedback('opt1', ['a'])).rejects.toThrow('not a valid bulk result');
+    });
+
     it('propagates a later batch failure', async () => {
       (global as any).fetch = mockFetch(
         { status: 200, body: { linked: 100, already_linked: 0, errored: 0, not_found: [] } },
@@ -124,6 +129,26 @@ describe('OptimizationFeedbackLinkService', () => {
       const err = await newService().bulkLinkFeedback('opt1', ids(150)).catch((e) => e);
       expect(err).toBeInstanceOf(HttpError);
       expect(err.status).toBe(401);
+    });
+  });
+
+  describe('dryRun', () => {
+    const dry = () => new OptimizationFeedbackLinkService({ apiKey: 'k', silent: true, dryRun: true });
+
+    it('sends no requests and resolves to null/undefined', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+      await expect(dry().linkFeedback('opt1', 'fb1')).resolves.toBeNull();
+      await expect(dry().bulkLinkFeedback('opt1', ['a'])).resolves.toBeNull();
+      await expect(dry().unlinkFeedback('opt1', 'lnk1')).resolves.toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('still validates ids before short-circuiting', async () => {
+      await expect(dry().linkFeedback('', 'fb1')).rejects.toThrow('optimizationId');
+      await expect(dry().bulkLinkFeedback('', ['a'])).rejects.toThrow('optimizationId');
+      await expect(dry().bulkLinkFeedback('opt1', [])).rejects.toThrow('non-empty array');
+      await expect(dry().unlinkFeedback('opt1', '')).rejects.toThrow('linkId');
     });
   });
 

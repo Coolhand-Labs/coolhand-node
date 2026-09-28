@@ -38,6 +38,7 @@ describe('OptimizationFeedbackLinkService against a live server', () => {
     const service = newService();
 
     const link = await service.linkFeedback(OPTIMIZATION_ID, FEEDBACK_ID, { note: 'coolhand-node live test' });
+    if (!link) { throw new Error('expected a link (is dryRun on?)'); }
     expect(typeof link.id).toBe('string');
     expect(link.optimization_id).toBe(OPTIMIZATION_ID);
     expect(link.feedback_id).toBe(FEEDBACK_ID);

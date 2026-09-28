@@ -10,14 +10,19 @@ These methods require the client's **private** API key; the public key gets a `4
 const coolhand = new Coolhand({ apiKey: process.env.COOLHAND_PRIVATE_API_KEY! });
 
 // One feedback. `link.id` is the link's hashid, not the feedback's.
+// (The result is `null` only in dry-run mode, hence the check.)
 const link = await coolhand.linkFeedback('optimizationHashid', 'feedbackHashid', { note: 'why' });
 
 // Many feedbacks.
-const { linked, already_linked, errored, not_found } =
-  await coolhand.bulkLinkFeedback('optimizationHashid', ['fb1', 'fb2', 'fb3']);
+const bulk = await coolhand.bulkLinkFeedback('optimizationHashid', ['fb1', 'fb2', 'fb3']);
+if (bulk) {
+  const { linked, already_linked, errored, not_found } = bulk;
+}
 
 // Remove a link.
-await coolhand.unlinkFeedback('optimizationHashid', link.id);
+if (link) {
+  await coolhand.unlinkFeedback('optimizationHashid', link.id);
+}
 ```
 
 ## Bulk behavior
@@ -28,6 +33,11 @@ await coolhand.unlinkFeedback('optimizationHashid', link.id);
   are all reported in `not_found`.
 - If a batch fails, the call throws and earlier batches stay applied. Repeating the call is safe.
 - An empty list or a blank id throws before any request is made.
+
+## Dry run
+
+With `dryRun: true` no request is sent: `linkFeedback` and `bulkLinkFeedback` resolve to `null` and
+`unlinkFeedback` resolves to `undefined`.
 
 ## Errors
 
