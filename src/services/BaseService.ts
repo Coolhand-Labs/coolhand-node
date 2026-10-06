@@ -408,6 +408,32 @@ export abstract class BaseService {
     return url;
   }
 
+  /** Set every defined value of `params` on `url`'s query string; `undefined` is omitted, `false` is sent. */
+  protected setQueryParams(url: URL, params: Record<string, string | number | boolean | undefined>): void {
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+
+  /**
+   * Serialise a `since`/`until` bound for the wire. A `Date` becomes ISO8601 UTC (`...Z`); a string
+   * is passed through for the server to validate, so a `+hh:mm` offset is left to
+   * `URLSearchParams` to encode as `%2B` rather than arriving as a space and a 422.
+   *
+   * @throws Error if `value` is an invalid `Date`.
+   */
+  protected toTimestampParam(value: Date | string | undefined, name: string): string | undefined {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) {
+        throw new Error(`${name} must be a valid Date or an ISO8601 string`);
+      }
+      return value.toISOString();
+    }
+    return value;
+  }
+
   /**
    * Build a {@link Pagination} from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages`
    * response headers the paginated v2 list endpoints set, for endpoints that render a bare array

@@ -309,19 +309,38 @@ export interface LlmRequestLogContentFields {
   output: string | null;
 }
 
+// Per-component USD cost of one log, priced by the same SQL as the dashboard. Null on the log when
+// it has no tokens or its model has no pricing.
+export interface LlmRequestLogCostBreakdown {
+  total_cost: number;
+  input_cost: number;
+  output_cost: number;
+  cached_input_cost: number;
+  cache_creation_input_cost: number;
+  reasoning_output_cost: number;
+}
+
 export interface LlmRequestLogContentBase {
   /** Hashid. */
   id: string;
   url: string;
+  collector: string | null;
+  metadata: Record<string, unknown>;
   model: string | null;
   source_api: string | null;
+  source_application: string | null;
+  source_api_result: string | null;
   /** Hashid, null when this log isn't matched to a template. */
   template_id: string | null;
   template_name: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
   latency_ms: number | null;
+  cost: number | null;
+  cost_breakdown: LlmRequestLogCostBreakdown | null;
   created_at: string;
+  updated_at: string;
+  ingest_evidence: Record<string, unknown>;
   /**
    * Only present when `includeThinking` was set; null when the log has no thinking response.
    * An array of thinking blocks (the backend stores/returns this as `jsonb`, not a single string).
@@ -351,6 +370,13 @@ export type LlmRequestLogContent = LlmRequestLogContentFull | LlmRequestLogConte
 // the *Contains filters) need joins/hashid-decoding/ILIKE that don't fit the Ransack allowlist.
 // They're applied on top of the endpoint's existing Ransack-backed search/sort, not in place of
 // it — `sort` below reaches that directly (as `q[s]`).
+/** A `Date` is sent as ISO8601 UTC; a string is sent as-is, for the server to validate. A missing
+ *  offset means UTC and a date alone is midnight UTC. */
+export type TimeBound = Date | string;
+
+// The only `order` value GET /api/v2/llm_request_logs accepts; anything else is a 422.
+export type LlmRequestLogOrder = 'cost_desc';
+
 export interface SearchLogsParams {
   /** Template hashid. */
   templateId?: string;
@@ -365,8 +391,21 @@ export interface SearchLogsParams {
   sourceApiResult?: string;
   /** Only return logs with no assigned template. */
   unmatchedOnly?: boolean;
-  /** Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default. */
+  /** Exact match against `metadata.project_path`. */
+  projectPath?: string;
+  /** Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default.
+   *  Ignored when `since` or `until` is given. */
   daysBack?: number;
+  /** Lower bound (inclusive) on `created_at`. A `Date` is sent as ISO8601 UTC; a string is sent
+   *  as-is (no offset means UTC). Replaces `daysBack`. */
+  since?: TimeBound;
+  /** Upper bound (exclusive) on `created_at`; must be after `since`. Replaces `daysBack`. */
+  until?: TimeBound;
+  /** Only logs whose per-log `cost` (USD) is at least this. Logs that can't be priced (`cost` is
+   *  null) are excluded. Negative or non-numeric is a 422. */
+  minCost?: number;
+  /** `cost_desc` sorts by per-log `cost`, highest first, replacing `sort`. Priceable logs only. */
+  order?: LlmRequestLogOrder;
   /** Include `system_prompt`/`user_prompt` (truncated to 500 chars) on each result. */
   includePrompts?: boolean;
   /** Ransack sort expression, e.g. `"created_at desc"` — sent as `q[s]`. The endpoint defaults to
@@ -391,6 +430,8 @@ export interface LlmRequestLogSummary {
   collector: string | null;
   source_api: string | null;
   source_api_result: string | null;
+  source_application: string | null;
+  metadata: Record<string, unknown>;
   model: string | null;
   /** Hashid, null when this log isn't matched to a template. */
   template_id: string | null;
@@ -400,6 +441,10 @@ export interface LlmRequestLogSummary {
   latency_ms: number | null;
   created_at: string;
   updated_at: string;
+  ingest_evidence: Record<string, unknown>;
+  /** USD, priced by the same SQL as the dashboard (tiered pricing, cached-token discounts and
+   *  reasoning tokens applied). Null when the log has no tokens or its model has no pricing. */
+  cost: number | null;
   system_prompt?: string | null;
   user_prompt?: string | null;
 }
@@ -414,6 +459,59 @@ export interface SearchLogsResponse {
   logs: LlmRequestLogSummary[];
   pagination: Pagination;
 }
+// Window and opt-in for the `metrics` rollup on workloads and templates. Only validated by the
+// server when `includeMetrics` is true (always the case on getTemplate unless set to false).
+export interface MetricsParams {
+  /** Add a `metrics` object per row. Off by default on the list endpoints. */
+  includeMetrics?: boolean;
+  /** Rolling lookback in days ending now (server default 28, max 365). Ignored when `since` is given. */
+  daysBack?: number;
+  /** Window start, inclusive. Overrides `daysBack`, which then comes back `null` in `metrics`. */
+  since?: TimeBound;
+  /** Window end, exclusive; defaults to now. With only `until`, the window is `daysBack` long
+   *  ending there. A `since` not before `until`, a malformed value, or a window over 365 days is
+   *  a 422 on `since`/`until`. */
+  until?: TimeBound;
+}
+
+// The `metrics` object on a workload or template, computed by the same SQL as the dashboard so
+// the numbers match it (tiered pricing, cached-token discounts and reasoning tokens applied).
+// Everything but `first_request_at`/`last_request_at` (lifetime) and the three scores covers the
+// resolved `since`..`until` window and non-failed, directly-collected client logs.
+export interface LlmMetrics {
+  /** Null when an explicit `since` defined the window. */
+  days_back: number | null;
+  /** Resolved window start, ISO8601 UTC. */
+  since: string;
+  /** Resolved window end (exclusive), ISO8601 UTC. */
+  until: string;
+  request_count: number;
+  /** Failed logs in the window. */
+  failure_count: number;
+  /** Null when `failure_count` is 0. */
+  error_rate: number | null;
+  error_rate_change: number | null;
+  avg_cost_per_request: number | null;
+  /** USD. Null when no log in the window could be priced. */
+  total_cost: number | null;
+  /** Non-failed logs with tokens whose model has pricing — the logs `total_cost` covers. */
+  priced_request_count: number;
+  /** Priced logs that crossed their model's input-token pricing tier. */
+  long_context_request_count: number;
+  /** Raw `input_tokens` column summed over non-failed logs (same basis as `avg_input_tokens`; not cache-adjusted). */
+  total_input_tokens: number;
+  total_output_tokens: number;
+  avg_input_tokens: number | null;
+  avg_output_tokens: number | null;
+  avg_latency_ms: number | null;
+  correctness_score: number | null;
+  sentiment_score: number | null;
+  /** 0-100. */
+  revision_score: number | null;
+  first_request_at: string | null;
+  last_request_at: string | null;
+}
+
 // The `status` values GET /api/v2/llm_request_templates accepts as a filter — enumerated on that
 // query parameter in the API definition, and anything else non-empty is a 422. Deliberately NOT
 // reused for LlmRequestTemplateSummary#status below: the definition types the *response* field as
@@ -425,7 +523,7 @@ export type LlmRequestTemplateStatus = 'draft' | 'published' | 'failure';
 // rather than raw Ransack `q[...]` predicates, like SearchLogsParams and unlike
 // SearchFeedbackParams. There is deliberately no `clientId`: the client is always derived from the
 // authenticating API key and cannot be supplied by the caller.
-export interface SearchTemplatesParams {
+export interface SearchTemplatesParams extends MetricsParams {
   /** Case-insensitive *literal* substring match against the template name. `%` and `_` are escaped
    *  server-side so they match themselves — don't escape them again here. */
   search?: string;
@@ -475,10 +573,15 @@ export interface LlmRequestTemplateSummary {
   log_count: number;
   created_at: string;
   updated_at: string;
+  /** Only with `includeMetrics: true`. */
+  metrics?: LlmMetrics;
 }
 
+// Options for getTemplate. `includeMetrics` defaults to true there, unlike on the list.
+export type GetTemplateOptions = MetricsParams;
+
 // A single template from getTemplate: every list field plus the full untruncated regexes the list
-// omits.
+// omits. `metrics` is present unless `includeMetrics: false` was passed.
 export interface LlmRequestTemplateDetail extends LlmRequestTemplateSummary {
   user_prompt_pattern: string | null;
   system_prompt_pattern: string | null;
@@ -491,6 +594,64 @@ export interface LlmRequestTemplateDetail extends LlmRequestTemplateSummary {
 // those headers into the same Pagination shape the other two search methods return.
 export interface SearchTemplatesResponse {
   templates: LlmRequestTemplateSummary[];
+  pagination: Pagination;
+}
+
+// Filters for searchWorkloads, applied by GET /api/v2/workloads. There is deliberately no
+// `clientId`: the client is always derived from the authenticating API key.
+export interface SearchWorkloadsParams extends MetricsParams {
+  /** Case-insensitive substring match against the workload name. */
+  search?: string;
+  /** Include archived workloads. Defaults to false server-side. */
+  includeArchived?: boolean;
+  /** Include system workloads such as `Unmatched` and `Embedding Requests`. Defaults to false server-side. */
+  includeSystem?: boolean;
+  /** Add each workload's active templates and their routing patterns. */
+  includeTemplates?: boolean;
+  /** Page number, 1-based. */
+  page?: number;
+  /** Page size (default 25, max 100 — enforced server-side; `per_page` is accepted on the wire as
+   *  an alias but this SDK only sends `per`, same as searchLogs). */
+  per?: number;
+}
+
+// One of a workload's active templates, as embedded by `includeTemplates`.
+export interface WorkloadTemplate {
+  /** Hashid. */
+  id: string;
+  name: string;
+  status: string | null;
+  user_prompt_pattern: string | null;
+  system_prompt_pattern: string | null;
+}
+
+// A workload as rendered by the list endpoint.
+export interface WorkloadSummary {
+  /** The workload hashid (a string, never the integer primary key) — key on this. */
+  id: string;
+  name: string;
+  description: string | null;
+  archived: boolean;
+  system: boolean;
+  merged: boolean;
+  /** Active templates. */
+  template_count: number;
+  draft_template_count: number;
+  /** Across every log attached to any of the workload's templates, all generators — so it can
+   *  exceed the sum of the templates' own `log_count`, which counts only directly-collected logs. */
+  log_count: number;
+  last_activity: string | null;
+  /** Only with `includeTemplates: true`. */
+  templates?: WorkloadTemplate[];
+  /** Only with `includeMetrics: true`. */
+  metrics?: LlmMetrics;
+}
+
+// searchWorkloads' backing endpoint renders a bare array on the wire and always exposes pagination
+// via X-Page/X-Per-Page/X-Total-Count/X-Total-Pages response headers, read into the same
+// Pagination shape as searchTemplates. Ordered by name.
+export interface SearchWorkloadsResponse {
+  workloads: WorkloadSummary[];
   pagination: Pagination;
 }
 

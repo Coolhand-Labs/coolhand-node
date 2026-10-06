@@ -1,9 +1,10 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, LlmRequestTemplateDetail, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
+import { WorkloadService } from './services/WorkloadService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
@@ -16,6 +17,7 @@ export class Coolhand {
   private loggingService: LoggingService;
   private feedbackService: FeedbackService;
   private templateService: TemplateService;
+  private workloadService: WorkloadService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
   private optimizationFeedbackLinkService: OptimizationFeedbackLinkService;
@@ -58,6 +60,7 @@ export class Coolhand {
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
     this.templateService = new TemplateService(serviceConfig);
+    this.workloadService = new WorkloadService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
@@ -231,7 +234,8 @@ export class Coolhand {
 
   /**
    * List LLM request templates, optionally filtered by `search`, `workloadId`, `status`,
-   * `includeDeprecated` and `includeSystem`.
+   * `includeDeprecated` and `includeSystem`, with a `metrics` object per row via `includeMetrics`
+   * (window: `daysBack`, or explicit `since`/`until`).
    *
    * Search is a parameter on the list endpoint, not a route of its own, so there is one method
    * rather than a separate list/search pair. Requires the **private** API key, same as
@@ -257,14 +261,36 @@ export class Coolhand {
    * Requires the **private** API key, same as {@link searchTemplates}. Deprecated and system
    * templates are reachable here by id with no opt-in flag.
    *
+   * Always includes `metrics` unless `includeMetrics: false` is passed.
+   *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
+   * @param opts The metrics window: `daysBack`, or `since`/`until` (explicit wins).
    * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`). Error on
    *   network failure or a non-JSON body. A non-2xx response throws an error whose `status`
    *   property holds the HTTP status code (`404` for an unknown id or one belonging to another
-   *   client; `504` on the `log_count` timeout).
+   *   client; `422` for a malformed/inverted metrics window; `504` on the `log_count` timeout).
    */
-  public async getTemplate(id: string): Promise<LlmRequestTemplateDetail> {
-    return this.templateService.getTemplate(id);
+  public async getTemplate(id: string, opts?: GetTemplateOptions): Promise<LlmRequestTemplateDetail> {
+    return this.templateService.getTemplate(id, opts);
+  }
+
+  /**
+   * List workloads — the groups of templates that make up one task or agent — optionally with a
+   * cost/performance `metrics` rollup per workload (`includeMetrics`), computed by the same SQL as
+   * the dashboard. Requires the **private** API key, same as {@link searchTemplates}.
+   *
+   * Each `id` is the workload hashid, the stable key and what `workloadId` on {@link searchTemplates}
+   * and {@link searchLogs} expects. Archived and system workloads are hidden unless
+   * `includeArchived`/`includeSystem` is set.
+   *
+   * @returns `{ workloads, pagination }`, ordered by name. See `WorkloadService#searchWorkloads`/
+   *   `docs/workload-search.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code — including `422` for a bad metrics window and
+   *   `504` when an aggregate exceeds the statement timeout.
+   */
+  public async searchWorkloads(params?: SearchWorkloadsParams): Promise<SearchWorkloadsResponse> {
+    return this.workloadService.searchWorkloads(params);
   }
 
   /**

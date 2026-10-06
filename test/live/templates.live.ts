@@ -17,21 +17,9 @@
  * safe to point at a shared development database.
  */
 import { TemplateService } from '../../src/services/TemplateService';
-import { LlmRequestTemplateSummary } from '../../src/types';
-
-const baseUrl = process.env.COOLHAND_LIVE_BASE_URL;
-const apiKey = process.env.COOLHAND_LIVE_API_KEY;
-
-if (!baseUrl || !apiKey) {
-  throw new Error(
-    'Live tests need COOLHAND_LIVE_BASE_URL and COOLHAND_LIVE_API_KEY (a private API key) in the ' +
-      'environment. Set both and re-run `npm run test:live`.'
-  );
-}
-
-// Re-bound after the guard so the rest of the file sees plain `string`, without a cast.
-const LIVE_BASE_URL: string = baseUrl;
-const LIVE_API_KEY: string = apiKey;
+import { LlmMetrics, LlmRequestTemplateSummary } from '../../src/types';
+import { LIVE_API_KEY, LIVE_BASE_URL } from './env';
+import { expectMetricsShape } from './shapes';
 
 // Every client is created with these two system buckets, and they are hidden from the list unless
 // include_system is passed — which is what makes them a real fixture for that flag.
@@ -107,6 +95,38 @@ describe('TemplateService against a live server', () => {
       expect(pagination.current_page).toBe(1);
     });
 
+    it('returns a metrics object per row with includeMetrics, over an explicit since/until window', async () => {
+      const { templates } = await newService().searchTemplates({
+        includeSystem: true,
+        includeMetrics: true,
+        daysBack: 7,
+        since: new Date('2026-09-01T00:00:00Z'),
+        until: new Date('2026-10-01T00:00:00Z'),
+        per: 3
+      });
+
+      expect(templates.length).toBeGreaterThan(0);
+      for (const template of templates) {
+        const metrics = template.metrics as LlmMetrics;
+        expectMetricsShape(metrics);
+        expect(metrics.days_back).toBeNull();
+        expect(metrics.since).toBe('2026-09-01T00:00:00Z');
+        expect(metrics.until).toBe('2026-10-01T00:00:00Z');
+      }
+    });
+
+    it('omits metrics unless includeMetrics is set', async () => {
+      const { templates } = await newService().searchTemplates({ includeSystem: true, per: 1 });
+
+      expect(templates[0]).not.toHaveProperty('metrics');
+    });
+
+    it('rejects a malformed since with 422 when metrics are requested', async () => {
+      await expect(newService().searchTemplates({ includeMetrics: true, since: 'bad' })).rejects.toMatchObject({
+        status: 422
+      });
+    });
+
     it('rejects an unrecognized status with 422 rather than an empty list', async () => {
       // Cast past the union: the point is what the *server* does with a bad value, which a
       // TypeScript-only guard would never exercise.
@@ -150,6 +170,32 @@ describe('TemplateService against a live server', () => {
 
       expect(detail.system_template).toBe(true);
       expect(SYSTEM_TEMPLATE_NAMES).toContain(detail.name);
+    });
+
+    it('includes metrics by default and honours daysBack', async () => {
+      const { templates } = await newService().searchTemplates({ includeSystem: true, per: 1 });
+
+      const detail = await newService().getTemplate(templates[0].id, { daysBack: 7 });
+
+      expectMetricsShape(detail.metrics as LlmMetrics);
+      expect(detail.metrics?.days_back).toBe(7);
+    });
+
+    it('takes an explicit since window, and drops metrics with includeMetrics: false', async () => {
+      const { templates } = await newService().searchTemplates({ includeSystem: true, per: 1 });
+
+      const windowed = await newService().getTemplate(templates[0].id, { since: new Date('2026-09-01T00:00:00Z') });
+      const bare = await newService().getTemplate(templates[0].id, { includeMetrics: false });
+
+      expect(windowed.metrics?.days_back).toBeNull();
+      expect(windowed.metrics?.since).toBe('2026-09-01T00:00:00Z');
+      expect(bare).not.toHaveProperty('metrics');
+    });
+
+    it('rejects a malformed since with 422', async () => {
+      const { templates } = await newService().searchTemplates({ includeSystem: true, per: 1 });
+
+      await expect(newService().getTemplate(templates[0].id, { since: 'bad' })).rejects.toMatchObject({ status: 422 });
     });
 
     it('returns 404, not 403, for an id this client cannot see', async () => {

@@ -528,6 +528,21 @@ describe('LoggingService', () => {
         input_tokens: 100,
         output_tokens: 50,
         latency_ms: 250,
+        collector: 'manual',
+        metadata: {},
+        source_application: null,
+        source_api_result: 'success',
+        cost: 0.0042,
+        cost_breakdown: {
+          total_cost: 0.0042,
+          input_cost: 0.003,
+          output_cost: 0.0012,
+          cached_input_cost: 0,
+          cache_creation_input_cost: 0,
+          reasoning_output_cost: 0
+        },
+        updated_at: '2026-01-01T00:00:00Z',
+        ingest_evidence: {},
         created_at: '2026-01-01T00:00:00Z',
         system_prompt: 'You are a helpful assistant.',
         user_prompt: 'What is 2+2?',
@@ -555,6 +570,21 @@ describe('LoggingService', () => {
         input_tokens: 100,
         output_tokens: 50,
         latency_ms: 250,
+        collector: 'manual',
+        metadata: {},
+        source_application: null,
+        source_api_result: 'success',
+        cost: 0.0042,
+        cost_breakdown: {
+          total_cost: 0.0042,
+          input_cost: 0.003,
+          output_cost: 0.0012,
+          cached_input_cost: 0,
+          cache_creation_input_cost: 0,
+          reasoning_output_cost: 0
+        },
+        updated_at: '2026-01-01T00:00:00Z',
+        ingest_evidence: {},
         created_at: '2026-01-01T00:00:00Z',
         search_query: 'timeout',
         matches: { system_prompt: [], user_prompt: ['...a timeout occurred...'], output: [] }
@@ -651,6 +681,82 @@ describe('LoggingService', () => {
       expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
     });
 
+    it('sends the project_path, since/until, min_cost and order filters', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.searchLogs({
+        projectPath: '/Users/me/my-project',
+        since: new Date('2026-09-01T00:00:00Z'),
+        until: '2026-09-15T00:00:00+02:00',
+        minCost: 0.5,
+        order: 'cost_desc'
+      });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('project_path')).toBe('/Users/me/my-project');
+      expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
+      expect(url.searchParams.get('until')).toBe('2026-09-15T00:00:00+02:00');
+      expect(url.search).toContain('until=2026-09-15T00%3A00%3A00%2B02%3A00');
+      expect(url.searchParams.get('min_cost')).toBe('0.5');
+      expect(url.searchParams.get('order')).toBe('cost_desc');
+    });
+
+    it('sends a min_cost of 0 rather than treating it as unset', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify([])), headers: new Headers() };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.searchLogs({ minCost: 0 });
+
+      expect(new URL(capturedUrl!).searchParams.get('min_cost')).toBe('0');
+    });
+
+    it('throws before issuing a request for an invalid Date bound', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchLogs({ until: new Date('nope') })).rejects.toThrow(
+        'until must be a valid Date or an ISO8601 string'
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns the bare array with per-log cost, keeping a null cost null', async () => {
+      const base = {
+        collector: 'manual', source_api: 'openai', source_api_result: 'success', source_application: null,
+        metadata: {}, model: 'gpt-4', template_id: null, template_name: null, input_tokens: 1,
+        output_tokens: 1, latency_ms: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+        ingest_evidence: {}
+      };
+      const mockLogs: LlmRequestLogSummary[] = [
+        { ...base, id: 'priced', cost: 1.25 },
+        { ...base, id: 'unpriced', cost: null }
+      ];
+      (global as any).fetch = mockGetFetch(mockLogs);
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.searchLogs({ order: 'cost_desc' });
+
+      expect(Array.isArray(result.logs)).toBe(true);
+      expect(result.logs.map((log) => log.cost)).toEqual([1.25, null]);
+    });
+
+    it('throws an HttpError carrying 422 for a rejected min_cost/order/window', async () => {
+      (global as any).fetch = mockGetFetch({ errors: { order: ['must be cost_desc'] } }, { ok: false, status: 422 });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.searchLogs({ order: 'nope' as never })).rejects.toMatchObject({ status: 422 });
+    });
+
     it('omits include_total when not passed', async () => {
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
@@ -709,7 +815,11 @@ describe('LoggingService', () => {
           output_tokens: 50,
           latency_ms: 250,
           created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z'
+          updated_at: '2026-01-01T00:00:00Z',
+          source_application: null,
+          metadata: {},
+          ingest_evidence: {},
+          cost: 0.0042
         }
       ];
       (global as any).fetch = mockGetFetch(mockLogs, {
@@ -760,7 +870,11 @@ describe('LoggingService', () => {
         output_tokens: 50,
         latency_ms: 250,
         created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z'
+        updated_at: '2026-01-01T00:00:00Z',
+        source_application: null,
+        metadata: {},
+        ingest_evidence: {},
+        cost: null
       }));
       (global as any).fetch = mockGetFetch(fullPage);
 
@@ -803,7 +917,11 @@ describe('LoggingService', () => {
           output_tokens: 50,
           latency_ms: 250,
           created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z'
+          updated_at: '2026-01-01T00:00:00Z',
+          source_application: null,
+          metadata: {},
+          ingest_evidence: {},
+          cost: 0.0042
         }
       ];
       (global as any).fetch = mockGetFetch(mockLogs);

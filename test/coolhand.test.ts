@@ -295,6 +295,40 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('searchWorkloads', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates to WorkloadService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return {
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify([])),
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '1', 'X-Page': '1', 'X-Per-Page': '25' })
+        };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.searchWorkloads({ includeMetrics: true, since: new Date('2026-09-01T00:00:00Z') });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/workloads');
+      expect(url.searchParams.get('include_metrics')).toBe('true');
+      expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result.workloads).toEqual([]);
+      expect(result.pagination.total_count).toBe(0);
+    });
+  });
+
   describe('LlmReferenceService integration', () => {
     it('should expose searchReferencedFiles and listReferencedFileSessions functions', () => {
       const monitor = new Coolhand({ apiKey: 'test-key', silent: true });

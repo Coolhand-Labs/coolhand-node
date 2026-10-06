@@ -88,6 +88,77 @@ describe('TemplateService', () => {
       expect(url.searchParams.get('per')).toBe('50');
     });
 
+    it('sends the metrics window params, serialising Date bounds as ISO8601 UTC', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue('[]'), headers: new Headers() };
+      });
+
+      await newService().searchTemplates({
+        includeMetrics: true,
+        daysBack: 14,
+        since: new Date('2026-09-01T00:00:00Z'),
+        until: '2026-09-15T00:00:00+02:00'
+      });
+
+      const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('include_metrics')).toBe('true');
+      expect(url.searchParams.get('days_back')).toBe('14');
+      expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
+      expect(url.searchParams.get('until')).toBe('2026-09-15T00:00:00+02:00');
+      expect(url.search).toContain('until=2026-09-15T00%3A00%3A00%2B02%3A00');
+    });
+
+    it('throws before issuing a request for an invalid Date bound', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().searchTemplates({ since: new Date('nope') })).rejects.toThrow(
+        'since must be a valid Date or an ISO8601 string'
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns the metrics object on a row, with the new counters and a null days_back', async () => {
+      const metrics = {
+        days_back: null,
+        since: '2026-09-01T00:00:00Z',
+        until: '2026-10-06T22:49:40Z',
+        request_count: 3,
+        failure_count: 0,
+        error_rate: null,
+        error_rate_change: null,
+        avg_cost_per_request: null,
+        total_cost: null,
+        priced_request_count: 0,
+        long_context_request_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        avg_input_tokens: null,
+        avg_output_tokens: null,
+        avg_latency_ms: null,
+        correctness_score: null,
+        sentiment_score: null,
+        revision_score: null,
+        first_request_at: null,
+        last_request_at: null
+      };
+      (global as any).fetch = mockGetFetch([buildSummary({ metrics })]);
+
+      const { templates } = await newService().searchTemplates({ includeMetrics: true, since: '2026-09-01' });
+
+      expect(templates[0].metrics).toEqual(metrics);
+    });
+
+    it('throws an HttpError carrying 422 for a malformed metrics window', async () => {
+      (global as any).fetch = mockGetFetch({ errors: { since: ['must be an ISO8601 timestamp'] } }, { ok: false, status: 422 });
+
+      await expect(newService().searchTemplates({ includeMetrics: true, since: 'bad' })).rejects.toMatchObject({
+        status: 422
+      });
+    });
+
     it('omits params that were not supplied rather than sending empty values', async () => {
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
@@ -226,6 +297,40 @@ describe('TemplateService', () => {
       expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/llm_request_templates/aaa');
       expect(result.user_prompt_pattern).toBe('^Summarize: (.+)$');
       expect(result.system_prompt_pattern).toBeNull();
+    });
+
+    it('sends no query string when no options are given', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue('{}'), headers: new Headers() };
+      });
+
+      await newService().getTemplate('aaa');
+
+      expect(new URL(capturedUrl!).search).toBe('');
+    });
+
+    it('sends the metrics window options on the single-template route', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue('{}'), headers: new Headers() };
+      });
+
+      await newService().getTemplate('aaa', {
+        includeMetrics: false,
+        daysBack: 30,
+        since: new Date('2026-09-01T00:00:00Z'),
+        until: new Date('2026-09-08T00:00:00Z')
+      });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_request_templates/aaa');
+      expect(url.searchParams.get('include_metrics')).toBe('false');
+      expect(url.searchParams.get('days_back')).toBe('30');
+      expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
+      expect(url.searchParams.get('until')).toBe('2026-09-08T00:00:00.000Z');
     });
 
     it('percent-encodes the id instead of letting it alter the path', async () => {

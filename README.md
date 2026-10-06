@@ -299,6 +299,27 @@ patterns come from `getTemplate` only.
 See [docs/template-search.md](./docs/template-search.md) for the full filter reference, pagination,
 and error handling (including the retryable `504` on the `log_count` aggregate).
 
+## Reading Workloads and Cost Metrics
+
+`searchWorkloads` lists your workloads, and `includeMetrics` adds the dashboard's cost and
+performance numbers to workloads and templates, over a rolling `daysBack` window or an explicit
+`since`/`until` one. `searchLogs` returns a per-log `cost` and can filter and sort on it. All need
+your **private** API key:
+
+```typescript
+const { workloads } = await coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30 });
+workloads[0].metrics?.total_cost;
+
+const { logs } = await coolhand.searchLogs({
+  since: new Date('2026-09-01T00:00:00Z'),
+  minCost: 0.5,
+  order: 'cost_desc'
+});
+```
+
+See [docs/workload-search.md](./docs/workload-search.md) for the workload reference and
+[docs/template-search.md](./docs/template-search.md#metrics) for the `metrics` fields and window rules.
+
 ## Reading Referenced Files
 
 `searchReferencedFiles` and `listReferencedFileSessions` read back which files your logged requests
@@ -572,11 +593,11 @@ API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
-`getTemplate`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
+`getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
-[docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md)
-and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
+[docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md),
+[docs/workload-search.md](./docs/workload-search.md) and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
 
 ## Security
 
@@ -593,6 +614,7 @@ and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
 - **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
+- **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
 
