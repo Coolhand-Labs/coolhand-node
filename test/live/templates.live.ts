@@ -177,17 +177,19 @@ describe('TemplateService against a live server', () => {
 
       const detail = await newService().getTemplate(templates[0].id, { daysBack: 7 });
 
-      expectMetricsShape(detail.metrics);
-      expect(detail.metrics.days_back).toBe(7);
+      expectMetricsShape(detail.metrics as LlmMetrics);
+      expect(detail.metrics?.days_back).toBe(7);
     });
 
-    it('takes an explicit since window, which makes days_back null', async () => {
+    it('takes an explicit since window, and drops metrics with includeMetrics: false', async () => {
       const { templates } = await newService().searchTemplates({ includeSystem: true, per: 1 });
 
       const windowed = await newService().getTemplate(templates[0].id, { since: new Date('2026-09-01T00:00:00Z') });
+      const bare = await newService().getTemplate(templates[0].id, { includeMetrics: false });
 
-      expect(windowed.metrics.days_back).toBeNull();
-      expect(windowed.metrics.since).toBe('2026-09-01T00:00:00Z');
+      expect(windowed.metrics?.days_back).toBeNull();
+      expect(windowed.metrics?.since).toBe('2026-09-01T00:00:00Z');
+      expect(bare).not.toHaveProperty('metrics');
     });
 
     it('rejects a malformed since with 422', async () => {

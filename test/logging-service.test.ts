@@ -690,6 +690,7 @@ describe('LoggingService', () => {
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
       await service.searchLogs({
+        sourceApplication: 'claude_code',
         projectPath: '/Users/me/my-project',
         since: new Date('2026-09-01T00:00:00Z'),
         until: '2026-09-15T00:00:00+02:00',
@@ -698,6 +699,7 @@ describe('LoggingService', () => {
       });
 
       const url = new URL(capturedUrl!);
+      expect(url.searchParams.get('source_application')).toBe('claude_code');
       expect(url.searchParams.get('project_path')).toBe('/Users/me/my-project');
       expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
       expect(url.searchParams.get('until')).toBe('2026-09-15T00:00:00+02:00');

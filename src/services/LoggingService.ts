@@ -136,6 +136,7 @@ export class LoggingService extends BaseService {
       model: params.model,
       source_api: params.sourceApi,
       source_api_result: params.sourceApiResult,
+      source_application: params.sourceApplication,
       project_path: params.projectPath,
       unmatched_only: params.unmatchedOnly,
       days_back: params.daysBack,

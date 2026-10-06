@@ -65,6 +65,7 @@ the endpoint's own Ransack-backed search, not in place of it; `sort` below reach
 | `model` | `string` | Filter by model name (e.g. `"gpt-4o"`, `"claude-3-5-sonnet"`) |
 | `sourceApi` | `string` | Filter by source API (e.g. `"openai"`, `"anthropic"`, `"vertex"`) |
 | `sourceApiResult` | `string` | Filter by result status: `success`, `failed`, `operational`, `unsupported_api`, or `ingest_error`. Applied as a plain equality filter — a log with a `null` result (also generally "successful") won't match `sourceApiResult: 'success'`. Not related to `unmatchedOnly`, which filters on template assignment, not result status |
+| `sourceApplication` | `string` | Exact match against `source_application` |
 | `projectPath` | `string` | Exact match against `metadata.project_path` |
 | `unmatchedOnly` | `boolean` | Only return logs with no assigned template |
 | `daysBack` | `number` | Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default. A non-positive value (e.g. `0`) is rejected with a 422, not treated as "unrestricted". Ignored when `since` or `until` is given |

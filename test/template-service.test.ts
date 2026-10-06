@@ -289,8 +289,7 @@ describe('TemplateService', () => {
       const detail: LlmRequestTemplateDetail = {
         ...buildSummary({ id: 'aaa', name: 'Summarize', system_template: false }),
         user_prompt_pattern: '^Summarize: (.+)$',
-        system_prompt_pattern: null,
-        metrics: buildMetrics()
+        system_prompt_pattern: null
       };
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
@@ -325,6 +324,7 @@ describe('TemplateService', () => {
       });
 
       await newService().getTemplate('aaa', {
+        includeMetrics: false,
         daysBack: 30,
         since: new Date('2026-09-01T00:00:00Z'),
         until: new Date('2026-09-08T00:00:00Z')
@@ -332,7 +332,7 @@ describe('TemplateService', () => {
 
       const url = new URL(capturedUrl!);
       expect(url.pathname).toBe('/api/v2/llm_request_templates/aaa');
-      expect(url.searchParams.has('include_metrics')).toBe(false);
+      expect(url.searchParams.get('include_metrics')).toBe('false');
       expect(url.searchParams.get('days_back')).toBe('30');
       expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
       expect(url.searchParams.get('until')).toBe('2026-09-08T00:00:00.000Z');

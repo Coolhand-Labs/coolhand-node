@@ -391,6 +391,8 @@ export interface SearchLogsParams {
   sourceApiResult?: string;
   /** Only return logs with no assigned template. */
   unmatchedOnly?: boolean;
+  /** Exact match against `source_application`. */
+  sourceApplication?: string;
   /** Exact match against `metadata.project_path`. */
   projectPath?: string;
   /** Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default.
@@ -460,7 +462,7 @@ export interface SearchLogsResponse {
   pagination: Pagination;
 }
 // Window and opt-in for the `metrics` rollup on workloads and templates. Only validated by the
-// server when `includeMetrics` is true; getTemplate always validates, since it always returns `metrics`.
+// server when `includeMetrics` is true; on getTemplate that is the default.
 export interface MetricsParams {
   /** Add a `metrics` object per row. Off by default on the list endpoints. */
   includeMetrics?: boolean;
@@ -578,13 +580,13 @@ export interface LlmRequestTemplateSummary {
   metrics?: LlmMetrics;
 }
 
-// Options for getTemplate. No `includeMetrics`: the show endpoint always returns `metrics`.
-export type GetTemplateOptions = Omit<MetricsParams, 'includeMetrics'>;
+// Options for getTemplate. `includeMetrics` defaults to true there, unlike on the list; false omits
+// `metrics` and skips window validation.
+export type GetTemplateOptions = MetricsParams;
 
 // A single template from getTemplate: every list field plus the full untruncated regexes the list
-// omits, and always `metrics` (unlike the list, where it is opt-in).
+// omits. `metrics` is present unless `includeMetrics: false` was passed.
 export interface LlmRequestTemplateDetail extends LlmRequestTemplateSummary {
-  metrics: LlmMetrics;
   user_prompt_pattern: string | null;
   system_prompt_pattern: string | null;
 }

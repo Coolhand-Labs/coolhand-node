@@ -81,7 +81,8 @@ export class TemplateService extends BaseService {
    * template is reachable by id with no opt-in flag, since inspecting one of those is the usual
    * reason to fetch a template directly.
    *
-   * Always includes `metrics`, unlike {@link searchTemplates} where it is opt-in.
+   * Includes `metrics` by default, unlike {@link searchTemplates} where it is opt-in; pass
+   * `includeMetrics: false` to omit it (which also skips window validation).
    *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
    * @param opts The metrics window: `daysBack`, or `since`/`until` (explicit wins).
@@ -96,6 +97,7 @@ export class TemplateService extends BaseService {
   public async getTemplate(id: string, opts: GetTemplateOptions = {}): Promise<LlmRequestTemplateDetail> {
     const url = this.buildResourceUrl(id, 'getTemplate: id must be a non-empty string');
     this.setQueryParams(url, {
+      include_metrics: opts.includeMetrics,
       days_back: opts.daysBack,
       since: this.toTimestampParam(opts.since, 'since'),
       until: this.toTimestampParam(opts.until, 'until')
