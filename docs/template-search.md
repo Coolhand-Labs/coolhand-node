@@ -192,7 +192,7 @@ templates[0].metrics;
   window could be priced.
 - **Lifetime vs window.** `first_request_at`/`last_request_at` are lifetime; `sentiment_score` and
   `revision_score` are all-time, as on the dashboard. `correctness_score` follows the window.
-- **Validation** only happens when metrics are requested: a malformed timestamp, a `since` not
+- **Validation** only happens when metrics are requested (always, on `getTemplate`): a malformed timestamp, a `since` not
   before `until`, or a window over 365 days is a `422` with the error on the `since` or `until` key.
 
 ## Errors

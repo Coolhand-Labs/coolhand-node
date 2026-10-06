@@ -365,11 +365,6 @@ export interface LlmRequestLogContentSearchResult extends LlmRequestLogContentBa
 
 export type LlmRequestLogContent = LlmRequestLogContentFull | LlmRequestLogContentSearchResult;
 
-// Params for GET /api/v2/llm_request_logs (searchLogs). `templateId` through `includePrompts`
-// are dedicated named filters rather than raw Ransack `q[...]` predicates — several (workload_id,
-// the *Contains filters) need joins/hashid-decoding/ILIKE that don't fit the Ransack allowlist.
-// They're applied on top of the endpoint's existing Ransack-backed search/sort, not in place of
-// it — `sort` below reaches that directly (as `q[s]`).
 /** A `Date` is sent as ISO8601 UTC; a string is sent as-is, for the server to validate. A missing
  *  offset means UTC and a date alone is midnight UTC. */
 export type TimeBound = Date | string;
@@ -377,6 +372,11 @@ export type TimeBound = Date | string;
 // The only `order` value GET /api/v2/llm_request_logs accepts; anything else is a 422.
 export type LlmRequestLogOrder = 'cost_desc';
 
+// Params for GET /api/v2/llm_request_logs (searchLogs). `templateId` through `includePrompts`
+// are dedicated named filters rather than raw Ransack `q[...]` predicates — several (workload_id,
+// the *Contains filters) need joins/hashid-decoding/ILIKE that don't fit the Ransack allowlist.
+// They're applied on top of the endpoint's existing Ransack-backed search/sort, not in place of
+// it — `sort` below reaches that directly (as `q[s]`).
 export interface SearchLogsParams {
   /** Template hashid. */
   templateId?: string;
@@ -460,7 +460,7 @@ export interface SearchLogsResponse {
   pagination: Pagination;
 }
 // Window and opt-in for the `metrics` rollup on workloads and templates. Only validated by the
-// server when `includeMetrics` is true (always the case on getTemplate unless set to false).
+// server when `includeMetrics` is true; getTemplate always validates, since it always returns `metrics`.
 export interface MetricsParams {
   /** Add a `metrics` object per row. Off by default on the list endpoints. */
   includeMetrics?: boolean;
