@@ -265,7 +265,7 @@ export class Coolhand {
    * explicit `since`/`until` one.
    *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
-   * @param opts The metrics window: `daysBack`, or `since`/`until` (explicit wins).
+   * @param opts `includeMetrics` (default true) and the metrics window: `daysBack`, or `since`/`until` (explicit wins).
    * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`). Error on
    *   network failure or a non-JSON body. A non-2xx response throws an error whose `status`
    *   property holds the HTTP status code (`404` for an unknown id or one belonging to another

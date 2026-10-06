@@ -27,6 +27,8 @@ function buildSummary(overrides: Partial<LlmRequestTemplateSummary> = {}): LlmRe
     system_template: true,
     deprecated_at: null,
     log_count: 0,
+    source_repository: null,
+    source_file_path: null,
     created_at: '2026-08-20T02:12:27Z',
     updated_at: '2026-08-20T02:12:27Z',
     ...overrides

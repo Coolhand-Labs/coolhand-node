@@ -87,6 +87,8 @@ database. Each row carries a `system_template` boolean so you don't have to matc
       system_template: false,
       deprecated_at: null,           // ISO-8601 UTC; non-null means superseded
       log_count: 412,
+      source_repository: null,       // nullable
+      source_file_path: null,        // nullable
       created_at: '2026-08-20T02:12:27Z',
       updated_at: '2026-08-20T02:12:27Z'
     }
@@ -193,8 +195,9 @@ templates[0].metrics;
   window could be priced.
 - **Lifetime vs window.** `first_request_at`/`last_request_at` are lifetime; `sentiment_score` and
   `revision_score` are all-time, as on the dashboard. `correctness_score` follows the window.
-- **Validation** only happens when metrics are requested (by default on `getTemplate`): a malformed timestamp, a `since` not
-  before `until`, or a window over 365 days is a `422` with the error on the `since` or `until` key.
+- **Validation** only happens when metrics are requested (by default on `getTemplate`): a malformed
+  timestamp, a `since` not before `until`, or a window over 365 days is a `422` with the error on the
+  `since` or `until` key.
 
 ## Errors
 

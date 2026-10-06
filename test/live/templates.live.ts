@@ -177,7 +177,7 @@ describe('TemplateService against a live server', () => {
 
       const detail = await newService().getTemplate(templates[0].id, { daysBack: 7 });
 
-      expectMetricsShape(detail.metrics as LlmMetrics);
+      expectMetricsShape(detail.metrics);
       expect(detail.metrics?.days_back).toBe(7);
     });
 

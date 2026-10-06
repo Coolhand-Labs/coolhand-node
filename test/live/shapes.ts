@@ -2,7 +2,11 @@ import { LlmMetrics } from '../../src/types';
 
 // Asserts the types in the API definition, so a nullable field that goes non-null (or the reverse)
 // fails here rather than silently in a caller.
-export function expectMetricsShape(metrics: LlmMetrics): void {
+export function expectMetricsShape(metrics: LlmMetrics | undefined): asserts metrics is LlmMetrics {
+  expect(metrics).toBeDefined();
+  if (!metrics) {
+    return;
+  }
   for (const field of [
     'request_count', 'failure_count', 'priced_request_count', 'long_context_request_count',
     'total_input_tokens', 'total_output_tokens'

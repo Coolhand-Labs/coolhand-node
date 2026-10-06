@@ -574,6 +574,8 @@ export interface LlmRequestTemplateSummary {
    *  so the two numbers agree. Excludes evals, bakeoff comparisons and synthetic logs, which is
    *  why it can be lower than the count the `search_templates` MCP tool reports. */
   log_count: number;
+  source_repository: string | null;
+  source_file_path: string | null;
   created_at: string;
   updated_at: string;
   /** Only with `includeMetrics: true`. */

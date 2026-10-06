@@ -85,11 +85,11 @@ export class TemplateService extends BaseService {
    * `includeMetrics: false` to omit it (which also skips window validation).
    *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
-   * @param opts The metrics window: `daysBack`, or `since`/`until` (explicit wins).
+   * @param opts `includeMetrics` (default true) and the metrics window: `daysBack`, or `since`/`until` (explicit wins).
    * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`) — either would
    *   otherwise silently resolve away to the `index` route, returning a bare array typed as a
    *   single template. Error on network failure or a non-JSON body. A non-2xx response throws an
-   *   {@link HttpError} whose `status` holds the HTTP status code: `404` for an unknown id *or*
+   *   {@link HttpError} whose `status` holds the HTTP status code: `422` for a malformed/inverted metrics window, `404` for an unknown id *or*
    *   one belonging to another client (existence is not disclosed, so this is never a `403`), and
    *   `504` on the same `log_count` timeout described on {@link searchTemplates} — fetching the
    *   `Unmatched` bucket by id counts every log that never matched a template.
