@@ -50,18 +50,13 @@ export class LlmReferenceService extends BaseService {
   ): Promise<SearchReferencedFilesResponse> {
     const url = new URL(this.apiEndpoint);
 
-    const queryParams = {
+    this.setQueryParams(url, {
       'q[file_path_cont]': params.filePathContains,
       'q[created_at_gteq]': params.createdAtGteq,
       'q[created_at_lteq]': params.createdAtLteq,
       page: params.page,
       per: params.per
-    };
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    }
+    });
 
     const { body, headers } = await this.getJsonWithHeaders<LlmReferencedFile[]>(url.toString(), 'Referenced file');
     return { files: body, pagination: this.paginationFromHeaders(headers, body, params) };

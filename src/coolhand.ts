@@ -261,7 +261,7 @@ export class Coolhand {
    * Requires the **private** API key, same as {@link searchTemplates}. Deprecated and system
    * templates are reachable here by id with no opt-in flag.
    *
-   * Always includes `metrics` unless `includeMetrics: false` is passed.
+   * Always includes `metrics`, over a rolling `daysBack` window or an explicit `since`/`until` one.
    *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
    * @param opts The metrics window: `daysBack`, or `since`/`until` (explicit wins).

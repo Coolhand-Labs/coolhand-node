@@ -132,7 +132,7 @@ const march = await coolhand.getTemplate('kp9npvc8qq2q', {
 ```
 
 `opts` takes the same `daysBack`/`since`/`until` as `searchTemplates`. Unlike the list, `getTemplate`
-**includes `metrics` by default**; pass `includeMetrics: false` to leave it out.
+**always includes `metrics`**, so there is no `includeMetrics` option.
 
 ### Return value
 
@@ -142,7 +142,7 @@ const march = await coolhand.getTemplate('kp9npvc8qq2q', {
 |---|---|---|
 | `user_prompt_pattern` | `string \| null` | The full, untruncated regex |
 | `system_prompt_pattern` | `string \| null` | The full, untruncated regex |
-| `metrics` | `LlmMetrics` | Present unless `includeMetrics: false` — see [Metrics](#metrics) |
+| `metrics` | `LlmMetrics` | Always present — see [Metrics](#metrics) |
 
 Unlike the list, this applies **no filtering beyond client ownership**: a deprecated template or a
 system template is reachable by id with no opt-in flag, because inspecting one of those is the
@@ -190,8 +190,8 @@ templates[0].metrics;
   `total_cost` covers) and `long_context_request_count` (priced logs that crossed their model's
   input-token pricing tier). `total_cost`/`avg_cost_per_request` are `null` when nothing in the
   window could be priced.
-- **Lifetime vs window.** `first_request_at`/`last_request_at` are lifetime; the scores are
-  all-time, as on the dashboard.
+- **Lifetime vs window.** `first_request_at`/`last_request_at` are lifetime; `sentiment_score` and
+  `revision_score` are all-time, as on the dashboard. `correctness_score` follows the window.
 - **Validation** only happens when metrics are requested: a malformed timestamp, a `since` not
   before `until`, or a window over 365 days is a `422` with the error on the `since` or `until` key.
 

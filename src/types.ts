@@ -476,8 +476,9 @@ export interface MetricsParams {
 
 // The `metrics` object on a workload or template, computed by the same SQL as the dashboard so
 // the numbers match it (tiered pricing, cached-token discounts and reasoning tokens applied).
-// Everything but `first_request_at`/`last_request_at` (lifetime) and the three scores covers the
-// resolved `since`..`until` window and non-failed, directly-collected client logs.
+// Everything but `first_request_at`/`last_request_at` (lifetime) and `sentiment_score`/
+// `revision_score` (all-time) covers the resolved `since`..`until` window and non-failed,
+// directly-collected client logs.
 export interface LlmMetrics {
   /** Null when an explicit `since` defined the window. */
   days_back: number | null;
@@ -577,12 +578,13 @@ export interface LlmRequestTemplateSummary {
   metrics?: LlmMetrics;
 }
 
-// Options for getTemplate. `includeMetrics` defaults to true there, unlike on the list.
-export type GetTemplateOptions = MetricsParams;
+// Options for getTemplate. No `includeMetrics`: the show endpoint always returns `metrics`.
+export type GetTemplateOptions = Omit<MetricsParams, 'includeMetrics'>;
 
 // A single template from getTemplate: every list field plus the full untruncated regexes the list
-// omits. `metrics` is present unless `includeMetrics: false` was passed.
+// omits, and always `metrics` (unlike the list, where it is opt-in).
 export interface LlmRequestTemplateDetail extends LlmRequestTemplateSummary {
+  metrics: LlmMetrics;
   user_prompt_pattern: string | null;
   system_prompt_pattern: string | null;
 }

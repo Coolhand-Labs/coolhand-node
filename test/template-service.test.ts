@@ -1,6 +1,6 @@
 import { TemplateService, TemplateServiceConfig } from '../src/services/TemplateService';
 import { HttpError } from '../src/services/BaseService';
-import { LlmRequestTemplateDetail, LlmRequestTemplateSummary } from '../src/types';
+import { LlmMetrics, LlmRequestTemplateDetail, LlmRequestTemplateSummary } from '../src/types';
 
 const originalFetch = (global as any).fetch;
 
@@ -29,6 +29,33 @@ function buildSummary(overrides: Partial<LlmRequestTemplateSummary> = {}): LlmRe
     log_count: 0,
     created_at: '2026-08-20T02:12:27Z',
     updated_at: '2026-08-20T02:12:27Z',
+    ...overrides
+  };
+}
+
+function buildMetrics(overrides: Partial<LlmMetrics> = {}): LlmMetrics {
+  return {
+    days_back: null,
+    since: '2026-09-01T00:00:00Z',
+    until: '2026-10-06T22:49:40Z',
+    request_count: 0,
+    failure_count: 0,
+    error_rate: null,
+    error_rate_change: null,
+    avg_cost_per_request: null,
+    total_cost: null,
+    priced_request_count: 0,
+    long_context_request_count: 0,
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    avg_input_tokens: null,
+    avg_output_tokens: null,
+    avg_latency_ms: null,
+    correctness_score: null,
+    sentiment_score: null,
+    revision_score: null,
+    first_request_at: null,
+    last_request_at: null,
     ...overrides
   };
 }
@@ -121,29 +148,7 @@ describe('TemplateService', () => {
     });
 
     it('returns the metrics object on a row, with the new counters and a null days_back', async () => {
-      const metrics = {
-        days_back: null,
-        since: '2026-09-01T00:00:00Z',
-        until: '2026-10-06T22:49:40Z',
-        request_count: 3,
-        failure_count: 0,
-        error_rate: null,
-        error_rate_change: null,
-        avg_cost_per_request: null,
-        total_cost: null,
-        priced_request_count: 0,
-        long_context_request_count: 0,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
-        avg_input_tokens: null,
-        avg_output_tokens: null,
-        avg_latency_ms: null,
-        correctness_score: null,
-        sentiment_score: null,
-        revision_score: null,
-        first_request_at: null,
-        last_request_at: null
-      };
+      const metrics = buildMetrics({ request_count: 3 });
       (global as any).fetch = mockGetFetch([buildSummary({ metrics })]);
 
       const { templates } = await newService().searchTemplates({ includeMetrics: true, since: '2026-09-01' });
@@ -284,7 +289,8 @@ describe('TemplateService', () => {
       const detail: LlmRequestTemplateDetail = {
         ...buildSummary({ id: 'aaa', name: 'Summarize', system_template: false }),
         user_prompt_pattern: '^Summarize: (.+)$',
-        system_prompt_pattern: null
+        system_prompt_pattern: null,
+        metrics: buildMetrics()
       };
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
@@ -319,7 +325,6 @@ describe('TemplateService', () => {
       });
 
       await newService().getTemplate('aaa', {
-        includeMetrics: false,
         daysBack: 30,
         since: new Date('2026-09-01T00:00:00Z'),
         until: new Date('2026-09-08T00:00:00Z')
@@ -327,10 +332,20 @@ describe('TemplateService', () => {
 
       const url = new URL(capturedUrl!);
       expect(url.pathname).toBe('/api/v2/llm_request_templates/aaa');
-      expect(url.searchParams.get('include_metrics')).toBe('false');
+      expect(url.searchParams.has('include_metrics')).toBe(false);
       expect(url.searchParams.get('days_back')).toBe('30');
       expect(url.searchParams.get('since')).toBe('2026-09-01T00:00:00.000Z');
       expect(url.searchParams.get('until')).toBe('2026-09-08T00:00:00.000Z');
+    });
+
+    it('throws before issuing a request for an invalid Date bound', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().getTemplate('aaa', { since: new Date('nope') })).rejects.toThrow(
+        'since must be a valid Date or an ISO8601 string'
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('percent-encodes the id instead of letting it alter the path', async () => {
