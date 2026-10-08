@@ -466,6 +466,8 @@ setInterval(() => {
 }, 60000);
 ```
 
+Testing that interception actually happened (e.g. in your own CI) needs a delta, not a raw check — `coolhand-node/test-utils` exports `captureInterceptionSnapshot()`/`assertInterceptionOccurred()` for exactly that. This only observes the global monitoring path (`initializeGlobalMonitoring()` / `coolhand-node/auto-monitor`) — it does not see requests made through an instance-based `new Coolhand({...})` monitor, which keeps its own separate counter via `coolhand.getStats()`. See [docs/global-monitoring.md](./docs/global-monitoring.md)'s Troubleshooting section.
+
 ## Dry-Run Mode
 
 Use `dryRun: true` (or `COOLHAND_DRY_RUN=true`) to prevent any data from being sent to Coolhand — useful for CI environments or initial integration testing:

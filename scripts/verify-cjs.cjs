@@ -29,5 +29,13 @@ assert.equal(match.pattern.name, 'OpenAI', `Expected pattern name "OpenAI", got 
   assert.equal(pkg.isGlobalMonitoringActive(), true,
     'index entry should see active state initialised via auto-monitor (shared singleton)');
 
+  // Verify the dist/test-utils build output resolves and its exports are wired up — a
+  // stale/broken exports map or missed build entry here would otherwise ship undetected.
+  const testUtils = require('../dist/test-utils.cjs');
+  assert.equal(typeof testUtils.captureInterceptionSnapshot, 'function',
+    'captureInterceptionSnapshot should be exported from coolhand-node/test-utils');
+  assert.equal(typeof testUtils.assertInterceptionOccurred, 'function',
+    'assertInterceptionOccurred should be exported from coolhand-node/test-utils');
+
   console.log(`CJS smoke test passed (${count} patterns loaded, OpenAI matched)`);
 })().catch(err => { console.error(err); process.exitCode = 1; });

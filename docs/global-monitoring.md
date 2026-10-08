@@ -579,6 +579,22 @@ await getOpenAIClient().chat.completions.create({ /* ... */ }); // ✅ intercept
 
 **Recommended fix:** Never construct AI client instances at module scope in an app that relies on `initializeGlobalMonitoring()`/`coolhand-node/auto-monitor` for interception. Construct clients lazily (on first use, e.g. inside a request handler) rather than eagerly at import time — this guarantees monitoring has already patched `fetch` by construction time, regardless of import order. See `examples/fastify-openai-unbundled` for a worked example of exactly this issue.
 
+**Catching this in your own CI:** since this failure mode produces no error or warning — the app just silently stops monitoring — a test that only checks for a successful HTTP response won't catch it. `coolhand-node/test-utils` exports a small helper for asserting interception actually happened:
+
+```javascript
+import { captureInterceptionSnapshot, assertInterceptionOccurred } from 'coolhand-node/test-utils';
+
+const before = captureInterceptionSnapshot();
+await getOpenAIClient().chat.completions.create({ /* ... */ });
+assertInterceptionOccurred(before); // throws if interceptedCalls didn't increase
+```
+
+A snapshot/diff (rather than checking `getGlobalStats().interceptedCalls > 0` directly) is required because a long-running process will already have a nonzero count from earlier requests — only the delta since `before` shows something new was intercepted.
+
+`interceptedCalls` is a single process-wide counter, not scoped to a URL or request, so this proves *some* matched request was intercepted in the window between the snapshot and the assertion — not specifically the one call in between, if other monitored traffic can happen concurrently. Run this in an isolated test (no other AI calls in flight) for a precise signal. It's also a stopgap, not a fix: it only tells you *after the fact* that a specific test's traffic bypassed monitoring, one client/code-path at a time — a client library or code path nobody wrote a test for can still bypass monitoring in production with nothing to catch it. See [`docs/diagnostics-channel-interception.md`](./diagnostics-channel-interception.md) for the structural exploration into closing that gap at the source.
+
+This helper only reads the counter maintained by the global monitoring path described in this doc (`initializeGlobalMonitoring()` / `coolhand-node/auto-monitor`). If your app instead uses the instance-based `new Coolhand({...})` monitor (see the README's "Instance-Based Monitoring" option), that monitor keeps its own separate counter — `coolhand.getStats().interceptedCalls` — which `captureInterceptionSnapshot()`/`assertInterceptionOccurred()` never reads; using them against an instance-based monitor will assert-fail even when interception is working correctly.
+
 ### Debug Mode
 
 ```javascript

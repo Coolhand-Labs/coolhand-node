@@ -26,6 +26,16 @@
         "default": "./dist/auto-monitor.cjs"
       }
     },
+    "./test-utils": {
+      "import": {
+        "types": "./dist/test-utils.d.ts",
+        "default": "./dist/test-utils.js"
+      },
+      "require": {
+        "types": "./dist/test-utils.d.cts",
+        "default": "./dist/test-utils.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "keywords": [
