@@ -66,7 +66,8 @@ export function getFetchHeaders(url: string | URL | Request, options: RequestIni
 const TEXT_BLOB_TYPE = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml))|$)/i;
 
 // Serializes a FormData body field by field as a JSON object (repeated keys become arrays) so
-// `parseBody` + `sanitizeBody` treat it like a JSON body and redact by key name. File parts are
+// `parseBody` + `sanitizeBody` treat it like a JSON body (note: `sanitizeBody` only redacts the
+// specific keys it knows, so a credential-named form field is logged as-is). File parts are
 // skipped — they're binary uploads, not loggable text. Stops once `maxBytes` of values are collected.
 function formDataToText(form: FormData, maxBytes: number): string {
   // Null-prototype so field names like `constructor` / `__proto__` are plain keys, not inherited members.
@@ -80,7 +81,9 @@ function formDataToText(form: FormData, maxBytes: number): string {
     if (existing === undefined) {
       fields[key] = value;
     } else {
-      fields[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
+      // push, not spread: copying the array per repeated key is quadratic and runs synchronously
+      // before the host's fetch is dispatched.
+      if (Array.isArray(existing)) { existing.push(value); } else { fields[key] = [existing, value]; }
     }
   }
   return JSON.stringify(fields);

@@ -127,6 +127,16 @@ describe('getFetchRequestBody', () => {
       .toEqual({ model: 'gpt-4', tag: ['a', 'b'] });
   });
 
+  it('serializes a FormData with a very large number of repeated keys in linear time', async () => {
+    const form = new FormData();
+    for (let i = 0; i < 50_000; i++) { form.append('k', 'v'); }
+    const start = Date.now();
+    const parsed = JSON.parse((await getFetchRequestBody('https://api.test.com', { body: form })) as string);
+    expect(parsed.k).toHaveLength(50_000);
+    // The quadratic version took seconds at this size (3.6 s measured); linear is a few ms.
+    expect(Date.now() - start).toBeLessThan(1500);
+  });
+
   it('keeps FormData fields named like Object.prototype members (#254)', async () => {
     const form = new FormData();
     form.append('constructor', 'a');
