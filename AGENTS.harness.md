@@ -114,11 +114,29 @@ Off by default. Skip this section when `reviewLoop` is false.
 
 ## 6. Run your review skill
 
+**Commit first.** The skill diffs `origin/main...HEAD`, so it has nothing to look at
+against an uncommitted working tree — use this repo's own convention (section 7 covers the
+PR itself, but nothing stops you committing here).
+
 **Mandatory, before you push.** Follow `<workspaceRoot>/coolhand/harness/RESIST_RULES.md`
 → "Before you push: run your repo's review skill" (R8) — load
 `.claude/skills/loop-review/SKILL.md` off disk and run it for real against your diff. Do
-not approximate its steps manually; if you cannot spawn the reviewer subagent it calls
-for, escalate to server (R8) and STOP rather than substitute a self-review.
+not approximate its steps manually. You are at depth 2, so per R8's table you have
+Agent/Task access here — this is your own review, over your own diff, and there is no
+excuse to substitute a self-review for it.
+
+**If the loop applies fixes, commit those too (or amend) before you record anything below.**
+The sha you record must be the one that actually ends up in your PR, not the one you
+committed before the loop ran.
+
+After it exits, post the Iteration Breakdown as a PR comment (section 7) and record it,
+using your current `HEAD` (after any fix commits above):
+`node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo node --sha <HEAD sha> --by node --result clean|capped`.
+
+**You will run this same review two more times, later, for repos that are not your own —
+see section 8d.** python, ruby and the CLI cannot run their own copy of this section; that
+is not a per-run surprise, it is what R8's table says about depth 3. Plan your attention
+accordingly once you reach section 8.
 
 ## 7. Open your PR
 
@@ -128,7 +146,8 @@ but your children still launch and still build (`RESIST_RULES.md` → Dry runs: 
 tree runs, it just leaves no trace on GitHub"). Launch them with the run's `branch` name in
 place of an issue url.
 
-1. Push and open the PR in `coolhand-node`.
+1. Push whatever is at `HEAD` (you already committed in section 6, before and possibly
+   after the review loop) and open the PR in `coolhand-node`.
 2. **Prefix the PR title with `[closes #N]`**, using your issue number from section 0.
    That is this repo's documented convention (`AGENTS.md` → Pull requests) and it is what
    auto-closes the issue on merge. Keep the shared `branch` name as-is — it is what makes
@@ -212,7 +231,80 @@ Answer the same way the server answers you. **If it is a question about the API
 definition, you do not answer it — you pass it up to server**, then relay the reply back
 down. You own the wrapper pattern; the server owns the definition.
 
+**Poll every live child's channel on a short cycle, not one long wait on one channel.**
+python, ruby and the CLI can be working (or blocked) at the same time, and a single
+900-second `wait` on one of them leaves the other two invisible to you for that whole
+window. Round-robin instead:
+
+```
+for each child that has not yet finished or escalated to a human:
+  node <workspaceRoot>/coolhand/harness/harness.mjs inbox --run <RUN_DIR> --channel <child> --for node
+node <workspaceRoot>/coolhand/harness/harness.mjs wait --run <RUN_DIR> --channel <a-child-still-waiting> --for node --timeout 120
+```
+
+**An R8 review request (section 8d) gets answered on your very next pass through this
+loop, not deferred until you finish something else.** A child that asked to be reviewed and
+then sat through a full `wait` timeout with no reply from you is exactly the failure this
+section exists to prevent — it already happened once. If you cannot start the review
+immediately, at minimum acknowledge the request now (8d step 1) so the child's own `wait`
+has something to stop on.
+
 Do not stop until every child has finished or escalated to a human.
+
+### 8d. Serve review for your children — they can never do this themselves (R8)
+
+**python, ruby and the CLI have no Agent/Task tool.** They are three levels deep in this
+tree, and the platform does not let an agent that deep spawn a further subagent. This is
+not something any of them can fix by trying again, and it is not a surprise you should be
+finding out for the first time when one of them escalates — expect it from all three, every
+run.
+
+When a child sends an R8 escalation saying it is ready for review (it will name its repo
+path, branch and `HEAD` sha — see `RESIST_RULES.md` → R8 → "Requesting a review from your
+parent"), you run the review **against that repo**, following R8 → "Serving a review for a
+child" exactly:
+
+1. **Acknowledge with `--kind ack`, not `--kind resolution`.** The child treats any
+   `resolution` on its channel as "the review is done" — see R8 → "Requesting a review from
+   your parent" step 3 — so replying with one now, before you have actually reviewed
+   anything, would wake it up early. `ack` tells it you have started without telling it you
+   are finished.
+2. Verify the path is actually that child's checkout before you touch anything
+   (`git -C <path> rev-parse --show-toplevel`). Also check `git -C <path> status --porcelain`
+   is empty — step 4 stages everything in the checkout, not only what the review touches, so
+   a scratch file the child left behind would ride along into its PR. **If it isn't empty,
+   reply asking the child to commit or remove it, then treat its fresh escalation as a brand
+   new request: go back to step 1 — a new `ack`, then this check again — rather than picking
+   up where you left off.** The child tells your two acks apart only by their order, so your
+   second message here has to be a fresh "running your review now" `ack`, not a continuation.
+3. **Do not use the Skill tool for this.** It resolves `loop-review` against your own
+   session's project — `coolhand-node` — not the child's repo. Read the file directly:
+   `cat <path>/.claude/skills/loop-review/SKILL.md`, and execute it as a recipe against
+   `<path>` yourself, the same way you already treat `AGENTS.harness.md` as something to
+   read off disk rather than trust from memory.
+4. **If the loop applies fixes, commit them into `<path>` before you reply — the skill edits
+   files, it does not commit them, and this is not your own repo where you would do that
+   automatically.** `git -C <path> add -A && git -C <path> commit -m "Address loop-review findings"`.
+   Nothing to fix means nothing to commit here.
+5. **Record it yourself, before you reply to the child — the child does not record.** Get
+   the sha fresh, after step 4, not the sha the child originally escalated with:
+   ```
+   git -C <path> rev-parse HEAD
+   node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo <child> --sha <sha> --by node --result clean|capped
+   ```
+   The child treats your reply (next step) as its signal to push and open a PR — recording
+   first, not after, is what stops a crash between the two steps from letting a PR exist with
+   no review on record despite one having genuinely run.
+6. **Reply with a `resolution` carrying the full Iteration Breakdown table and an explicit
+   `CLEAN`/`capped` verdict — never one without the other.** The child copies this straight
+   into its own PR comment (R8 → "Requesting a review from your parent" step 6), so a bare
+   `CLEAN` gives it nothing to post, and a `capped` review that looks identical to a clean
+   one defeats the point of the comment existing. Also name the repo and the sha you just
+   recorded in step 5.
+
+You will do this up to three times — once per child in `clients` plus the CLI if
+`cliEnabled` — on top of your own review in section 6. Budget for it; it is not a formality
+you can wave through to keep the run moving.
 
 ## 9. Done means
 
@@ -220,9 +312,11 @@ Do not stop until every child has finished or escalated to a human.
 - [ ] `npm test`, `npm run typecheck`, `npm run lint` all pass
 - [ ] At least one test hit the real local server, not a mock
 - [ ] PR opened, titled `[closes #N]`, recorded, and states its dependency on the server PR
-- [ ] Your review skill ran for real (not approximated) and its Iteration Breakdown table
-      is posted as a comment on your PR
+- [ ] Your review skill ran for real (not approximated), its Iteration Breakdown table is
+      posted as a comment on your PR, and recorded with `harness.mjs loop-review`
 - [ ] **One issue opened per child, each complete enough to build from without you**, each
       recorded with `harness.mjs issue`, each linking your PR as the reference
 - [ ] **No child was launched before its issue existed**
+- [ ] **You ran the review for every child that could not run its own** (all of them, by
+      construction — section 8d), each recorded with `harness.mjs loop-review --by node`
 - [ ] Every child finished or escalated — none failed silently
