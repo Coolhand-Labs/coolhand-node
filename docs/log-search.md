@@ -65,8 +65,14 @@ the endpoint's own Ransack-backed search, not in place of it; `sort` below reach
 | `model` | `string` | Filter by model name (e.g. `"gpt-4o"`, `"claude-3-5-sonnet"`) |
 | `sourceApi` | `string` | Filter by source API (e.g. `"openai"`, `"anthropic"`, `"vertex"`) |
 | `sourceApiResult` | `string` | Filter by result status: `success`, `failed`, `operational`, `unsupported_api`, or `ingest_error`. Applied as a plain equality filter — a log with a `null` result (also generally "successful") won't match `sourceApiResult: 'success'`. Not related to `unmatchedOnly`, which filters on template assignment, not result status |
+| `sourceApplication` | `string` | Exact match against `source_application` |
+| `projectPath` | `string` | Exact match against `metadata.project_path` |
 | `unmatchedOnly` | `boolean` | Only return logs with no assigned template |
-| `daysBack` | `number` | Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default. A non-positive value (e.g. `0`) is rejected with a 422, not treated as "unrestricted" |
+| `daysBack` | `number` | Limit to logs created in the last N days. Unrestricted when omitted — there's no implicit default. A non-positive value (e.g. `0`) is rejected with a 422, not treated as "unrestricted". Ignored when `since` or `until` is given |
+| `since` | `Date \| string` | Lower bound (inclusive) on `created_at`. A `Date` is sent as ISO8601 UTC; a string is sent as-is (no offset means UTC, a date alone is midnight UTC). A `+hh:mm` offset is URL-encoded for you. Malformed, or not before `until`: `422` |
+| `until` | `Date \| string` | Upper bound (exclusive) on `created_at`. Same formats as `since` |
+| `minCost` | `number` | Only logs whose per-log `cost` (USD) is at least this. Logs that can't be priced (`cost` is `null`) are excluded. Negative or non-numeric: `422` |
+| `order` | `'cost_desc'` | Sort by per-log `cost`, highest first, replacing `sort`. Priceable logs only. Any other value: `422` |
 | `includePrompts` | `boolean` | Include `system_prompt`/`user_prompt` (truncated to 500 chars) on each result |
 | `sort` | `string` | Ransack sort expression, e.g. `"created_at desc"` — sent as `q[s]`. Defaults to newest-first (`id desc`) when omitted |
 | `page` | `number` | Page number. Must be a positive integer — the backend's pagination gem raises on `0`, negative, or non-integer values, rejected with a generic 500, not a 422 |
@@ -95,7 +101,11 @@ endpoint's underlying search may accept aren't reachable through `searchLogs`.
       output_tokens: 50,
       latency_ms: 250,
       created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z'
+      updated_at: '2026-01-01T00:00:00Z',
+      source_application: null,
+      metadata: {},
+      ingest_evidence: {},
+      cost: 0.0042               // USD; null when the log has no tokens or its model has no pricing
       // system_prompt/user_prompt only present when includePrompts was set
     }
   ],
@@ -109,6 +119,10 @@ endpoint's underlying search may accept aren't reachable through `searchLogs`.
   }
 }
 ```
+
+`cost` is priced by the same SQL as the dashboard, so tiered pricing, cached-token discounts and
+reasoning tokens are applied and the numbers match it. Log cost reports are typically
+`searchLogs({ since, until, minCost, order: 'cost_desc' })`: the most expensive requests in a window.
 
 The backing endpoint renders `logs` as a bare array on the wire; `searchLogs` reads `pagination`
 off `X-Total-Count`/`X-Page`/`X-Per-Page`/`X-Total-Pages` response headers (from
@@ -183,6 +197,9 @@ content fields directly (sliced if `section`/`maxChars` were given, with `trunca
 {
   id: 'abc123', url: '/c/.../llm_request_logs/abc123', model: 'gpt-4', source_api: 'openai',
   template_id: null, template_name: null, input_tokens: 100, output_tokens: 50, latency_ms: 250,
+  cost: 0.0042,
+  cost_breakdown: { total_cost: 0.0042, input_cost: 0.003, output_cost: 0.0012, cached_input_cost: 0,
+                    cache_creation_input_cost: 0, reasoning_output_cost: 0 }, // null when unpriceable
   created_at: '2026-01-01T00:00:00Z',
   system_prompt: '...', user_prompt: '...', output: '...',
   truncated: true, total_chars: { system_prompt: 12000, user_prompt: 400, output: 900 },

@@ -118,13 +118,17 @@ export class LoggingService extends BaseService {
    *   `params` instead (see `BaseService#paginationFromHeaders`) rather than falsely reporting zero
    *   results. Pass `params.includeTotal` to opt into exact totals at the cost of a `COUNT(*)` on
    *   the backend — left unset, the estimate above is used.
-   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
-   *   whose `status` property holds the HTTP status code.
+   *   Every log carries `cost` (USD, null when it can't be priced). `minCost` and
+   *   `order: 'cost_desc'` are limited to priceable logs; `since`/`until` replace `daysBack`.
+   * @throws Error on network failure, a non-JSON body, or an invalid `since`/`until` `Date`. A
+   *   non-2xx response throws an error whose `status` property holds the HTTP status code — `422`
+   *   for a malformed/inverted `since`/`until`, a negative or non-numeric `minCost`, or an unknown
+   *   `order`.
    */
   public async searchLogs(params: SearchLogsParams = {}): Promise<SearchLogsResponse> {
     const url = new URL(this.apiEndpoint);
 
-    const queryParams = {
+    this.setQueryParams(url, {
       template_id: params.templateId,
       workload_id: params.workloadId,
       system_prompt_contains: params.systemPromptContains,
@@ -132,19 +136,20 @@ export class LoggingService extends BaseService {
       model: params.model,
       source_api: params.sourceApi,
       source_api_result: params.sourceApiResult,
+      source_application: params.sourceApplication,
+      project_path: params.projectPath,
       unmatched_only: params.unmatchedOnly,
       days_back: params.daysBack,
+      since: this.toTimestampParam(params.since, 'since'),
+      until: this.toTimestampParam(params.until, 'until'),
+      min_cost: params.minCost,
+      order: params.order,
       include_prompts: params.includePrompts,
       'q[s]': params.sort,
       page: params.page,
       per: params.per,
       include_total: params.includeTotal
-    };
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    }
+    });
     const { body, headers } = await this.getJsonWithHeaders<LlmRequestLogSummary[]>(url.toString(), 'Log');
     return { logs: body, pagination: this.paginationFromHeaders(headers, body, params) };
   }

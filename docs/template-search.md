@@ -56,6 +56,10 @@ rather than a separate list/search pair.
 | `status` | `'draft' \| 'published' \| 'failure'` | Filter by status. Any other non-empty value returns `422` |
 | `includeDeprecated` | `boolean` | Include templates with a non-null `deprecated_at`. Defaults to `false` server-side |
 | `includeSystem` | `boolean` | Include the `Unmatched` / `Ignored API Calls` system buckets. Defaults to `false` server-side |
+| `includeMetrics` | `boolean` | Add a `metrics` object to every row (see [Metrics](#metrics)). Defaults to `false` |
+| `daysBack` | `number` | Rolling metrics window in days ending now (server default 28, max 365). Ignored when `since` is given |
+| `since` | `Date \| string` | Metrics window start (inclusive). Overrides `daysBack` |
+| `until` | `Date \| string` | Metrics window end (exclusive); defaults to now |
 | `page` | `number` | Page number, 1-based |
 | `per` | `number` | Page size (default 25, max 100). `per_page` is accepted on the wire as an alias; this SDK only sends `per` |
 
@@ -83,6 +87,8 @@ database. Each row carries a `system_template` boolean so you don't have to matc
       system_template: false,
       deprecated_at: null,           // ISO-8601 UTC; non-null means superseded
       log_count: 412,
+      source_repository: null,       // nullable
+      source_file_path: null,        // nullable
       created_at: '2026-08-20T02:12:27Z',
       updated_at: '2026-08-20T02:12:27Z'
     }
@@ -112,14 +118,24 @@ are always present, because counting a client's templates is cheap.
 
 `log_count` counts the same records `searchLogs({ templateId })` returns, so the two numbers agree.
 
-## `getTemplate(id)`
+## `getTemplate(id, opts)`
 
 ```typescript
 const template = await coolhand.getTemplate('kp9npvc8qq2q');
 
 console.log(template.user_prompt_pattern);
 console.log(template.system_prompt_pattern);
+
+// Metrics for an explicit window instead of the default 28 days
+const march = await coolhand.getTemplate('kp9npvc8qq2q', {
+  since: new Date('2026-03-01T00:00:00Z'),
+  until: new Date('2026-04-01T00:00:00Z')
+});
 ```
+
+`opts` takes the same `includeMetrics`/`daysBack`/`since`/`until` as `searchTemplates`. Unlike the
+list, `getTemplate` **includes `metrics` by default**; pass `includeMetrics: false` to omit it (which
+also skips window validation).
 
 ### Return value
 
@@ -129,10 +145,59 @@ console.log(template.system_prompt_pattern);
 |---|---|---|
 | `user_prompt_pattern` | `string \| null` | The full, untruncated regex |
 | `system_prompt_pattern` | `string \| null` | The full, untruncated regex |
+| `metrics` | `LlmMetrics` | Present unless `includeMetrics: false` — see [Metrics](#metrics) |
 
 Unlike the list, this applies **no filtering beyond client ownership**: a deprecated template or a
 system template is reachable by id with no opt-in flag, because inspecting one of those is the
 usual reason to fetch a template directly.
+
+## Metrics
+
+With `includeMetrics: true`, each row carries a `metrics` object — the dashboard's cost and
+performance numbers for that template, computed by the same SQL (tiered pricing, cached-token
+discounts and reasoning tokens applied), so they match the dashboard. `searchWorkloads` returns the
+same object per workload (see [workload-search.md](./workload-search.md)).
+
+```typescript
+const { templates } = await coolhand.searchTemplates({
+  includeMetrics: true,
+  since: new Date('2026-09-01T00:00:00Z'),
+  until: new Date('2026-10-01T00:00:00Z')
+});
+
+templates[0].metrics;
+// {
+//   days_back: null,                         // null because an explicit since defined the window
+//   since: '2026-09-01T00:00:00Z', until: '2026-10-01T00:00:00Z',
+//   request_count: 412, failure_count: 3, error_rate: 0.73, error_rate_change: -0.1,
+//   avg_cost_per_request: 0.0123, total_cost: 5.02,
+//   priced_request_count: 408, long_context_request_count: 6,
+//   total_input_tokens: 812000, total_output_tokens: 190000,
+//   avg_input_tokens: 1990, avg_output_tokens: 465, avg_latency_ms: 1840.5,
+//   correctness_score: null, sentiment_score: 82, revision_score: 90,
+//   first_request_at: '2026-07-08T19:00:36Z', last_request_at: '2026-09-30T20:03:47Z'
+// }
+```
+
+- **Window.** `daysBack` is a rolling lookback ending now. `since`/`until` set an explicit window
+  instead: `since` is inclusive, `until` is exclusive and defaults to now. **Explicit wins**: when
+  `since` is given, `daysBack` is ignored and `metrics.days_back` is `null`. With only `until`, the
+  window is `daysBack` long ending there. The prior window behind `error_rate_change` is the same
+  length, immediately before. `metrics.since`/`metrics.until` are the resolved bounds.
+- **Bounds.** A `Date` is sent as ISO8601 UTC. A string is sent as-is: no offset means UTC and a
+  date alone is midnight UTC. A `+hh:mm` offset is URL-encoded for you (a raw `+` would arrive as a
+  space and a `422`).
+- **Counters.** `failure_count` (failed logs; `error_rate` is `null` when it is `0`),
+  `total_input_tokens`/`total_output_tokens` (the raw token columns summed over non-failed logs, not
+  cache-adjusted), `priced_request_count` (non-failed logs that could be priced, i.e. what
+  `total_cost` covers) and `long_context_request_count` (priced logs that crossed their model's
+  input-token pricing tier). `total_cost`/`avg_cost_per_request` are `null` when nothing in the
+  window could be priced.
+- **Lifetime vs window.** `first_request_at`/`last_request_at` are lifetime; `sentiment_score` and
+  `revision_score` are all-time, as on the dashboard. `correctness_score` follows the window.
+- **Validation** only happens when metrics are requested (by default on `getTemplate`): a malformed
+  timestamp, a `since` not before `until`, or a window over 365 days is a `422` with the error on the
+  `since` or `until` key.
 
 ## Errors
 
@@ -144,7 +209,7 @@ message string:
 |---|---|
 | `401` | No API key, an invalid key, or the public key (which cannot read) |
 | `404` | Unknown template id — **or** one belonging to another client. Never `403`: a foreign template's existence is not disclosed |
-| `422` | An unrecognized `status`, or a `workloadId` that doesn't decode / belongs to another client |
+| `422` | An unrecognized `status`, a `workloadId` that doesn't decode / belongs to another client, or a malformed/inverted/over-365-day metrics window |
 | `504` | The `log_count` aggregate exceeded the backend's 10-second statement timeout |
 
 **`504` is expected on both methods, and it is retryable.** `log_count` aggregates over

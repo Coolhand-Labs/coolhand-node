@@ -1,4 +1,5 @@
 import {
+  GetTemplateOptions,
   LlmRequestTemplateDetail,
   LlmRequestTemplateSummary,
   SearchTemplatesParams,
@@ -40,9 +41,10 @@ export class TemplateService extends BaseService {
    *   wire and always sends `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages`, which
    *   `pagination` is read from — it is never computed from the array length. Results are newest
    *   first (`created_at DESC`, primary-key tiebreaker, so paging is stable).
-   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an
-   *   {@link HttpError} whose `status` holds the HTTP status code: `401` for a missing/invalid/
-   *   public key, `422` for an unrecognized `status` or an undecodable/foreign `workloadId`, and
+   * @throws Error on network failure, a non-JSON body, or an invalid `since`/`until` `Date`. A
+   *   non-2xx response throws an {@link HttpError} whose `status` holds the HTTP status code: `401`
+   *   for a missing/invalid/public key, `422` for an unrecognized `status`, an undecodable/foreign
+   *   `workloadId`, or a malformed/inverted metrics window (only checked with `includeMetrics`), and
    *   `504` when the `log_count` aggregate exceeds the backend's 10-second statement timeout.
    *   A `504` here is an expected, retryable condition rather than a bug — narrow the query with
    *   `workloadId`, `search`, or a smaller `per` and try again.
@@ -50,20 +52,19 @@ export class TemplateService extends BaseService {
   public async searchTemplates(params: SearchTemplatesParams = {}): Promise<SearchTemplatesResponse> {
     const url = new URL(this.apiEndpoint);
 
-    const queryParams = {
+    this.setQueryParams(url, {
       search: params.search,
       workload_id: params.workloadId,
       status: params.status,
       include_deprecated: params.includeDeprecated,
       include_system: params.includeSystem,
+      include_metrics: params.includeMetrics,
+      days_back: params.daysBack,
+      since: this.toTimestampParam(params.since, 'since'),
+      until: this.toTimestampParam(params.until, 'until'),
       page: params.page,
       per: params.per
-    };
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    }
+    });
 
     const { body, headers } = await this.getJsonWithHeaders<LlmRequestTemplateSummary[]>(
       url.toString(),
@@ -80,17 +81,27 @@ export class TemplateService extends BaseService {
    * template is reachable by id with no opt-in flag, since inspecting one of those is the usual
    * reason to fetch a template directly.
    *
+   * Includes `metrics` by default, unlike {@link searchTemplates} where it is opt-in; pass
+   * `includeMetrics: false` to omit it (which also skips window validation).
+   *
    * @param id The template hashid, i.e. the `id` field from {@link searchTemplates}.
+   * @param opts `includeMetrics` (default true) and the metrics window: `daysBack`, or `since`/`until` (explicit wins).
    * @throws Error if `id` is blank/whitespace-only or a bare dot-segment (`.`/`..`) — either would
    *   otherwise silently resolve away to the `index` route, returning a bare array typed as a
    *   single template. Error on network failure or a non-JSON body. A non-2xx response throws an
-   *   {@link HttpError} whose `status` holds the HTTP status code: `404` for an unknown id *or*
+   *   {@link HttpError} whose `status` holds the HTTP status code: `422` for a malformed/inverted metrics window, `404` for an unknown id *or*
    *   one belonging to another client (existence is not disclosed, so this is never a `403`), and
    *   `504` on the same `log_count` timeout described on {@link searchTemplates} — fetching the
    *   `Unmatched` bucket by id counts every log that never matched a template.
    */
-  public async getTemplate(id: string): Promise<LlmRequestTemplateDetail> {
+  public async getTemplate(id: string, opts: GetTemplateOptions = {}): Promise<LlmRequestTemplateDetail> {
     const url = this.buildResourceUrl(id, 'getTemplate: id must be a non-empty string');
+    this.setQueryParams(url, {
+      include_metrics: opts.includeMetrics,
+      days_back: opts.daysBack,
+      since: this.toTimestampParam(opts.since, 'since'),
+      until: this.toTimestampParam(opts.until, 'until')
+    });
     return this.getJson<LlmRequestTemplateDetail>(url.toString(), 'Template');
   }
 }
