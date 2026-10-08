@@ -1,6 +1,7 @@
 import * as zlib from 'zlib';
 import { RequestMonitoringService, _resetActiveOwner, _getActiveOwner } from '../src/services/RequestMonitoringService';
 import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
+import { CAPTURE_IDLE_TIMEOUT_MS } from '../src/utils/capped-fetch-body';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
 import { EventEmitter } from 'events';
@@ -707,7 +708,9 @@ describe('RequestMonitoringService', () => {
 
       service.setupMonitoring();
 
-      await globalThis.fetch('https://api.test.com/v1/test');
+      const hostResponse = await globalThis.fetch('https://api.test.com/v1/test');
+      // Capture follows the host's reads (see teeResponseForCapture), so the host must consume the body.
+      await hostResponse.arrayBuffer();
       await waitForMockCall(onRequestCompleteMock);
 
       expect(onRequestCompleteMock).toHaveBeenCalled();
@@ -715,6 +718,85 @@ describe('RequestMonitoringService', () => {
       expect(typeof callData.response_body).toBe('string');
       expect((callData.response_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
     }, 20000);
+
+    describe('host body consumption (issue #251)', () => {
+      function endlessSource(chunkSize = 1024) {
+        const stats = { pulls: 0, cancelled: false };
+        const stream = new ReadableStream<Uint8Array>(
+          {
+            pull(controller) {
+              stats.pulls++;
+              controller.enqueue(new Uint8Array(chunkSize).fill(97));
+            },
+            cancel() { stats.cancelled = true; }
+          },
+          { highWaterMark: 0 }
+        );
+        return { stream, stats };
+      }
+
+      async function fetchEndless(chunkSize?: number) {
+        const { stream, stats } = endlessSource(chunkSize);
+        globalThis.fetch = jest.fn().mockResolvedValue(
+          new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+        );
+        mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+        service.setupMonitoring();
+        const response = await globalThis.fetch('https://api.test.com/v1/stream-251');
+        return { stats, reader: (response.body as ReadableStream<Uint8Array>).getReader() };
+      }
+
+      it('does not read ahead of a slow host', async () => {
+        const { stats, reader } = await fetchEndless();
+        await reader.read();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(stats.pulls).toBe(1);
+        expect(onRequestCompleteMock).not.toHaveBeenCalled();
+
+        await reader.cancel();
+      });
+
+      it('cancels the download and reports the partial body when the host cancels', async () => {
+        const { stats, reader } = await fetchEndless();
+        await reader.read();
+        await reader.read();
+        await reader.cancel();
+        await waitForMockCall(onRequestCompleteMock);
+
+        expect(stats.cancelled).toBe(true);
+        const [callData] = onRequestCompleteMock.mock.calls[0];
+        expect(callData.response_body).toBe('a'.repeat(2048));
+      });
+
+      it('reports the call when the host never reads the body (status-only check)', async () => {
+        jest.useFakeTimers();
+        try {
+          const { reader, stats } = await fetchEndless();
+          reader.releaseLock();
+          expect(onRequestCompleteMock).not.toHaveBeenCalled();
+
+          await jest.advanceTimersByTimeAsync(CAPTURE_IDLE_TIMEOUT_MS);
+
+          expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+          expect(stats.pulls).toBe(0);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('stops an endless SSE stream once the host cancels it', async () => {
+        const { stats, reader } = await fetchEndless(16);
+        for (let i = 0; i < 10; i++) { await reader.read(); }
+        await reader.cancel();
+        const pullsAtCancel = stats.pulls;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(stats.cancelled).toBe(true);
+        expect(stats.pulls).toBe(pullsAtCancel);
+        expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+      });
+    });
 
     it('fires originalFetch before awaiting a slow Request body', async () => {
       // Regression test for interceptFetch's request_body extraction: it must run concurrently

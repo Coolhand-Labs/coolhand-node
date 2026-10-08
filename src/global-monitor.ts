@@ -13,7 +13,7 @@ import { CappedBuffer } from './utils/capped-buffer.js';
 import { createDeferredBodyCapture } from './utils/deferred-body-capture.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
-import { readCappedResponseText } from './utils/capped-fetch-body.js';
+import { teeResponseForCapture } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared } from './utils/self-endpoint.js';
@@ -866,13 +866,13 @@ async function interceptFetch(
       matchedPattern?.pattern
     ) || {};
 
-    // Clone response to read body without consuming it. Drain and log in the
-    // background so a slow/streaming body doesn't delay the caller's fetch() —
-    // same reasoning as the res.on('data')/'end' handling on the http/https side.
-    const responseClone = response.clone();
-    readCappedResponseText(responseClone, MAX_DECOMPRESSED_BYTES, () => {
+    // Capture the body as the host reads it (bounded, and a host cancel cancels the download —
+    // see teeResponseForCapture) and log in the background once the host is done, so a
+    // slow/streaming body doesn't delay the caller's fetch().
+    const { response: hostResponse, captured } = teeResponseForCapture(response, MAX_DECOMPRESSED_BYTES, () => {
       log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
-    })
+    });
+    captured
       .then((responseText) => {
         callData.response_body = parseAndSanitizeBody(
           responseText,
@@ -895,6 +895,8 @@ async function interceptFetch(
         unregisterActiveRequest(requestId, uniqueId);
       })
       .catch(logFailedRequestSubmission);
+
+    return hostResponse;
   } catch (err) {
     log(`⚠️ Response capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
     unregisterActiveRequest(requestId, uniqueId);
