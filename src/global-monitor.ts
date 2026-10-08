@@ -10,6 +10,7 @@ import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { decompressBuffer, MAX_DECOMPRESSED_BYTES } from './utils/decompress.js';
 import { CappedBuffer } from './utils/capped-buffer.js';
+import { createDeferredBodyCapture } from './utils/deferred-body-capture.js';
 import { isNonInferenceURL } from './non-inference-filter.js';
 import { createResponseTee } from './utils/tee-response.js';
 import { readCappedResponseText } from './utils/capped-fetch-body.js';
@@ -653,6 +654,16 @@ function interceptRequest(
     log(`⚠️ Request body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
   });
 
+  // Parsing + sanitizing a large body is expensive, so it runs after the host's send (see req.end
+  // below) and is flushed before logging, so the logged body is always the sanitized one.
+  const requestBodyCapture = createDeferredBodyCapture(
+    requestBuffer,
+    // Re-read state (the `state` above outlives a reset); no sanitizer means the body is dropped.
+    (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
+    (body) => { callData.request_body = body; },
+    (err) => log(`⚠️ Request body capture failed for call #${callData.id}: ${formatErrorMessage(err)}`)
+  );
+
   // No callback passed here — patchResponseEmit below substitutes the delivered response for
   // every 'response' listener uniformly, whether registered via a callback passed to
   // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
@@ -691,6 +702,7 @@ function interceptRequest(
     const finalize = async (): Promise<void> => {
       if (finalized) { return; }
       finalized = true;
+      requestBodyCapture.flush();
       try {
         try {
           const rawBuffer = responseBuffer.concat();
@@ -759,17 +771,11 @@ function interceptRequest(
 
   req.end = ((chunk?: any, encoding?: any, callback?: any) => {
     captureRequestChunk(requestBuffer, chunk, encoding, onCaptureError);
-    try {
-      callData.request_body = parseAndSanitizeBody(
-        requestBuffer.concat().toString('utf-8'),
-        (body) => state.globalPatternService?.sanitizeBody(body) ?? null,
-        onCaptureError
-      );
-      log(`📤 Request complete for call #${callData.id}`);
-    } catch (err) {
-      onCaptureError(err);
-    }
-    return originalEnd(chunk, encoding, callback);
+    // Send first; capture the body afterwards so it can't delay the host's request.
+    const result = originalEnd(chunk, encoding, callback);
+    requestBodyCapture.schedule();
+    log(`📤 Request complete for call #${callData.id}`);
+    return result;
   });
 
   req.on('error', (err: Error) => {

@@ -647,6 +647,112 @@ describe('Global Monitor', () => {
       expect(typeof callData.request_body).toBe('string');
       expect((callData.request_body as string).length).toBeLessThanOrEqual(MAX_DECOMPRESSED_BYTES);
     }, 20000);
+
+    describe('deferred request body capture (issue #252)', () => {
+      const { EventEmitter } = require('events');
+
+      // Sets up a fake underlying request. `respondImmediately` emits the response in a microtask
+      // (i.e. before any setImmediate) to exercise the flush-before-logging path.
+      const setupRequest = (onEnd: () => void, respondImmediately = true) => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn().mockReturnValue(true);
+        fakeReq.end = jest.fn(() => { onEnd(); });
+
+        underlyingHttpsRequestMock.mockImplementationOnce(() => {
+          const fakeRes: any = new EventEmitter();
+          fakeRes.statusCode = 200;
+          fakeRes.headers = { 'content-type': 'application/json' };
+          fakeRes.destroyed = false;
+          fakeRes.destroy = jest.fn();
+          if (respondImmediately) {
+            queueMicrotask(() => {
+              fakeReq.emit('response', fakeRes);
+              fakeRes.emit('end');
+            });
+          }
+          return fakeReq;
+        });
+
+        mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+          pattern: { name: 'Test API', domains: ['api.test.com'] },
+          matchType: 'domain',
+          matchValue: 'api.test.com'
+        } as any);
+        return fakeReq;
+      };
+
+      it('calls the original end() before parsing or sanitizing the request body', async () => {
+        const sanitizeBody = mockPatternMatchingService.sanitizeBody as jest.Mock;
+        const parseSpy = jest.spyOn(JSON, 'parse');
+        let sanitizeCallsAtEnd = -1;
+        let parseCallsAtEnd = -1;
+        setupRequest(() => {
+          sanitizeCallsAtEnd = sanitizeBody.mock.calls.length;
+          parseCallsAtEnd = parseSpy.mock.calls.length;
+        });
+
+        await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+        const parseCallsBefore = parseSpy.mock.calls.length;
+
+        const req: any = require('https').request('https://api.test.com/v1/chat', { method: 'POST' }, jest.fn());
+        const payload = { model: 'm', messages: [{ role: 'user', content: 'x'.repeat(5 * 1024 * 1024) }] };
+        req.write(JSON.stringify(payload).slice(0, 1000));
+        req.end(JSON.stringify(payload).slice(1000));
+
+        expect(sanitizeCallsAtEnd).toBe(0);
+        expect(parseCallsAtEnd).toBe(parseCallsBefore);
+
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        parseSpy.mockRestore();
+
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(sanitizeBody).toHaveBeenCalledWith(payload);
+        expect(callData.request_body).toEqual(payload);
+      }, 20000);
+
+      it('populates the sanitized request_body before logging even if the response completes first', async () => {
+        (mockPatternMatchingService.sanitizeBody as jest.Mock).mockImplementationOnce((body: any) => ({ ...body, redacted: true }));
+        setupRequest(() => undefined);
+
+        await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+        const req: any = require('https').request('https://api.test.com/v1/chat', { method: 'POST' }, jest.fn());
+        req.end(JSON.stringify({ prompt: 'a' }));
+
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(callData.request_body).toEqual({ prompt: 'a', redacted: true });
+      });
+
+      it('does not throw or capture when end() is called with only a callback', async () => {
+        const endCallback = jest.fn();
+        const originalEndMock = setupRequest(() => undefined).end;
+
+        await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+        const req: any = require('https').request('https://api.test.com/v1/chat', { method: 'POST' }, jest.fn());
+        expect(() => req.end(endCallback)).not.toThrow();
+        expect(originalEndMock).toHaveBeenCalledWith(endCallback, undefined, undefined);
+
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(callData.request_body).toBeNull();
+      });
+
+      it.each([
+        ['returns null', () => null],
+        ['throws', () => { throw new Error('boom'); }]
+      ])('never logs the unsanitized request body when sanitizeBody %s', async (_label, impl) => {
+        (mockPatternMatchingService.sanitizeBody as jest.Mock).mockImplementationOnce(impl);
+        setupRequest(() => undefined);
+
+        await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+        const req: any = require('https').request('https://api.test.com/v1/chat', { method: 'POST' }, jest.fn());
+        req.end(JSON.stringify({ secret: 'sk-live-123' }));
+
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+        expect(callData.request_body).toBeNull();
+      });
+    });
   });
 
   describe('Fetch Patching', () => {
