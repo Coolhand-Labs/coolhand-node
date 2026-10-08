@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.15.0] - 2026-10-08
 
 ### ✨ New Features
 - **Cost-report read surface: `Coolhand#searchWorkloads(params)` + new `WorkloadService`, and metrics/cost options on templates and logs.** `searchWorkloads` lists workloads (`GET /api/v2/workloads`) as `{ workloads, pagination }`. `searchTemplates`/`getTemplate` now accept `includeMetrics`, `daysBack`, `since` and `until`; `searchLogs` gains `since`, `until`, `minCost`, `order: 'cost_desc'`, `projectPath` and `sourceApplication`, and log rows carry `cost`. `since`/`until` take a `Date` (sent as ISO 8601 UTC; an invalid `Date` throws before any request) or a string passed through for the server to validate. New exported types include `LlmMetrics`, `WorkloadSummary`, `SearchWorkloadsParams`/`SearchWorkloadsResponse` and `GetTemplateOptions`; `getLogContent` now types `cost` and `cost_breakdown`. Needs a backend carrying Coolhand-Labs/coolhand#1749 (an older server ignores the new parameters). See `docs/workload-search.md`, `docs/template-search.md` and `docs/log-search.md`. ([#268](https://github.com/Coolhand-Labs/coolhand-node/issues/268), [#269](https://github.com/Coolhand-Labs/coolhand-node/pull/269))
@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `fetch()` `Response` your code receives is now a thin wrapper around a pull-driven stream, not the original object.** Status, headers, `url`, `redirected` and `type` are mirrored and every body-reading API behaves as before, but `response.body.getReader({ mode: 'byob' })` is not supported on it. Logging for a host that never reads (or cancels) the body is now deferred up to 30 s (previously immediate), and a body the host abandons without cancelling is logged truncated to what was read by then. ([#251](https://github.com/Coolhand-Labs/coolhand-node/issues/251), [#265](https://github.com/Coolhand-Labs/coolhand-node/pull/265))
 - **Response types gained required fields** (`cost`, `metadata`, `ingest_evidence`, …) to match the API definition. This only breaks code that constructs those types by hand (e.g. test fixtures). ([#269](https://github.com/Coolhand-Labs/coolhand-node/pull/269))
 - **Contributor note:** the repository's agent instructions moved from `CLAUDE.md` to `AGENTS.md`. Claude Code older than 2.1.277 will not pick them up until updated. ([#257](https://github.com/Coolhand-Labs/coolhand-node/pull/257))
+
+### 🔒 Security
+- **`FormData` request-body capture is now linear-time.** Serializing a `FormData` with one key repeated many times copied the whole value array on every repeat (quadratic) and ran synchronously *before* the host's `fetch()` was dispatched, so a user-controlled form forwarded to a monitored provider could stall the host's event loop for seconds (≈3.6 s at 50,000 repeats, ≈15 s at 100,000). Values are now appended in place.
+- **`sanitizeURL` now also redacts `X-Goog-Signature`, `X-Goog-Credential` and `session_token` query params** (presigned Google Cloud Storage URLs and session-token query auth), the same defense-in-depth as `X-Amz-Signature`/`X-Amz-Security-Token` before them.
 
 ### 🐛 Bug Fixes
 - **Request-body capture no longer delays the host's send.** Parsing and sanitizing up to 50 MB of request body now runs after the original `end(...)`, on both the `http`/`https` and `fetch` interception paths, and is flushed before the request is logged, so `request_body` is always populated and sanitized. `req.end(callback)` also no longer throws from `Buffer.from(fn)` before the request is sent. ([#252](https://github.com/Coolhand-Labs/coolhand-node/issues/252), [#262](https://github.com/Coolhand-Labs/coolhand-node/pull/262))
