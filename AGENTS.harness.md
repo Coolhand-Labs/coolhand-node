@@ -7,7 +7,7 @@ fan the work out to python, ruby and the CLI.
 This file is self-contained. You do not share a context window with the agent that
 launched you.
 
-**You are the reference implementation.** `coolhand-node/CLAUDE.md` says it directly:
+**You are the reference implementation.** `coolhand-node/AGENTS.md` says it directly:
 node is the reference for the Coolhand SDK family, and structural changes here get a
 matching issue opened on the sibling packages. That is why python and ruby hang off you
 rather than off the server — they copy what you prove, and you are the one who tells
@@ -130,7 +130,7 @@ place of an issue url.
 
 1. Push and open the PR in `coolhand-node`.
 2. **Prefix the PR title with `[closes #N]`**, using your issue number from section 0.
-   That is this repo's documented convention (`CLAUDE.md` → Pull requests) and it is what
+   That is this repo's documented convention (`AGENTS.md` → Pull requests) and it is what
    auto-closes the issue on merge. Keep the shared `branch` name as-is — it is what makes
    all five PRs findable as one unit of work, and this repo has no branch-name rule.
 3. Body must say: **depends on the server PR — deploy that first.**

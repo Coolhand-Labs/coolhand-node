@@ -38,7 +38,7 @@ Repeat the following cycle up to the round cap (default 5). Bracket each
 round's wall-clock time with `date +%s` before step 1 and after step 3
 completes.
 
-1. **Deterministic checks.** Run this repo's verify gate from `CLAUDE.md`
+1. **Deterministic checks.** Run this repo's verify gate from `AGENTS.md`
    (mirrors what CI runs as separate lint/typecheck/test jobs):
 
    ```bash
@@ -150,7 +150,7 @@ reuse/simplification/efficiency, every round should also flag:
   that throw with a `.status`-carrying error, e.g. `McpService`/
   feedback-read methods)
 - Inefficiencies or unnecessary complexity
-- Violations of project conventions in `CLAUDE.md`, especially its "Code
+- Violations of project conventions in `AGENTS.md`, especially its "Code
   conventions" section:
   - **TypeScript best practices**: `any`/loose typing used where a
     precise interface was possible, non-null assertions (`!`) or casts
@@ -160,14 +160,14 @@ reuse/simplification/efficiency, every round should also flag:
     duplicates something already in `BaseService` or a sibling service,
     or the same logic repeated twice within one class instead of factored
     into a private helper (but don't flag a single, one-off snippet as a
-    missing abstraction — see `CLAUDE.md`'s premature-abstraction caveat)
+    missing abstraction — see `AGENTS.md`'s premature-abstraction caveat)
 
 **npm package publishing discipline**
 - Follow best practices for TypeScript & Node.js and for npm package
   publishing — don't break public interfaces unless necessary
 - If a break is necessary, it must come with appropriate documentation
   updates and a clear call-out of the SemVer bump it implies — but per
-  `CLAUDE.md`'s "Changelog and versioning" rule, don't expect (or ask for)
+  `AGENTS.md`'s "Changelog and versioning" rule, don't expect (or ask for)
   `package.json`'s version to actually be bumped on this branch; that
   happens once, at release time, in `/prep-release`
 - Any change to the public API surface (`src/index.ts`, `Coolhand` class
@@ -198,16 +198,16 @@ reuse/simplification/efficiency, every round should also flag:
   reflect the changes on this branch
 - Verify any existing documentation touched by this diff is still
   accurate (no stale examples, field names, or descriptions)
-- Enforce the README/docs split from `CLAUDE.md` (README stays a
+- Enforce the README/docs split from `AGENTS.md` (README stays a
   scannable landing page; anything needing more than one code block
   belongs in `docs/`)
 - Flag a `CHANGELOG.md` or `package.json`-version edit on this branch as
-  a violation, per `CLAUDE.md`'s "Changelog and versioning" rule — those
+  a violation, per `AGENTS.md`'s "Changelog and versioning" rule — those
   are `/prep-release`'s to write, not this branch's. Skip this check on a
   `release/v*` branch — that's exactly where `/prep-release` writes them
   intentionally.
 - If this branch makes a structural change (new README section pattern,
-  new `docs/` pattern, new configuration option), `CLAUDE.md` asks for a
+  new `docs/` pattern, new configuration option), `AGENTS.md` asks for a
   companion issue/PR on `coolhand-python` to keep the two SDKs in sync —
   flag if that hasn't been mentioned anywhere
 

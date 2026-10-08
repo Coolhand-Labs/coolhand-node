@@ -23,7 +23,7 @@ everything merged since the last tag, not just one diff. For an iterative
 diff-scoped review during normal development, use `/loop-review` instead;
 this skill is for the release event itself.
 
-Per `CLAUDE.md`, feature/fix branches never touch `CHANGELOG.md` or
+Per `AGENTS.md`, feature/fix branches never touch `CHANGELOG.md` or
 `package.json`'s `version` field — this skill is the only place those get
 written. If a chosen PR's diff does touch either file, treat it as a normal
 part of that PR's diff (don't strip it), but don't let it change how
@@ -40,7 +40,7 @@ regardless of what an individual PR's diff already contains.
    time — and rate two independent axes:
    - **Quality** (High/Medium/Low): does the diff include test coverage
      proportional to the `src/` change, is the code consistent with this
-     repo's conventions (`CLAUDE.md`'s TypeScript/DRY rules), does the PR
+     repo's conventions (`AGENTS.md`'s TypeScript/DRY rules), does the PR
      description read as complete work rather than a stub or "WIP, not
      ready" note.
    - **Risk** (High/Medium/Low): does it touch a security- or
@@ -205,15 +205,15 @@ reports both.
      history, so spot-check a sample of such claims against the actual
      Coolhand API docs or backend source if you have access, rather than
      assuming prose that's been sitting in the repo is still accurate.
-     Follow this repo's docs philosophy from `CLAUDE.md`: the README stays
+     Follow this repo's docs philosophy from `AGENTS.md`: the README stays
      a scannable landing page (basic config/feedback snippets only);
      anything needing more than one code block belongs in `docs/`; each
      integration gets its own `docs/frameworks/<name>.md`.
-   - `CLAUDE.md` itself — its "Code conventions" examples (e.g. the DRY
+   - `AGENTS.md` itself — its "Code conventions" examples (e.g. the DRY
      section's pointer to whichever service currently has the canonical
      shared-helper example) should still name real, current code, not
      something renamed or removed since.
-2. **Cross-SDK alignment.** Per `CLAUDE.md`'s "Cross-SDK alignment"
+2. **Cross-SDK alignment.** Per `AGENTS.md`'s "Cross-SDK alignment"
    section, check whether any structural change since the last tag (same
    trigger list as that section — and as `/loop-review` applies per-PR)
    got a companion issue/PR on `coolhand-python`. This re-checks the whole
@@ -354,7 +354,7 @@ commit is self-consistent), and run `npm install --package-lock-only` so
 
 1. Run `npm run lint && npm run typecheck && npm test` on `release/vX.Y.Z`
    — this mirrors CI's `lint` and `test` jobs and is the same gate
-   `CLAUDE.md` requires before any commit. Then run `npm run build` and
+   `AGENTS.md` requires before any commit. Then run `npm run build` and
    confirm it succeeds (this also re-runs `sync-version` and regenerates
    `dist/`, matching CI's `build` job), then `npm run test:cjs && npm run
    test:esm` to smoke-test both published module formats — this is part
