@@ -6,6 +6,7 @@ import {
   getFetchHeaders,
   getFetchRequestBody
 } from '../src/utils/fetch-request-helpers';
+import { MAX_DECOMPRESSED_BYTES } from '../src/utils/decompress';
 
 describe('isRequestLike', () => {
   it('returns true for a real Request instance', () => {
@@ -105,9 +106,45 @@ describe('getFetchRequestBody', () => {
     expect(await getFetchRequestBody('https://api.test.com', { body: new URLSearchParams({ a: '1' }) })).toBe('a=1');
   });
 
-  it('does not capture bodies that cannot be read synchronously (#250)', async () => {
-    expect(await getFetchRequestBody('https://api.test.com', { body: new FormData() })).toBeNull();
-    expect(await getFetchRequestBody('https://api.test.com', { body: new Blob(['x']) })).toBeNull();
+  it('reads a text Blob body, capped at the byte limit (#254)', async () => {
+    expect(await getFetchRequestBody('https://api.test.com', { body: new Blob(['{"a":1}'], { type: 'application/json' }) })).toBe('{"a":1}');
+    expect(await getFetchRequestBody('https://api.test.com', { body: new Blob(['{"a":1}']) })).toBe('{"a":1}');
+    const big = new Blob(['x'.repeat(MAX_DECOMPRESSED_BYTES + 100)]);
+    expect((await getFetchRequestBody('https://api.test.com', { body: big }))?.length).toBe(MAX_DECOMPRESSED_BYTES);
+  });
+
+  it('does not read binary Blob bodies (#254)', async () => {
+    expect(await getFetchRequestBody('https://api.test.com', { body: new Blob(['x'], { type: 'image/png' }) })).toBeNull();
+  });
+
+  it('serializes FormData string fields, skipping file parts (#254)', async () => {
+    const form = new FormData();
+    form.append('model', 'gpt-4');
+    form.append('tag', 'a');
+    form.append('tag', 'b');
+    form.append('file', new Blob(['binary']), 'x.bin');
+    expect(JSON.parse((await getFetchRequestBody('https://api.test.com', { body: form })) as string))
+      .toEqual({ model: 'gpt-4', tag: ['a', 'b'] });
+  });
+
+  it('keeps FormData fields named like Object.prototype members (#254)', async () => {
+    const form = new FormData();
+    form.append('constructor', 'a');
+    form.append('toString', 'b');
+    expect(JSON.parse((await getFetchRequestBody('https://api.test.com', { body: form })) as string))
+      .toEqual({ constructor: 'a', toString: 'b' });
+  });
+
+  it('caps FormData field capture at the byte limit (#254)', async () => {
+    const form = new FormData();
+    form.append('small', 'ok');
+    form.append('huge', 'x'.repeat(MAX_DECOMPRESSED_BYTES + 1));
+    expect(JSON.parse((await getFetchRequestBody('https://api.test.com', { body: form })) as string)).toEqual({ small: 'ok' });
+  });
+
+  it('does not capture ReadableStream bodies (#254)', async () => {
+    const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('x')); c.close(); } });
+    expect(await getFetchRequestBody('https://api.test.com', { body, duplex: 'half' } as RequestInit)).toBeNull();
   });
 
   it('does not throw for a null init body (#250)', async () => {

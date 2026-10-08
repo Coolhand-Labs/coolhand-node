@@ -49,7 +49,8 @@ export class Coolhand {
       silent: this.silent,
       debug: options.debug,
       dryRun: options.dryRun,
-      baseUrl: options.baseUrl
+      baseUrl: options.baseUrl,
+      requestTimeoutMs: options.requestTimeoutMs
     };
 
     this.loggingService = new LoggingService(serviceConfig);

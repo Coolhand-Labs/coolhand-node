@@ -22,17 +22,23 @@ export interface BaseServiceConfig {
   debug?: boolean;
   dryRun?: boolean;
   baseUrl?: string;
+  /**
+   * Timeout in milliseconds for Coolhand API calls. Defaults to 30 000. File uploads keep their
+   * own, longer ceiling and are not affected.
+   */
+  requestTimeoutMs?: number;
 }
 
 // Every call's network wait is bounded: without a timeout, one hung endpoint would keep each
 // fire-and-forget promise — and the prompt/response payload it closes over — alive forever.
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 // A flat 30s would abort a large file upload over a slow link mid-transfer, so multipart uploads
 // get a much longer ceiling — still bounded, so a hung endpoint can't hold the payload forever.
 const UPLOAD_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
 // AbortSignal.timeout is Node 17.3+; on anything older, requests just go unbounded as before.
-function timeoutSignal(ms: number = DEFAULT_REQUEST_TIMEOUT_MS): AbortSignal | undefined {
+function timeoutSignal(ms: number): AbortSignal | undefined {
   return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(ms)
     : undefined;
@@ -102,12 +108,21 @@ export abstract class BaseService {
   protected debug: boolean;
   protected dryRun: boolean;
   protected apiEndpoint: string;
+  protected requestTimeoutMs: number;
 
   constructor(config: BaseServiceConfig, endpointPath: string) {
     this.apiKey = config.apiKey;
     this.silent = config.silent;
     this.debug = config.debug || false;
     this.dryRun = config.dryRun || false;
+
+    const timeout = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    // Integer and <= 2^31-1: AbortSignal.timeout rejects fractions (which would make every call
+    // fail silently inside sendRequest's catch), and req.setTimeout overflows to 1ms above that.
+    if (!Number.isInteger(timeout) || timeout <= 0 || timeout > MAX_REQUEST_TIMEOUT_MS) {
+      throw new Error(`requestTimeoutMs must be a positive integer number of milliseconds (max ${MAX_REQUEST_TIMEOUT_MS}). Got: ${String(config.requestTimeoutMs)}`);
+    }
+    this.requestTimeoutMs = timeout;
 
     const rawBase = config.baseUrl ?? 'https://coolhandlabs.com';
     validateBaseUrl(rawBase);
@@ -159,7 +174,7 @@ export abstract class BaseService {
       const requestOptions = this.createRequestOptions(payload);
 
       if (typeof fetch !== 'undefined') {
-        const response = await fetch(this.apiEndpoint, { signal: timeoutSignal(), ...requestOptions });
+        const response = await fetch(this.apiEndpoint, { signal: timeoutSignal(this.requestTimeoutMs), ...requestOptions });
         return await this.parseJsonResponse<T>(response, successMessage);
       } else {
         // Fallback to using https/http modules
@@ -262,8 +277,8 @@ export abstract class BaseService {
         });
       });
 
-      req.setTimeout(DEFAULT_REQUEST_TIMEOUT_MS, () => {
-        req.destroy(new Error(`Request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`));
+      req.setTimeout(this.requestTimeoutMs, () => {
+        req.destroy(new Error(`Request timed out after ${this.requestTimeoutMs}ms`));
       });
       req.on('error', reject);
       req.write(postData);
@@ -297,7 +312,7 @@ export abstract class BaseService {
 
     let res: Response;
     try {
-      res = await fetch(url, { signal: timeoutSignal(), ...init, redirect: 'error' });
+      res = await fetch(url, { signal: timeoutSignal(this.requestTimeoutMs), ...init, redirect: 'error' });
     } catch (err) {
       throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
     }

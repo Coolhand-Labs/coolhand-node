@@ -349,6 +349,7 @@ pagination, and error handling (including the retryable `504` both methods can t
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
 | `excludeApiPatterns` | string[] | `[]` | Glob patterns for endpoints to exclude from monitoring (e.g. health checks). |
 | `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
+| `requestTimeoutMs` | number | `30000` | Timeout for Coolhand API calls in milliseconds. Raise it for slow self-hosted backends. File uploads use a separate, longer limit. |
 
 ### Environment Variables
 

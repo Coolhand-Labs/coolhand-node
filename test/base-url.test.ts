@@ -267,6 +267,53 @@ describe('baseUrl configuration', () => {
     });
   });
 
+  describe('requestTimeoutMs option (#254)', () => {
+    async function timeoutUsedBy(build: () => { run(): Promise<unknown> }): Promise<number[]> {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true, headers: new Headers(), json: () => Promise.resolve({ id: 1 }), text: () => Promise.resolve('{"id":1}')
+      }) as any;
+      try {
+        await build().run();
+        return timeoutSpy.mock.calls.map(([ms]) => ms);
+      } finally {
+        globalThis.fetch = originalFetch;
+        timeoutSpy.mockRestore();
+      }
+    }
+
+    it('defaults to 30s', async () => {
+      const svc = new LoggingService({ apiKey: 'k', silent: true });
+      expect(await timeoutUsedBy(() => ({ run: () => svc.logRequestToAPI(fakeCallData) }))).toEqual([30_000]);
+    });
+
+    it('applies a custom value to sendRequest and fetchWithHeaders calls', async () => {
+      const svc = new LoggingService({ apiKey: 'k', silent: true, requestTimeoutMs: 90_000 });
+      expect(await timeoutUsedBy(() => ({ run: () => svc.logRequestToAPI(fakeCallData) }))).toEqual([90_000]);
+      const feedback = new FeedbackService({ apiKey: 'k', silent: true, requestTimeoutMs: 45_000 });
+      expect(await timeoutUsedBy(() => ({ run: () => feedback.getFeedback('1').catch(() => null) }))).toEqual([45_000]);
+    });
+
+    it('does not shorten the separate file upload ceiling', async () => {
+      const svc = new ClientFileService({ apiKey: 'k', silent: true, requestTimeoutMs: 1_000 });
+      const used = await timeoutUsedBy(() => ({
+        run: () => svc.createClientFile({ name: 't', filename: 't.txt', file: Buffer.from('hi') })
+      }));
+      expect(used).toEqual([10 * 60_000]);
+    });
+
+    it('is passed through from the Coolhand constructor', async () => {
+      const coolhand = new Coolhand({ apiKey: 'k', silent: true, requestTimeoutMs: 12_000 });
+      const used = await timeoutUsedBy(() => ({ run: () => coolhand.createFeedback({ llm_request_log_id: 1, like: true }) }));
+      expect(used).toEqual([12_000]);
+    });
+
+    it.each([0, -5, NaN, Infinity, 0.5, 1e20, '30' as unknown as number])('rejects an invalid value: %p', (requestTimeoutMs) => {
+      expect(() => new Coolhand({ apiKey: 'k', silent: true, requestTimeoutMs })).toThrow(/requestTimeoutMs/);
+    });
+  });
+
   describe('read-path response shape (#250)', () => {
     it.each(['null', '42', '"text"'])('rejects a non-object JSON body (%s) instead of returning it to callers', async (text) => {
       const originalFetch = globalThis.fetch;

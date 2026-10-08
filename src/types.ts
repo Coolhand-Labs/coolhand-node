@@ -5,6 +5,8 @@ export interface CoolhandOptions {
   debug?: boolean;
   dryRun?: boolean;
   baseUrl?: string;
+  /** Timeout in ms for Coolhand API calls (default 30000). Useful for slow self-hosted backends. */
+  requestTimeoutMs?: number;
   excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; shim will be removed after v1.x.x. */
   environment?: 'local' | 'production';
