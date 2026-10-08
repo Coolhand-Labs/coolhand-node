@@ -1,0 +1,298 @@
+/**
+ * Auto-generated from src/api-patterns.json — do not edit manually.
+ * Run `npm run generate-patterns` or `npm run build` to regenerate.
+ */
+
+import type { CoolhandAPIPattern } from './types.js';
+
+export const DEFAULT_API_PATTERNS: readonly CoolhandAPIPattern[] = [
+  {
+    "name": "OpenAI",
+    "domains": [
+      "openai.com",
+      "api.openai.com"
+    ],
+    "paths": [
+      "/v1/chat/completions",
+      "/v1/completions",
+      "/v1/embeddings"
+    ],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "openai-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Anthropic",
+    "domains": [
+      "api.anthropic.com"
+    ],
+    "paths": [
+      "/v1/messages",
+      "/v1/complete"
+    ],
+    "headers": {
+      "x-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Google AI",
+    "domains": [
+      "generativelanguage.googleapis.com"
+    ],
+    "paths": [
+      "/v1/models",
+      "/v1beta/models",
+      ":generateContent",
+      ":streamGenerateContent",
+      ":countTokens",
+      ":embedContent"
+    ],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "x-goog-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "GitHub Models",
+    "domains": [
+      "models.github.ai",
+      "models.inference.ai.azure.com"
+    ],
+    "paths": [
+      "/v1/chat/completions",
+      "/v1/completions",
+      "/v1/embeddings"
+    ],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Vertex AI",
+    "domains": [
+      "aiplatform.googleapis.com"
+    ],
+    "paths": [
+      ":generateContent",
+      ":streamGenerateContent",
+      ":embedContent",
+      ":predict",
+      "/endpoints/openapi/"
+    ],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "x-goog-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "OpenRouter",
+    "domains": [
+      "openrouter.ai"
+    ],
+    "paths": [
+      "/api/v1/chat/completions",
+      "/api/v1/completions",
+      "/api/v1/embeddings"
+    ],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "x-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "OpenCode",
+    "domains": [
+      "opencode.ai",
+      "api.opencode.ai"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "x-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Cloudflare AI Gateway",
+    "domains": [
+      "gateway.ai.cloudflare.com"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]",
+      "cf-aig-authorization": "[REDACTED]",
+      "x-api-key": "[REDACTED]",
+      "openai-api-key": "[REDACTED]",
+      "x-goog-api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Azure OpenAI",
+    "domains": [
+      "openai.azure.com",
+      "openai.azure.us",
+      "openai.azure.cn"
+    ],
+    "paths": [],
+    "headers": {
+      "api-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Azure AI Services",
+    "domains": [
+      "cognitiveservices.azure.com",
+      "cognitiveservices.azure.us",
+      "cognitiveservices.azure.cn",
+      "services.ai.azure.com",
+      "services.ai.azure.us"
+    ],
+    "paths": [
+      "/openai/",
+      "/models/",
+      "/api/projects/"
+    ],
+    "requiresPathMatch": true,
+    "headers": {
+      "api-key": "[REDACTED]",
+      "ocp-apim-subscription-key": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Azure AI Foundry (Serverless)",
+    "domains": [
+      "inference.ai.azure.com",
+      "models.ai.azure.com"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Azure Machine Learning",
+    "domains": [
+      "inference.ml.azure.com",
+      "inference.ml.azure.us"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "DeepSeek",
+    "domains": [
+      "api.deepseek.com"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Mistral",
+    "domains": [
+      "api.mistral.ai"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Perplexity",
+    "domains": [
+      "api.perplexity.ai"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "xAI",
+    "domains": [
+      "api.x.ai"
+    ],
+    "paths": [],
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Cohere",
+    "domains": [
+      "api.cohere.com",
+      "api.cohere.ai"
+    ],
+    "paths": [
+      "/v2/chat",
+      "/v1/embed",
+      "/v2/embed"
+    ],
+    "requiresPathMatch": true,
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "TypeSafe Jev",
+    "domains": [
+      "api.typesafe.ai"
+    ],
+    "paths": [
+      "/v1/systemone"
+    ],
+    "requiresPathMatch": true,
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Ollama",
+    "domains": [
+      "ollama.com"
+    ],
+    "ports": [
+      11434
+    ],
+    "paths": [
+      "/api/chat",
+      "/api/generate",
+      "/api/embed",
+      "/api/embeddings"
+    ],
+    "requiresPathMatch": true,
+    "headers": {
+      "authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "Bedrock",
+    "domains": [
+      "bedrock-runtime.*.amazonaws.com",
+      "bedrock-runtime-fips.*.amazonaws.com",
+      "bedrock-runtime.*.amazonaws.com.cn"
+    ],
+    "paths": [
+      "/model/",
+      "/openai/"
+    ],
+    "requiresPathMatch": true,
+    "headers": {
+      "authorization": "[REDACTED]",
+      "x-amz-security-token": "[REDACTED]"
+    }
+  },
+  {
+    "name": "ElevenLabs",
+    "domains": [
+      "api.elevenlabs.io"
+    ],
+    "paths": [],
+    "headers": {
+      "xi-api-key": "[REDACTED]"
+    }
+  }
+];

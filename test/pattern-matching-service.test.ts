@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandAPIPattern } from '../src/types';
+import { DEFAULT_API_PATTERNS } from '../src/default-api-patterns';
 
 // Mock fs module
 jest.mock('fs');
@@ -69,16 +70,21 @@ describe('PatternMatchingService', () => {
   });
 
   describe('Constructor and Pattern Loading', () => {
-    it('should load default patterns file successfully', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-
+    it('should load the built-in default patterns without touching the filesystem', () => {
       service = new PatternMatchingService();
 
-      expect(mockPath.join).toHaveBeenCalledWith(expect.any(String), '..', 'api-patterns.json');
-      expect(mockFs.existsSync).toHaveBeenCalled();
-      expect(mockFs.readFileSync).toHaveBeenCalledWith('/mock/path/api-patterns.json', 'utf-8');
-      expect(service.getPatternsCountSync()).toBe(4);
+      expect(mockFs.existsSync).not.toHaveBeenCalled();
+      expect(mockFs.readFileSync).not.toHaveBeenCalled();
+      expect(service.getPatternsCountSync()).toBe(DEFAULT_API_PATTERNS.length);
+      expect(service.getLoadedPatternsSync()).toEqual(DEFAULT_API_PATTERNS);
+    });
+
+    it('should give each instance its own copy of the default patterns', () => {
+      const first = new PatternMatchingService();
+      first.getLoadedPatternsSync()[0].domains.push('mutated.example.com');
+      (first as any).apiPatterns[0].domains.push('mutated.example.com');
+
+      expect(new PatternMatchingService().getLoadedPatternsSync()).toEqual(DEFAULT_API_PATTERNS);
     });
 
     it('should load custom patterns file when specified', () => {
@@ -92,34 +98,33 @@ describe('PatternMatchingService', () => {
       expect(service.getPatternsCountSync()).toBe(4);
     });
 
-    it('should handle missing patterns file gracefully', () => {
+    it('should handle missing custom patterns file gracefully', () => {
       mockFs.existsSync.mockReturnValue(false);
 
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./custom-patterns.json');
 
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('API patterns file not found')
       );
-      // Should fall back to default Edge runtime patterns (21 patterns) — see #167
-      expect(service.getPatternsCountSync()).toBe(21);
+      // Should fall back to the built-in default patterns — see #167
+      expect(service.getPatternsCountSync()).toBe(DEFAULT_API_PATTERNS.length);
 
       // The service must remain usable/monitoring must still work after falling back.
       const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
       expect(result).toMatchObject({ pattern: expect.objectContaining({ name: 'OpenAI' }) });
     });
 
-    it('should handle invalid JSON in patterns file', () => {
+    it('should handle invalid JSON in custom patterns file', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue('invalid json');
 
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./custom-patterns.json');
 
       expect(console.error).toHaveBeenCalledWith(
         expect.stringContaining('Error loading API patterns'),
         expect.any(String)
       );
-      // Should fallback to default Edge runtime patterns (21 patterns)
-      expect(service.getPatternsCountSync()).toBe(21);
+      expect(service.getPatternsCountSync()).toBe(DEFAULT_API_PATTERNS.length);
     });
 
     it('should handle file system errors', () => {
@@ -127,14 +132,13 @@ describe('PatternMatchingService', () => {
         throw new Error('File system error');
       });
 
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./custom-patterns.json');
 
       expect(console.error).toHaveBeenCalledWith(
         expect.stringContaining('Error loading API patterns'),
         'File system error'
       );
-      // Should fallback to default Edge runtime patterns (21 patterns)
-      expect(service.getPatternsCountSync()).toBe(21);
+      expect(service.getPatternsCountSync()).toBe(DEFAULT_API_PATTERNS.length);
     });
   });
 
@@ -150,23 +154,6 @@ describe('PatternMatchingService', () => {
       ['a pattern entry has non-array paths', { patterns: [{ name: 'BadPaths', domains: ['a.com'], paths: '/api/chat', requiresPathMatch: true }] }],
       ['a pattern entry has non-integer ports', { patterns: [{ name: 'BadPorts', domains: ['a.com'], ports: ['11434'], requiresPathMatch: true }] }]
     ];
-
-    it.each(shapeInvalidCases)('falls back to default patterns when %s (default patterns file)', (_label, badData) => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(badData));
-
-      service = new PatternMatchingService();
-
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('Error loading API patterns'),
-        expect.stringContaining('not shaped correctly')
-      );
-      expect(service.getPatternsCountSync()).toBe(21);
-
-      // The service must remain usable after falling back — no throw on the next request.
-      const result = service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions');
-      expect(result).toMatchObject({ pattern: expect.objectContaining({ name: 'OpenAI' }) });
-    });
 
     it.each(shapeInvalidCases)('falls back to default patterns when %s (custom patterns file)', (_label, badData) => {
       mockFs.existsSync.mockReturnValue(true);
@@ -184,7 +171,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match URL string by domain', () => {
@@ -278,7 +265,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should NOT match by path across an unrelated domain by default (#162)', () => {
@@ -335,7 +322,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(optInPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match by path across an unrelated domain when the pattern opts in', () => {
@@ -381,7 +368,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(pathAnchoredPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('matches a path-anchored domain when the path falls under an allowed prefix', () => {
@@ -446,7 +433,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('returns null when URL parsing fails, even if the raw string contains a known domain', () => {
@@ -483,7 +470,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('redacts credentials from flat array-form headers (http.request accepts them)', () => {
@@ -755,7 +742,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should return loaded patterns', () => {
@@ -784,7 +771,7 @@ describe('PatternMatchingService', () => {
 
     it('should fall back to default patterns count when patterns file is missing', () => {
       mockFs.existsSync.mockReturnValue(false);
-      const fallbackService = new PatternMatchingService();
+      const fallbackService = new PatternMatchingService('./mock-patterns.json');
 
       expect(fallbackService.getPatternsCountSync()).toBe(21);
     });
@@ -794,7 +781,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should handle empty hostname in RequestOptions', () => {
@@ -823,7 +810,7 @@ describe('PatternMatchingService', () => {
       };
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify(emptyPatternsData));
-      const emptyService = new PatternMatchingService();
+      const emptyService = new PatternMatchingService('./mock-patterns.json');
 
       const result = emptyService.matchesAPIPatternSync('https://any.com/test');
       expect(result).toBeNull();
@@ -834,7 +821,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should return consistent results between async and sync pattern matching', async () => {
@@ -892,7 +879,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should handle URLs with query parameters', () => {
@@ -983,7 +970,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should handle nested header objects', () => {
@@ -1161,7 +1148,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should handle large numbers of pattern matching operations efficiently', () => {
@@ -1222,7 +1209,7 @@ describe('PatternMatchingService', () => {
       };
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify(largePatternsData));
-      const largeService = new PatternMatchingService();
+      const largeService = new PatternMatchingService('./mock-patterns.json');
 
       const startTime = Date.now();
 
@@ -1269,8 +1256,8 @@ describe('PatternMatchingService', () => {
       mockFs.readFileSync.mockReturnValue(JSON.stringify(malformedPatterns));
 
       // Should not throw at construction time...
-      expect(() => new PatternMatchingService()).not.toThrow();
-      service = new PatternMatchingService();
+      expect(() => new PatternMatchingService('./mock-patterns.json')).not.toThrow();
+      service = new PatternMatchingService('./mock-patterns.json');
 
       // ...and since one entry is missing `domains`, the whole file is treated as
       // malformed and the service falls back to the 21 built-in default patterns,
@@ -1289,7 +1276,7 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
 
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
       // Simulate a future bug elsewhere corrupting the cached patterns after a
       // successful, validated load — the matching methods must still not throw.
       (service as unknown as { apiPatterns: unknown }).apiPatterns = [{ name: 'Broken' }];
@@ -1306,7 +1293,7 @@ describe('PatternMatchingService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
 
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
       (service as unknown as { apiPatterns: unknown }).apiPatterns = undefined;
 
       expect(service.matchesAPIPatternSync('https://api.openai.com/v1/chat/completions')).toBeNull();
@@ -1352,7 +1339,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should handle mixed case in domain matching', () => {
@@ -1411,7 +1398,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match Gemini generateContent URL by domain', () => {
@@ -1509,7 +1496,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithVertex));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match Vertex AI generateContent URL by domain', () => {
@@ -1584,7 +1571,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithCloudflare));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match Cloudflare AI Gateway URL by domain', () => {
@@ -1656,7 +1643,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithOpenRouter));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match OpenRouter chat completions URL by domain', () => {
@@ -1721,7 +1708,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatternsWithOpenCode));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should match OpenCode Zen chat completions URL by domain', () => {
@@ -1772,7 +1759,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('should redact key param from Gemini URL', () => {
@@ -1839,7 +1826,7 @@ describe('PatternMatchingService', () => {
     beforeEach(() => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockPatterns));
-      service = new PatternMatchingService();
+      service = new PatternMatchingService('./mock-patterns.json');
     });
 
     it('redacts an Azure OpenAI "On Your Data" datastore key under data_sources', () => {

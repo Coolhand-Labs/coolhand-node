@@ -37,6 +37,14 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('loadPatterns', () => {
+    it('resolves immediately when there is no pending patterns file', async () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+
+      await expect(monitor.loadPatterns()).resolves.toBeUndefined();
+    });
+  });
+
   describe('API configuration', () => {
     it('should use production endpoint', () => {
       const monitor = new Coolhand({
