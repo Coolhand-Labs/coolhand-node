@@ -482,7 +482,8 @@ export class PatternMatchingService {
     'password', 'signature', 'sig', 'x-goog-api-key',
     'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
     'subscription-key', 'ocp-apim-subscription-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'authorization',
-    'api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd'
+    'api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd',
+    'x-goog-signature', 'x-goog-credential', 'session_token'
   ].map((name) => PatternMatchingService.normalizeKey(name)));
 
   public sanitizeURL(url: string): string {
