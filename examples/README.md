@@ -70,6 +70,18 @@ node examples/basic.js
 node examples/feedback-example.js
 ```
 
+Or run all four in parallel and get a pass/skip/fail line per script:
+
+```bash
+npm run test:live-examples
+```
+
+This re-runs itself under `zsh -ic` when zsh is installed, so provider keys exported from
+your `~/.zshrc` are picked up even when the command is launched from a non-interactive shell
+(an agent's tool shell, for instance). Set `COOLHAND_EXAMPLES_NO_ZSH=1` to use the current
+environment instead. It exits non-zero if any script fails; a script skipped for missing keys
+is reported as `SKIP`, not a failure.
+
 Each script hits a different combination of provider + Coolhand calls, so
 they're also safe to run in parallel (e.g. as background jobs) if you'd
 rather not wait for them one at a time — `basic.js` and
