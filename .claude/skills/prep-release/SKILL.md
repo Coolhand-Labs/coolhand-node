@@ -390,7 +390,12 @@ commit is self-consistent), and run `npm install --package-lock-only` so
    aren't part of this step. These scripts import from `dist/`, so they
    exercise whatever Phase 4.1's `npm run build` just produced — don't
    skip straight to this step against a stale `dist/` from before this
-   run. Each script also hits a different, unrelated provider, so they're
+   run. `npm run test:live-examples` (`scripts/run-live-examples.sh`) runs
+   all of them concurrently with per-script logs and a PASS/SKIP/FAIL line
+   each, and re-execs under `zsh -ic` so provider keys exported from the
+   user's zsh profile are visible — a plain agent tool shell doesn't source
+   it, which makes every script skip. Prefer it; the manual approach below
+   is the fallback. Each script also hits a different, unrelated provider, so they're
    safe to run concurrently rather than one at a time — issue them as
    parallel tool calls (or background each with its output redirected to
    its own file, e.g. `node examples/<name>.js > /tmp/<name>.log 2>&1 &`,

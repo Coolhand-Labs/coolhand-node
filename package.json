@@ -82,7 +82,8 @@
     "clean": "rm -rf dist coverage",
     "test:esm": "node scripts/verify-esm.mjs",
     "test:cjs": "node scripts/verify-cjs.cjs",
-    "example": "node examples/basic.js"
+    "example": "node examples/basic.js",
+    "test:live-examples": "bash scripts/run-live-examples.sh"
   },
   "overrides": {
     "esbuild": "^0.28.1",
