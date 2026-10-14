@@ -536,7 +536,8 @@ describe('PatternMatchingService', () => {
     });
 
     it.each([
-      'ocp-apim-subscription-key', 'api-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'access-token'
+      'ocp-apim-subscription-key', 'api-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'access-token',
+      'X-Goog-Signature', 'X-Goog-Credential', 'session_token'
     ])('redacts the %s query param', (param) => {
       expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain(`${param}=%5BREDACTED%5D`);
       expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain('q=1');

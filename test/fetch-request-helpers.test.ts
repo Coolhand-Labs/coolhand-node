@@ -127,6 +127,22 @@ describe('getFetchRequestBody', () => {
       .toEqual({ model: 'gpt-4', tag: ['a', 'b'] });
   });
 
+  it('serializes a FormData with a very large number of repeated keys in linear time', async () => {
+    // Node 18's built-in FormData iterates very slowly at this size (minutes for 50,000 entries), which
+    // would time the runtime rather than our serializer — so feed the serializer a FormData whose
+    // entries() is a plain generator.
+    const total = 50_000;
+    const form = new FormData();
+    Object.defineProperty(form, 'entries', {
+      value: function* () { for (let i = 0; i < total; i++) { yield ['k', 'v']; } }
+    });
+    const start = Date.now();
+    const parsed = JSON.parse((await getFetchRequestBody('https://api.test.com', { body: form })) as string);
+    expect(parsed.k).toHaveLength(total);
+    // The quadratic (array-copy-per-repeat) version took seconds at this size; linear is a few ms.
+    expect(Date.now() - start).toBeLessThan(1500);
+  });
+
   it('keeps FormData fields named like Object.prototype members (#254)', async () => {
     const form = new FormData();
     form.append('constructor', 'a');

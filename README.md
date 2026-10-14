@@ -617,6 +617,8 @@ attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
+- **[Linking Feedback to an Optimization](./docs/feedback-links.md)** - Attach feedback to an optimization as evidence, singly or in bulk, using the private API key.
+- **[diagnostics_channel Interception (design)](./docs/diagnostics-channel-interception.md)** - Design exploration of a structural fix for requests that bypass global monitoring.
 
 ## Related Packages
 
