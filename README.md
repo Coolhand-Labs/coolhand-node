@@ -373,7 +373,7 @@ optimization as evidence. Private API key required. See [docs/feedback-links.md]
 | `debug` | boolean | `false` | Enable verbose logging (endpoint URL and payload size logged before each call) |
 | `dryRun` | boolean | `false` | Skip all API submissions — no data is sent to Coolhand |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
-| `excludeApiPatterns` | string[] | `[]` | Glob patterns for endpoints to exclude from monitoring (e.g. health checks). |
+| `excludeApiPatterns` | string[] | `DEFAULT_EXCLUDE_API_PATTERNS` | URL substrings (not globs) to exclude from monitoring — a request is skipped if its full URL contains any entry. See [Excluding endpoints](./docs/exclude-patterns.md). |
 | `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
 | `requestTimeoutMs` | number | `30000` | Timeout for Coolhand API calls in milliseconds. Raise it for slow self-hosted backends. File uploads use a separate, longer limit. |
 
@@ -387,6 +387,7 @@ optimization as evidence. Private API key required. See [docs/feedback-links.md]
 | `COOLHAND_DRY_RUN` | `'true'` \| `'false'` | `'false'` | Skip all API submissions (dry-run mode) |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
 | `COOLHAND_BASE_URL` | string | `undefined` | Override the API host (e.g. `https://feedback.example.com`). Same rules as `baseUrl` option. |
+| `COOLHAND_EXCLUDE_API_PATTERNS` | string | `undefined` | Comma-separated URL substrings (not globs) to exclude from monitoring. See [Excluding endpoints](./docs/exclude-patterns.md). |
 
 ### Instance-Based Monitoring Options
 
@@ -610,6 +611,7 @@ attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 - **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks. (Well, some are more complete than others.)
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
+- **[Excluding Endpoints](./docs/exclude-patterns.md)** - How `excludeApiPatterns` matches (substrings, not globs) and how to avoid over-matching.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
 - **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
