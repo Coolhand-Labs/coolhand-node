@@ -544,6 +544,30 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('client file admin methods', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('listClientFiles, downloadClientFile and updateClientFileStatus delegate to ClientFileService', async () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      const service = (monitor as any).clientFileService;
+      service.listClientFiles = jest.fn().mockResolvedValue({ files: [], pagination: {} });
+      service.downloadClientFile = jest.fn().mockResolvedValue({ content: Buffer.from('x'), contentType: null, filename: null });
+      service.updateClientFileStatus = jest.fn().mockResolvedValue(null);
+
+      await monitor.listClientFiles({ status: 'draft' });
+      await monitor.downloadClientFile('abc');
+      await monitor.updateClientFileStatus('abc', 'archived');
+
+      expect(service.listClientFiles).toHaveBeenCalledWith({ status: 'draft' });
+      expect(service.downloadClientFile).toHaveBeenCalledWith('abc');
+      expect(service.updateClientFileStatus).toHaveBeenCalledWith('abc', 'archived');
+    });
+  });
+
   describe('Monitoring callback safety', () => {
     it('does not throw when logRequestToAPI rejects via onRequestComplete, and logs the failure unless silent', async () => {
       const monitor = new Coolhand({ apiKey: 'test-key', silent: false });
