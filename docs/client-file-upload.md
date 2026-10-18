@@ -1,4 +1,4 @@
-# Client File Upload API
+# Client Files API
 
 `uploadClientFile()` uploads a file (slide deck, report, or document) to Coolhand.
 
@@ -55,7 +55,7 @@ console.log(result?.id); // Coolhand client file ID assigned by the API
 
 Requires Node.js 18+ — `uploadClientFile` uses global `fetch`/`FormData`/`Blob`, with no fallback for older Node versions.
 
-# Listing, downloading and publishing client files
+## Listing, downloading and publishing client files
 
 `listClientFiles()`, `downloadClientFile()` and `updateClientFileStatus()` let a client admin review
 uploaded files and move them between `draft`, `published` and `archived`.
@@ -69,6 +69,9 @@ unaffected and keeps accepting the client-level private key.
 response throws an `HttpError` whose `status` is the HTTP status code (`401`, `403`, `404`, `422`).
 
 ```typescript
+import { writeFile } from 'fs/promises';
+import { basename } from 'path';
+
 const coolhand = new Coolhand({ apiKey: process.env.COOLHAND_USER_API_KEY! }); // client admin's per-user key
 
 // List (newest first, every status). `status` and `fileType` are optional filters.
@@ -76,7 +79,7 @@ const { files, pagination } = await coolhand.listClientFiles({ status: 'draft', 
 
 // Download the raw bytes
 const { content, contentType, filename } = await coolhand.downloadClientFile(files[0].id);
-await writeFile(filename ?? 'download', content); // content is a Buffer
+await writeFile(basename(filename ?? 'download'), content); // content is a Buffer; never trust the server-supplied name as a path
 
 // Publish (or 'archived' / 'draft'; any status can be set from any other)
 const published = await coolhand.updateClientFileStatus(files[0].id, 'published');

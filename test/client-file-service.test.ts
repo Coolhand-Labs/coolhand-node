@@ -330,6 +330,9 @@ describe('ClientFileService', () => {
       ['attachment; filename=deck.txt', 'deck.txt'],
       ['attachment; filename*=UTF-8\'\'q3%20r%C3%A9sum%C3%A9.pdf', 'q3 r\u00e9sum\u00e9.pdf'],
       ['attachment; filename="a\\"b.txt"', 'a"b.txt'],
+      ['attachment; filename=""', null],
+      ['attachment; filename*=UTF-8\'\'%E0%A4%A; filename="fallback.txt"', 'fallback.txt'],
+      ['attachment; x-filename=wrong.txt', null],
       ['attachment', null]
     ])('parses the filename from Content-Disposition %s', async (disposition, expected) => {
       (global as any).fetch = mockBytesFetch(new Uint8Array([1]), { 'Content-Disposition': disposition });
@@ -357,6 +360,36 @@ describe('ClientFileService', () => {
 
       expect(error).toBeInstanceOf(HttpError);
       expect((error as HttpError).status).toBe(404);
+    });
+
+    it('wraps a network failure with the error prefix', async () => {
+      (global as any).fetch = jest.fn().mockRejectedValue(new Error('socket hang up'));
+
+      await expect(
+        new ClientFileService({ apiKey: 'user-key', silent: true }).downloadClientFile('abc123')
+      ).rejects.toThrow('Client file request failed: socket hang up');
+    });
+
+    it('wraps a failure while reading the body with the error prefix', async () => {
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: jest.fn().mockRejectedValue(new Error('The operation was aborted due to timeout')),
+        headers: new Headers()
+      });
+
+      await expect(
+        new ClientFileService({ apiKey: 'user-key', silent: true }).downloadClientFile('abc123')
+      ).rejects.toThrow('Client file request failed: The operation was aborted due to timeout');
+    });
+
+    it('refuses to follow redirects, so the API key is never sent to another host', async () => {
+      const fetchMock = mockBytesFetch(new Uint8Array([1]), {});
+      (global as any).fetch = fetchMock;
+
+      await new ClientFileService({ apiKey: 'user-key', silent: true }).downloadClientFile('abc123');
+
+      expect(fetchMock.mock.calls[0][1].redirect).toBe('error');
     });
 
     it.each(['', '  ', '.', '..'])('rejects the id %j before sending a request', async (id) => {
@@ -407,12 +440,12 @@ describe('ClientFileService', () => {
       expect((error as HttpError).status).toBe(422);
     });
 
-    it('rejects a blank id before sending a request', async () => {
+    it.each(['', '  ', '.', '..'])('rejects the id %j before sending a request', async (id) => {
       const fetchMock = jest.fn();
       (global as any).fetch = fetchMock;
 
       await expect(
-        new ClientFileService({ apiKey: 'user-key', silent: true }).updateClientFileStatus('  ', 'draft')
+        new ClientFileService({ apiKey: 'user-key', silent: true }).updateClientFileStatus(id, 'draft')
       ).rejects.toThrow('updateClientFileStatus: id must be a non-empty string');
       expect(fetchMock).not.toHaveBeenCalled();
     });

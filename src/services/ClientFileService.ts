@@ -21,7 +21,7 @@ function hasBracketOrControlChar(key: string): boolean {
 // RFC 6266: `filename*` (RFC 5987, percent-encoded) wins over the plain `filename` parameter.
 function filenameFromContentDisposition(header: string | null): string | null {
   if (!header) { return null; }
-  const extended = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(header);
+  const extended = /(?:^|[;\s])filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(header);
   if (extended) {
     try {
       return decodeURIComponent(extended[1].trim());
@@ -29,9 +29,10 @@ function filenameFromContentDisposition(header: string | null): string | null {
       // Malformed percent-encoding: fall through to the plain parameter.
     }
   }
-  const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/i.exec(header);
+  const plain = /(?:^|[;\s])filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/i.exec(header);
   if (!plain) { return null; }
-  return plain[1] !== undefined ? plain[1].replace(/\\(.)/g, '$1') : plain[2].trim();
+  const value = plain[1] !== undefined ? plain[1].replace(/\\(.)/g, '$1') : plain[2].trim();
+  return value || null;
 }
 
 /**

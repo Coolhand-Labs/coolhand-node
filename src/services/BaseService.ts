@@ -333,7 +333,12 @@ export abstract class BaseService {
       const text = await res.text().catch(() => '');
       throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
     }
-    return { bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers };
+    try {
+      return { bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers };
+    } catch (err) {
+      // The request timeout also bounds the body read, so a slow download surfaces here.
+      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
+    }
   }
 
   private async fetchResponse(url: string, init: RequestInit, errorPrefix: string): Promise<Response> {
