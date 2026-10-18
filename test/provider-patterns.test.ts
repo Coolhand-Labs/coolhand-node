@@ -32,6 +32,12 @@ function edgeService(): PatternMatchingService {
 
 // [url, expected pattern name or null]
 const URL_CASES: Array<[string, string | null]> = [
+  // OpenAI: only api.openai.com (and its subdomains), never the apex or other *.openai.com hosts (#73)
+  ['https://api.openai.com/v1/chat/completions', 'OpenAI'],
+  ['https://eu.api.openai.com/v1/chat/completions', 'OpenAI'],
+  ['https://openai.com/blog', null],
+  ['https://auth.openai.com/oauth/token', null],
+  ['https://platform.openai.com/docs', null],
   // OpenAI-compatible hosts: every path
   ['https://api.deepseek.com/chat/completions', 'DeepSeek'],
   ['https://api.deepseek.com/v1/chat/completions', 'DeepSeek'],

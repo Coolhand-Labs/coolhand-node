@@ -2,7 +2,7 @@
   "patterns": [
     {
       "name": "OpenAI",
-      "domains": ["openai.com", "api.openai.com"],
+      "domains": ["api.openai.com"],
       "paths": ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"],
       "headers": {
         "authorization": "[REDACTED]",

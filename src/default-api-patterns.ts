@@ -9,7 +9,6 @@ export const DEFAULT_API_PATTERNS: readonly CoolhandAPIPattern[] = [
   {
     "name": "OpenAI",
     "domains": [
-      "openai.com",
       "api.openai.com"
     ],
     "paths": [
