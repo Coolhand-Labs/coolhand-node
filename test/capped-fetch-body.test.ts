@@ -1,4 +1,4 @@
-import { readCappedResponseText, teeResponseForCapture, CAPTURE_IDLE_TIMEOUT_MS } from '../src/utils/capped-fetch-body';
+import { readCappedResponseText, readCappedRequestText, teeResponseForCapture, CAPTURE_IDLE_TIMEOUT_MS } from '../src/utils/capped-fetch-body';
 
 describe('readCappedResponseText', () => {
   it('reads a streamed body up to the cap and reports truncation', async () => {
@@ -80,6 +80,89 @@ function makeSource(total: number, chunkSize = 1024) {
 }
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('readCappedRequestText on a cloned stream Request (#277)', () => {
+  const streamRequest = (stream: ReadableStream<Uint8Array>) =>
+    new Request('https://api.example.com/upload', { method: 'POST', body: stream, duplex: 'half' } as RequestInit);
+
+  it('bounds what the host branch queues when the host is not reading', async () => {
+    const { stream, stats } = makeSource(200, 100);
+    const request = streamRequest(stream);
+
+    const onTruncate = jest.fn();
+    const text = await readCappedRequestText(request.clone(), 1000, onTruncate);
+    await tick();
+
+    expect(text).toHaveLength(1000);
+    expect(onTruncate).toHaveBeenCalledTimes(1);
+    // Cap (10 chunks) plus the overflowing chunk and tee read-ahead slack — not all 200.
+    expect(stats.pulls).toBeLessThan(20);
+  });
+
+  it('finishes on an endless stream instead of draining it forever', async () => {
+    const { stream, stats } = makeSource(Infinity, 100);
+    const request = streamRequest(stream);
+
+    const text = await readCappedRequestText(request.clone(), 1000);
+    await tick();
+
+    expect(text).toHaveLength(1000);
+    expect(stats.pulls).toBeLessThan(20);
+  });
+
+  it('leaves the host body intact and pulled on demand after the capture stops', async () => {
+    const { stream, stats } = makeSource(30, 100);
+    const request = streamRequest(stream);
+
+    await readCappedRequestText(request.clone(), 1000);
+    await tick();
+    const pullsAfterCapture = stats.pulls;
+
+    expect((await request.arrayBuffer()).byteLength).toBe(3000);
+    expect(stats.pulls).toBe(30);
+    expect(pullsAfterCapture).toBeLessThan(30);
+  });
+
+  it('cancels the source when the host cancels after the capture branch stopped', async () => {
+    const { stream, stats } = makeSource(Infinity, 100);
+    const request = streamRequest(stream);
+
+    await readCappedRequestText(request.clone(), 1000);
+    await request.body?.cancel('host abort');
+    await tick();
+
+    expect(stats.cancelled).toBe(true);
+    expect(stats.cancelReason).toContain('host abort'); // a tee reports both branches' reasons
+  });
+
+  it('does not flag truncation for a body of exactly the cap', async () => {
+    const { stream } = makeSource(10, 100);
+    const onTruncate = jest.fn();
+
+    const text = await readCappedRequestText(streamRequest(stream).clone(), 1000, onTruncate);
+
+    expect(text).toHaveLength(1000);
+    expect(onTruncate).not.toHaveBeenCalled();
+  });
+
+  it('does not flag truncation when an empty chunk follows a body of exactly the cap', async () => {
+    let step = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (step === 0) { controller.enqueue(new Uint8Array(1000).fill(97)); }
+        else if (step === 1) { controller.enqueue(new Uint8Array(0)); }
+        else { controller.close(); }
+        step++;
+      }
+    }, { highWaterMark: 0 });
+    const onTruncate = jest.fn();
+
+    const text = await readCappedRequestText(streamRequest(stream).clone(), 1000, onTruncate);
+
+    expect(text).toHaveLength(1000);
+    expect(onTruncate).not.toHaveBeenCalled();
+  });
+});
 
 describe('teeResponseForCapture', () => {
   it('passes the body through to the host and resolves the capture with the same text', async () => {
