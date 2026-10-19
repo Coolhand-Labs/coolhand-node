@@ -2,6 +2,7 @@ import * as https from 'https';
 import * as http from 'http';
 import { Pagination } from '../types.js';
 import { getCollectorString, CollectionMethod } from '../utils/collector.js';
+import { keyProblem } from '../utils/entity-key.js';
 import { formatErrorMessage } from '../utils/format-error.js';
 
 // Treats a missing or non-integer header value (empty string, decimals, hex, negative, garbage
@@ -305,7 +306,7 @@ export abstract class BaseService {
     url: string,
     init: RequestInit,
     errorPrefix: string
-  ): Promise<{ text: string; headers: Headers }> {
+  ): Promise<{ text: string; headers: Headers; status: number }> {
     if (typeof fetch === 'undefined') {
       throw new Error(`${errorPrefix}: global fetch is unavailable (requires Node.js 18+)`);
     }
@@ -321,7 +322,7 @@ export abstract class BaseService {
     if (!res.ok) {
       throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
     }
-    return { text, headers: res.headers };
+    return { text, headers: res.headers, status: res.status };
   }
 
   /**
@@ -382,6 +383,68 @@ export abstract class BaseService {
       throw new Error(`${noun} response was not a JSON object: ${text.slice(0, 2000)}`);
     }
     return { body: parsed as T, headers };
+  }
+
+  /**
+   * `PUT ${apiEndpoint}/by_key/<key>` with a JSON body — the shared write-path for the workload and
+   * template upserts (private key only). Returns the parsed record and whether the server created
+   * it (201) rather than updated it (200), or `null` on a dry run (after validating `key`, so a dry
+   * run still rejects what a live run would).
+   *
+   * The route is a glob: each `/`-separated segment is percent-encoded on its own and rejoined with
+   * a literal `/` (`Parser#call/squish:L2` → `Parser%23call/squish%3AL2`). Blank keys and
+   * empty/`.`/`..` segments are rejected up front, since URL parsing would resolve them away and
+   * silently retarget the request.
+   *
+   * @param noun Capitalized noun for error messages, e.g. `"Workload"`.
+   * @throws Error on an invalid key, network failure or a non-JSON body. {@link HttpError} (with
+   *   `.status`) on a non-2xx response.
+   */
+  protected async putByKey<T>(
+    key: unknown,
+    body: Record<string, unknown>,
+    noun: string
+  ): Promise<{ record: T; created: boolean } | null> {
+    if (typeof key !== 'string') {
+      throw new Error(`${noun} upsert: key must be a non-empty string`);
+    }
+    // keyProblem covers blank keys and empty segments (leading/trailing/doubled "/"); "." and ".."
+    // are valid declared keys but would be resolved away by URL parsing in the by_key path.
+    const problem = keyProblem(key);
+    if (problem) {
+      throw new Error(`${noun} upsert: key ${problem} (got: "${key}")`);
+    }
+    const segments = key.split('/');
+    if (segments.some((segment) => segment === '.' || segment === '..')) {
+      throw new Error(`${noun} upsert: key must not contain "." or ".." path segments (got: "${key}")`);
+    }
+    const url = `${this.apiEndpoint}/by_key/${segments.map(encodeURIComponent).join('/')}`;
+
+    if (this.dryRun) {
+      this.log(`🚫 DRY RUN: Skipping ${noun.toLowerCase()} upsert for key "${key}"`);
+      return null;
+    }
+
+    const { text, status } = await this.fetchWithHeaders(
+      url,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-API-Key': this.apiKey },
+        body: JSON.stringify(body)
+      },
+      `${noun} request failed`
+    );
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
+    }
+    if (parsed === null || typeof parsed !== 'object') {
+      throw new Error(`${noun} response was not a JSON object: ${text.slice(0, 2000)}`);
+    }
+    return { record: parsed as T, created: status === 201 };
   }
 
   /**

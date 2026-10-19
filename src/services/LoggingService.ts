@@ -14,6 +14,7 @@ import {
   SearchLogsResponse
 } from '../types';
 import { CollectionMethod } from '../utils/collector.js';
+import { consumeDeclared } from '../utils/declared-context.js';
 import { formatErrorMessage } from '../utils/format-error.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
@@ -37,8 +38,11 @@ export class LoggingService extends BaseService {
         ? { raw_request: callData, collector, ...(metadata && { metadata }) }
         : { ...this.addCollectorToData({ raw_request: callData }, collectionMethod), ...(metadata && { metadata }) };
 
+      // The declaration snapshotted when the call was intercepted (or, for a manual submission, the
+      // one active right now) — a sibling of raw_request, so body redaction never touches it.
+      const declared = consumeDeclared(callData);
       const payload: CoolhandLogPayload = {
-        llm_request_log: logData
+        llm_request_log: declared ? { ...logData, declared } : logData
       };
 
       this.logRequestInfo(callData, matchedPattern);
@@ -48,6 +52,7 @@ export class LoggingService extends BaseService {
         `✅ Successfully logged to API with ID for call #${callData.id}`
       );
 
+      this.logWarnings(result?.warnings);
       this.logSeparator();
 
       return result;
@@ -56,6 +61,18 @@ export class LoggingService extends BaseService {
         console.error(`❌ Failed to log request to API:`, formatErrorMessage(error));
       }
       return null;
+    }
+  }
+
+  // Server warnings (e.g. a declaration ignored because the public-key workload/template cap was
+  // reached) mean the log was saved but not as declared — surface them, never throw.
+  private logWarnings(warnings: unknown): void {
+    if (this.silent || !Array.isArray(warnings)) { return; }
+    for (const warning of warnings) {
+      const text = typeof warning === 'object' && warning !== null && 'message' in warning
+        ? String(warning.message)
+        : String(warning);
+      console.warn(`[coolhand-node] ⚠️ Coolhand warning: ${text}`);
     }
   }
 

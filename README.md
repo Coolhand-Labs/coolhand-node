@@ -347,6 +347,13 @@ pagination, and error handling (including the retryable `504` both methods can t
 `linkFeedback`, `bulkLinkFeedback` (batches of 100) and `unlinkFeedback` attach feedback to an
 optimization as evidence. Private API key required. See [docs/feedback-links.md](./docs/feedback-links.md).
 
+### Declare Workloads and Templates
+
+Wrap LLM calls in `withContext({ reporter, workload, template }, fn)` to tell Coolhand which
+workload and template they belong to, skipping log-to-template matching. `upsertWorkload` and
+`upsertTemplate` create or rename them by key (private API key). See
+[docs/declared-workloads.md](./docs/declared-workloads.md).
+
 ## Framework Integration
 
 📚 **[Framework Integration Guide](./docs/framework-integration.md)** - Complete documentation for all supported frameworks
@@ -598,6 +605,8 @@ need to react to the result — a non-2xx response throws an `HttpError` with th
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 [docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md),
 [docs/workload-search.md](./docs/workload-search.md) and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
+`upsertWorkload` and `upsertTemplate` also throw (invalid keys, or an `HttpError` such as `422` for a
+taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 
 ## Security
 
@@ -618,6 +627,7 @@ attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
 - **[Linking Feedback to an Optimization](./docs/feedback-links.md)** - Attach feedback to an optimization as evidence, singly or in bulk, using the private API key.
+- **[Declared Workloads and Templates](./docs/declared-workloads.md)** - Declare which workload and template captured calls belong to with `withContext`, and create or rename them by key.
 - **[diagnostics_channel Interception (design)](./docs/diagnostics-channel-interception.md)** - Design exploration of a structural fix for requests that bypass global monitoring.
 
 ## Related Packages
