@@ -601,7 +601,7 @@ attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 
 ## Security
 
-- API keys and other credentials in request headers, URL query strings and request and response bodies (Azure OpenAI "On Your Data" datastore credentials, MCP tokens, realtime client secrets) are automatically redacted
+- API keys and other credentials in request headers, URL query strings and request and response bodies (Azure OpenAI "On Your Data" datastore credentials, MCP tokens, realtime client secrets, OAuth tokens) are automatically redacted; see [docs/global-monitoring.md](./docs/global-monitoring.md) for the full list
 - No sensitive data is exposed in logs
 - Dry-run mode (`dryRun: true`) prevents any data from being sent to external servers
 

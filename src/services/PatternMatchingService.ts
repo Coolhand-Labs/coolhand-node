@@ -534,6 +534,88 @@ export class PatternMatchingService {
   //  - OpenAI realtime `client_secret` (an ephemeral key returned in *response* bodies)
   private static readonly ALWAYS_REDACTED_BODY_KEYS = new Set(['authorizationtoken', 'clientsecret']);
 
+  // Generic credential names (OAuth token responses, login forms), redacted anywhere in a body but
+  // only when the value is a string — a tool schema such as `{ password: { type: 'string' } }` has
+  // an object value and is ordinary data. Deliberately not bare `key`/`token`, which are common
+  // data keys (e.g. logprobs `{ token: 'hi' }`). Also deliberately not `pwd`: in agent and shell tool
+  // payloads it is the working directory (`{ pwd: '/home/me/project' }`), so redacting it would blank
+  // ordinary data. It is still redacted as a URL query parameter and inside `data_sources`.
+  private static readonly ALWAYS_REDACTED_BODY_STRING_KEYS = new Set([
+    'accesstoken', 'refreshtoken', 'idtoken', 'apikey', 'xapikey', 'password', 'secret', 'secretkey', 'privatekey',
+    'apitoken', 'authtoken', 'bearertoken', 'accesskey', 'sessiontoken', 'passwd', 'secretaccesskey', 'oauthtoken',
+    'newpassword', 'oldpassword', 'currentpassword', 'confirmpassword', 'passwordconfirmation',
+    'openaiapikey', 'anthropicapikey', 'awssessiontoken', 'awssecretaccesskey'
+  ]);
+
+  // A repeated FormData field (`formDataToText`) or a list of secrets arrives as an array of strings.
+  // Any string element is enough (fail closed): a mixed array such as `['hunter2', 1]` still holds a secret,
+  // and so does a nested one (`[['hunter2']]`).
+  private static isStringOrStringArray(val: unknown, depth = 0): boolean {
+    if (typeof val === 'string') { return true; }
+    return Array.isArray(val)
+      && depth < PatternMatchingService.MAX_BODY_DEPTH
+      && val.some((item) => PatternMatchingService.isStringOrStringArray(item, depth + 1));
+  }
+
+  // Names only meaningful as a form field, where a bare value is the credential (RFC 7009 revocation
+  // / RFC 7662 introspection `token=...`, JWT-bearer `assertion=...`). Not applied to JSON bodies.
+  private static readonly FORM_ONLY_CREDENTIAL_KEYS = new Set(['token', 'assertion', 'clientassertion']);
+
+  // Rails/PHP-style bracketed names (`user[password]`, `password[]`) name a credential by any segment.
+  // Shared by the form-urlencoded path and by FormData fields (which reach us as JSON keys of that shape).
+  private static matchesCredentialName(
+    name: string,
+    names: ReadonlySet<string>,
+    normalizedName: string = PatternMatchingService.normalizeKey(name)
+  ): boolean {
+    if (names.has(normalizedName)) { return true; }
+    if (!name.includes('[')) { return false; }
+    return name
+      .split(/[[\]]+/)
+      .some((segment) => segment.trim() !== '' && names.has(PatternMatchingService.normalizeKey(segment.trim())));
+  }
+
+  private static isCredentialStringKey(name: string, normalizedName?: string): boolean {
+    return PatternMatchingService.matchesCredentialName(name, PatternMatchingService.ALWAYS_REDACTED_BODY_STRING_KEYS, normalizedName);
+  }
+
+  private static isFormCredentialKey(name: string): boolean {
+    const normalizedName = PatternMatchingService.normalizeKey(name);
+    return PatternMatchingService.isCredentialStringKey(name, normalizedName)
+      || PatternMatchingService.matchesCredentialName(name, PatternMatchingService.ALWAYS_REDACTED_BODY_KEYS, normalizedName)
+      || PatternMatchingService.matchesCredentialName(name, PatternMatchingService.FORM_ONLY_CREDENTIAL_KEYS, normalizedName);
+  }
+
+  // An `application/x-www-form-urlencoded` body (`grant_type=refresh_token&refresh_token=...`, the
+  // usual OAuth token request) reaches sanitizeBody as a plain string. It is told apart from JSON by
+  // not starting with `{`, `[` or `"` (a truncated or malformed JSON body does); whitespace or quotes
+  // inside a value (an un-encoded client) must not disable it, or the credential would be logged.
+  // Returns the input untouched when no field is redacted.
+  private static redactFormEncodedFields(rawText: string): string {
+    const text = rawText.trim();
+    if (!text.includes('=') || /^[{["]/.test(text)) { return rawText; }
+    let changed = false;
+    const redacted = text
+      .split('&')
+      .map((pair) => {
+        const eq = pair.indexOf('=');
+        if (eq === -1) { return pair; }
+        let name = pair.slice(0, eq).replace(/\+/g, ' ');
+        try {
+          name = decodeURIComponent(name);
+        } catch {
+          // A malformed escape elsewhere in the name must not hide the bracketed credential segment.
+          name = name.replace(/%5B/gi, '[').replace(/%5D/gi, ']');
+        }
+        // `user[password]`, `password[]` and `user[password][]` all name a credential field.
+        if (!PatternMatchingService.isFormCredentialKey(name.trim())) { return pair; }
+        changed = true;
+        return `${pair.slice(0, eq + 1)}[REDACTED]`;
+      })
+      .join('&');
+    return changed ? redacted : rawText;
+  }
+
   // `authorization` / `headers` are only credentials on an MCP tool/server definition — OpenAI
   // Responses MCP tools carry `{ type: 'mcp', server_url, authorization, headers }`. Scoped to
   // those objects because a bare `headers` or `authorization` key elsewhere (tool schemas, message
@@ -573,7 +655,8 @@ export class PatternMatchingService {
         const nowInside = insideDataSources || normalizedKey === 'datasources';
         const redact =
           (nowInside && PatternMatchingService.CREDENTIAL_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) ||
-          PatternMatchingService.ALWAYS_REDACTED_BODY_KEYS.has(normalizedKey) ||
+          PatternMatchingService.matchesCredentialName(key, PatternMatchingService.ALWAYS_REDACTED_BODY_KEYS, normalizedKey) ||
+          (PatternMatchingService.isCredentialStringKey(key, normalizedKey) && PatternMatchingService.isStringOrStringArray(val)) ||
           (isMcp && PatternMatchingService.MCP_CREDENTIAL_KEYS.has(normalizedKey));
         const next = redact ? '[REDACTED]' : this.redactBodyCredentials(val, nowInside, depth + 1);
         if (key === '__proto__') {
@@ -684,7 +767,7 @@ export class PatternMatchingService {
 
     // Unparseable (truncated, malformed): can't know the structure, so redact by key name instead.
     // Deliberately over-inclusive — a body we can't parse is safer over-redacted than leaked.
-    return this.redactCredentialStrings(text);
+    return this.redactCredentialStrings(PatternMatchingService.redactFormEncodedFields(text));
   }
 
   public sanitizeBody(body: Record<string, unknown> | string | null): Record<string, unknown> | string | null {

@@ -454,8 +454,27 @@ Any header whose name contains `auth`, `key`, `token`, `secret` or `cookie` (for
   `user:password@` userinfo are redacted.
 - **Request and response bodies:** Azure OpenAI `data_sources` credentials, Anthropic
   `mcp_servers[].authorization_token`, OpenAI Responses MCP tool `authorization`/`headers`, and
-  OpenAI realtime `client_secret` are redacted. Bodies that are not a single JSON document (NDJSON,
-  truncated bodies) are scrubbed too.
+  OpenAI realtime `client_secret` are redacted. So are string values under `api_key`, `password`,
+  `access_token`, `refresh_token`, `id_token` and a fixed list of similar names (`secret`,
+  `private_key`, `session_token`, `new_password`, ...) anywhere in a JSON or `FormData` body.
+  Matching is exact once case and `_`/`-` are ignored, and a bracketed name such as
+  `user[password]` or `password[]` matches on any segment. Object values (a tool-schema property
+  named `password`) and non-string values are left alone. Form-urlencoded bodies get the same
+  names, plus bare `token`, `assertion` and `client_assertion` (OAuth revocation, introspection and
+  JWT-bearer requests). Bodies that are not a single JSON document (NDJSON, truncated bodies) are
+  scrubbed too.
+
+  Known gaps, by design:
+
+  - **`pwd` is not redacted in bodies.** Agent and shell tool payloads use `pwd` for the working
+    directory, so redacting it would blank ordinary data. It is still redacted in URL query strings
+    and under `data_sources`. If your API uses `pwd` as a password, there is no body-key option
+    today; add the endpoint to `excludeApiPatterns` so it is not captured, or rename the field.
+  - **JSON inside a string is not scanned.** OpenAI `tool_calls[].function.arguments` (and any
+    other string that happens to hold JSON) is logged as-is, so `{"password":"..."}` in a tool
+    call's arguments is not redacted. Only object keys are matched, because parsing every string
+    value would be costly and would risk altering ordinary text.
+  - **Non-string values and object values are left alone** (for example `"password": 12345`).
 
 ### Configurable Sanitization
 
