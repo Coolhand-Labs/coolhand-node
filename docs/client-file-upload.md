@@ -1,4 +1,4 @@
-# Client File Upload API
+# Client Files API
 
 `uploadClientFile()` uploads a file (slide deck, report, or document) to Coolhand.
 
@@ -54,3 +54,44 @@ console.log(result?.id); // Coolhand client file ID assigned by the API
 - `dryRun` mode is enabled
 
 Requires Node.js 18+ — `uploadClientFile` uses global `fetch`/`FormData`/`Blob`, with no fallback for older Node versions.
+
+## Listing, downloading and publishing client files
+
+`listClientFiles()`, `downloadClientFile()` and `updateClientFileStatus()` let a client admin review
+uploaded files and move them between `draft`, `published` and `archived`.
+
+**Auth:** these three require a **per-user API key** (`ch_priv_...`) belonging to a **client admin**
+of the client, passed as `apiKey`. The client-level private key, the public key and OAuth tokens
+are refused (`403` or `401`), as are keys of non-admin members (`403`). `uploadClientFile` is
+unaffected and keeps accepting the client-level private key.
+
+**Errors:** unlike `uploadClientFile`, these throw instead of resolving to `null`. A non-2xx
+response throws an `HttpError` whose `status` is the HTTP status code (`401`, `403`, `404`, `422`).
+
+```typescript
+import { writeFile } from 'fs/promises';
+import { basename } from 'path';
+
+const coolhand = new Coolhand({ apiKey: process.env.COOLHAND_USER_API_KEY! }); // client admin's per-user key
+
+// List (newest first, every status). `status` and `fileType` are optional filters.
+const { files, pagination } = await coolhand.listClientFiles({ status: 'draft', page: 1, per: 25 });
+
+// Download the raw bytes
+const { content, contentType, filename } = await coolhand.downloadClientFile(files[0].id);
+await writeFile(basename(filename ?? 'download'), content); // content is a Buffer; never trust the server-supplied name as a path
+
+// Publish (or 'archived' / 'draft'; any status can be set from any other)
+const published = await coolhand.updateClientFileStatus(files[0].id, 'published');
+```
+
+| Method | Returns |
+|---|---|
+| `listClientFiles(params?)` | `{ files: CoolhandClientFileResponse[], pagination }` — `pagination` is read from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages` response headers |
+| `downloadClientFile(id)` | `{ content: Buffer, contentType: string \| null, filename: string \| null }` |
+| `updateClientFileStatus(id, status)` | the updated `CoolhandClientFileResponse`, or `null` in `dryRun` mode |
+
+`listClientFiles` params: `status` (`'draft' | 'published' | 'archived'`), `fileType`
+(`'slide_deck' | 'report' | 'document'`), `page` (1-based), `per` (default 25, max 100). An unknown
+`status` or `fileType` is a `422`. `id` is the file's hashid. `downloadClientFile` and
+`updateClientFileStatus` return a `404` for an unknown id or one belonging to another client.

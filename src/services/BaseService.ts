@@ -306,22 +306,51 @@ export abstract class BaseService {
     init: RequestInit,
     errorPrefix: string
   ): Promise<{ text: string; headers: Headers }> {
-    if (typeof fetch === 'undefined') {
-      throw new Error(`${errorPrefix}: global fetch is unavailable (requires Node.js 18+)`);
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(url, { signal: timeoutSignal(this.requestTimeoutMs), ...init, redirect: 'error' });
-    } catch (err) {
-      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
-    }
-
+    const res = await this.fetchResponse(url, init, errorPrefix);
     const text = await res.text().catch(() => '');
     if (!res.ok) {
       throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
     }
     return { text, headers: res.headers };
+  }
+
+  /**
+   * Like {@link fetchWithHeaders}, but returns the body as raw bytes — for endpoints that serve a
+   * file rather than JSON, where decoding to text would corrupt the content. Same redirect
+   * handling, timeout and error behavior; an error response's body is still read as text for the
+   * {@link HttpError} message.
+   *
+   * @throws Error if global `fetch` is unavailable (Node.js < 18) or on a network failure.
+   *   {@link HttpError} (with `.status`) on a non-2xx response.
+   */
+  protected async fetchBytes(
+    url: string,
+    init: RequestInit,
+    errorPrefix: string
+  ): Promise<{ bytes: Buffer; headers: Headers }> {
+    const res = await this.fetchResponse(url, init, errorPrefix);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
+    }
+    try {
+      return { bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers };
+    } catch (err) {
+      // The request timeout also bounds the body read, so a slow download surfaces here.
+      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
+    }
+  }
+
+  private async fetchResponse(url: string, init: RequestInit, errorPrefix: string): Promise<Response> {
+    if (typeof fetch === 'undefined') {
+      throw new Error(`${errorPrefix}: global fetch is unavailable (requires Node.js 18+)`);
+    }
+
+    try {
+      return await fetch(url, { signal: timeoutSignal(this.requestTimeoutMs), ...init, redirect: 'error' });
+    } catch (err) {
+      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
+    }
   }
 
   /**
@@ -438,7 +467,7 @@ export abstract class BaseService {
    * Build a {@link Pagination} from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages`
    * response headers the paginated v2 list endpoints set, for endpoints that render a bare array
    * on the wire and carry pagination in headers rather than a body envelope — currently
-   * `LoggingService#searchLogs` and `TemplateService#searchTemplates`.
+   * `LoggingService#searchLogs`, `TemplateService#searchTemplates` and `ClientFileService#listClientFiles`.
    *
    * `/llm_request_templates` always sends these headers. `/llm_request_logs` sends `X-Total-Count`/
    * `X-Total-Pages` only when the caller opts in with `include_total`, so the header-less branches

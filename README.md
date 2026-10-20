@@ -593,6 +593,9 @@ unlike `logRequest`/`createFeedback`'s JSON requests. Unlike those two, it requi
 API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
+`listClientFiles`, `downloadClientFile` and `updateClientFileStatus` throw like the read methods,
+but need a client admin's **per-user** API key rather than the client-level private key.
+
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
 `getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
@@ -613,7 +616,7 @@ attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
 - **[Excluding Endpoints](./docs/exclude-patterns.md)** - How `excludeApiPatterns` matches (substrings, not globs) and how to avoid over-matching.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
-- **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
+- **[Client Files API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand; client admins can list, download and publish them.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
