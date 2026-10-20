@@ -7,6 +7,7 @@ export interface CoolhandOptions {
   baseUrl?: string;
   /** Timeout in ms for Coolhand API calls (default 30000). Useful for slow self-hosted backends. */
   requestTimeoutMs?: number;
+  /** URL substrings (not globs) — a request is skipped if its full URL contains any entry. Defaults to DEFAULT_EXCLUDE_API_PATTERNS. See docs/exclude-patterns.md. */
   excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; shim will be removed after v1.x.x. */
   environment?: 'local' | 'production';
@@ -113,6 +114,37 @@ export interface CoolhandClientFileResponse {
   description: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export type ClientFileStatus = 'draft' | 'published' | 'archived';
+
+export type ClientFileType = 'slide_deck' | 'report' | 'document';
+
+// Filters for listClientFiles, applied by GET /api/v2/client_files. The client is derived from the
+// per-user API key; there is no `clientId`.
+export interface ListClientFilesParams {
+  status?: ClientFileStatus;
+  fileType?: ClientFileType;
+  /** 1-based page number. */
+  page?: number;
+  /** Page size (server default 25, max 100). */
+  per?: number;
+}
+
+// The endpoint renders a bare array and carries pagination in X-Page/X-Per-Page/X-Total-Count/
+// X-Total-Pages response headers, which ClientFileService reads into the shared Pagination shape.
+export interface ListClientFilesResponse {
+  files: CoolhandClientFileResponse[];
+  pagination: Pagination;
+}
+
+export interface DownloadedClientFile {
+  /** The raw file bytes, exactly as uploaded. */
+  content: Buffer;
+  /** The `Content-Type` detected at upload, or `null` if the response carried none. */
+  contentType: string | null;
+  /** The filename from `Content-Disposition`, or `null` if absent. */
+  filename: string | null;
 }
 
 export interface CoolhandAPIPattern {

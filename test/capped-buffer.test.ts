@@ -63,4 +63,16 @@ describe('CappedBuffer', () => {
     }).not.toThrow();
     expect(buffer.concat()).toHaveLength(5);
   });
+
+  it('does not treat an empty chunk after an exactly-full buffer as truncation', () => {
+    const onTruncate = jest.fn();
+    const buffer = new CappedBuffer(5, onTruncate);
+    buffer.push(Buffer.alloc(5, 'a'));
+    buffer.push(Buffer.alloc(0));
+    expect(buffer.isTruncated).toBe(false);
+    expect(onTruncate).not.toHaveBeenCalled();
+    buffer.push(Buffer.alloc(1, 'b'));
+    expect(buffer.isTruncated).toBe(true);
+    expect(onTruncate).toHaveBeenCalledTimes(1);
+  });
 });

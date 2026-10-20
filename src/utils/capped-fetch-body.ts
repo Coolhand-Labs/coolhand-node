@@ -10,6 +10,9 @@ import { MAX_DECOMPRESSED_BYTES } from './decompress.js';
  * Falls back to `response.text()` (truncating the result) when `.body` isn't a readable stream (e.g. a
  * non-standard Response-like object) — real Node 18+ fetch/undici Response
  * objects always expose `.body` when there's content.
+ *
+ * Once the cap is exceeded the body stream is cancelled, so pass a `clone()` (or a Response the
+ * caller no longer needs), never the Response the host will still read.
  */
 export function readCappedResponseText(
   response: Response,
@@ -24,6 +27,9 @@ export function readCappedResponseText(
  * convention's request body — `Request` exposes the same `.body`/`.text()` shape as `Response`.
  * Without this cap, a large body passed via `new Request(url, { body })` would be buffered into
  * memory in full on the request-capture side, unlike every other capture path in this codebase.
+ *
+ * Pass a `clone()` of the request: the read stops (cancelling only that branch) once the cap is
+ * exceeded, so the host's own branch queues at most about `maxBytes` rather than the whole body.
  */
 export function readCappedRequestText(
   request: Request,
@@ -240,15 +246,19 @@ async function readCappedStream(
         break;
       }
       buffer.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
+      if (buffer.isTruncated) {
+        // This stream is one branch of a tee created by clone() (the sibling is the caller's own
+        // body, which may be unread). A tee pulls the source for either branch and queues the chunk
+        // on both, so draining this branch past the cap would make the sibling queue the entire
+        // body (#277). Cancelling stops it pulling, bounding the sibling's queue at the cap plus
+        // one chunk; the source is only cancelled if the sibling cancels too. The cancel is not
+        // awaited: cancelling one branch while the sibling is unread never settles in Node's
+        // ReadableStream (verified against Node's real streams), but takes effect immediately.
+        reader.cancel().catch(() => undefined);
+        break;
+      }
     }
   } finally {
-    // Deliberately not calling reader.cancel() once the cap is hit: this stream is one branch of
-    // a tee created by response.clone() (the sibling branch is `response` itself, returned to the
-    // caller, who may never read it). Canceling one branch of a tee while the sibling is unread
-    // hangs in Node's ReadableStream implementation — verified directly against Node's real
-    // streams (not a mock) — so draining to completion, even past the cap, is the only safe
-    // option here. Memory is still bounded by CappedBuffer regardless. (Real Responses no longer
-    // reach this path — see teeResponseForCapture — only the request-body capture and fallbacks.)
     reader.releaseLock();
   }
   return buffer.concat().toString('utf-8');

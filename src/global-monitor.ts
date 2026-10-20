@@ -18,6 +18,7 @@ import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared } from './utils/self-endpoint.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
+import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
 import { extractRequestHostname } from './utils/extract-hostname.js';
 import { formatErrorMessage } from './utils/format-error.js';
@@ -130,6 +131,7 @@ interface GlobalMonitorConfig {
   dryRun?: boolean;
   baseUrl?: string;
   requestTimeoutMs?: number;
+  /** URL substrings (not globs) — a request is skipped if its full URL contains any entry. See docs/exclude-patterns.md. */
   excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; this shim will be removed in a future release. */
   environment?: 'local' | 'production';
@@ -188,6 +190,7 @@ export function initGlobalMonitoringCore(config: GlobalMonitorConfig): void {
   state.silent = silent;
   state.globalPatternService = patternService;
   state.globalLoggingService = loggingService;
+  warnOnGlobLikePatterns(config.excludeApiPatterns);
   state.excludeApiPatterns = [...(config.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
   state.selfEndpoint = computeSelfEndpoint(loggingService.getApiEndpoint());
 

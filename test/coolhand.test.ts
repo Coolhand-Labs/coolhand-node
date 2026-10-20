@@ -37,6 +37,37 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('excludeApiPatterns glob-style warning (issue #231)', () => {
+    let warnSpy: jest.SpyInstance;
+    // Constructing a second Coolhand in-process also emits an unrelated "another instance owns
+    // interception" warning through console.warn, so only look at the glob-style one.
+    const globWarnings = (): string[] => warnSpy.mock.calls
+      .map(([msg]) => String(msg))
+      .filter(msg => msg.includes('matched as literal substrings'));
+
+    beforeEach(() => { warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined); });
+    afterEach(() => { warnSpy.mockRestore(); });
+
+    it('warns from the constructor for an entry containing *', () => {
+      new Coolhand({ apiKey: 'test-key', silent: true, excludeApiPatterns: ['/internal-*'] });
+      expect(globWarnings()).toHaveLength(1);
+      expect(globWarnings()[0]).toContain('/internal-*');
+    });
+
+    it('warns from the excludeApiPatterns setter for an entry containing *', () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      expect(globWarnings()).toHaveLength(0);
+      monitor.excludeApiPatterns = ['*.corp.internal/'];
+      expect(globWarnings()).toHaveLength(1);
+      expect(monitor.excludeApiPatterns).toEqual(['*.corp.internal/']);
+    });
+
+    it('does not warn when no custom patterns are given', () => {
+      new Coolhand({ apiKey: 'test-key', silent: true });
+      expect(globWarnings()).toHaveLength(0);
+    });
+  });
+
   describe('loadPatterns', () => {
     it('resolves immediately when there is no pending patterns file', async () => {
       const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
@@ -541,6 +572,30 @@ describe('Coolhand Node Monitor', () => {
       expect(capture.headers['X-API-Key']).toBe('test-key');
       expect(capture.headers['Content-Type']).toBeUndefined();
       expect(result).toEqual(expect.objectContaining({ id: 'cf_1', status: 'draft' }));
+    });
+  });
+
+  describe('client file admin methods', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('listClientFiles, downloadClientFile and updateClientFileStatus delegate to ClientFileService', async () => {
+      const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
+      const service = (monitor as any).clientFileService;
+      service.listClientFiles = jest.fn().mockResolvedValue({ files: [], pagination: {} });
+      service.downloadClientFile = jest.fn().mockResolvedValue({ content: Buffer.from('x'), contentType: null, filename: null });
+      service.updateClientFileStatus = jest.fn().mockResolvedValue(null);
+
+      await monitor.listClientFiles({ status: 'draft' });
+      await monitor.downloadClientFile('abc');
+      await monitor.updateClientFileStatus('abc', 'archived');
+
+      expect(service.listClientFiles).toHaveBeenCalledWith({ status: 'draft' });
+      expect(service.downloadClientFile).toHaveBeenCalledWith('abc');
+      expect(service.updateClientFileStatus).toHaveBeenCalledWith('abc', 'archived');
     });
   });
 

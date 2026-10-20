@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -9,6 +9,7 @@ import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
+import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
 
 export class Coolhand {
@@ -65,6 +66,7 @@ export class Coolhand {
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
+    warnOnGlobLikePatterns(options.excludeApiPatterns);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
     this.requestMonitoringService.setSelfApiEndpoint(this.loggingService.getApiEndpoint());
 
@@ -161,6 +163,53 @@ export class Coolhand {
    */
   public async uploadClientFile(payload: CoolhandClientFilePayload): Promise<CoolhandClientFileResponse | null> {
     return this.clientFileService.createClientFile(payload);
+  }
+
+  /**
+   * List the client's files of every status, newest first, optionally filtered by `status` and
+   * `fileType`.
+   *
+   * Requires a **per-user API key** (`ch_priv_...`) belonging to a client admin — construct this
+   * `Coolhand` instance with that key as `apiKey`. The client-level private key, the public key
+   * and OAuth tokens are refused, as are non-admin members' keys. See `docs/client-file-upload.md`.
+   *
+   * @returns `{ files, pagination }`; `pagination` is read from the response headers.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an
+   *   {@link HttpError} whose `status` holds the HTTP status code (`422` unknown filter, `403`
+   *   not a client admin's key, `401` missing/invalid key).
+   */
+  public async listClientFiles(params?: ListClientFilesParams): Promise<ListClientFilesResponse> {
+    return this.clientFileService.listClientFiles(params);
+  }
+
+  /**
+   * Download a client file's raw bytes, whatever its status.
+   *
+   * Requires a client admin's **per-user API key**, same as {@link listClientFiles}.
+   *
+   * @param id The file's hashid (the `id` from {@link listClientFiles}).
+   * @returns `{ content, contentType, filename }` — `content` is a `Buffer`, never JSON-decoded.
+   * @throws Error if `id` is blank or a bare dot-segment, or on network failure. A non-2xx
+   *   response throws an {@link HttpError} whose `status` holds the HTTP status code (e.g. `404`
+   *   for an unknown id).
+   */
+  public async downloadClientFile(id: string): Promise<DownloadedClientFile> {
+    return this.clientFileService.downloadClientFile(id);
+  }
+
+  /**
+   * Change a client file's status to `draft`, `published` or `archived`. Any status may be set
+   * from any other; re-setting the current status succeeds as a no-op.
+   *
+   * Requires a client admin's **per-user API key**, same as {@link listClientFiles}.
+   *
+   * @returns The updated file, or `null` in `dryRun` mode, where no request is sent.
+   * @throws Error if `id` is blank or a bare dot-segment, on network failure or a non-JSON body. A
+   *   non-2xx response throws an {@link HttpError} whose `status` holds the HTTP status code
+   *   (`422` unknown status, `404` unknown id, `403`/`401` as for {@link listClientFiles}).
+   */
+  public async updateClientFileStatus(id: string, status: ClientFileStatus): Promise<CoolhandClientFileResponse | null> {
+    return this.clientFileService.updateClientFileStatus(id, status);
   }
 
   /**
@@ -426,6 +475,7 @@ export class Coolhand {
   }
 
   public set excludeApiPatterns(patterns: string[]) {
+    warnOnGlobLikePatterns(patterns);
     this.requestMonitoringService.excludeApiPatterns = [...patterns];
   }
 }

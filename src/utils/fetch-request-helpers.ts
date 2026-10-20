@@ -66,9 +66,10 @@ export function getFetchHeaders(url: string | URL | Request, options: RequestIni
 const TEXT_BLOB_TYPE = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml))|$)/i;
 
 // Serializes a FormData body field by field as a JSON object (repeated keys become arrays) so
-// `parseBody` + `sanitizeBody` treat it like a JSON body (note: `sanitizeBody` only redacts the
-// specific keys it knows, so a credential-named form field is logged as-is). File parts are
-// skipped — they're binary uploads, not loggable text. Stops once `maxBytes` of values are collected.
+// `parseBody` + `sanitizeBody` treat it like a JSON body (note: `sanitizeBody` redacts only the
+// credential keys it knows, e.g. `api_key`, `password`, `access_token`; other field names are logged
+// as-is). File parts are skipped — they're binary uploads, not loggable text. Stops once `maxBytes`
+// of values are collected.
 function formDataToText(form: FormData, maxBytes: number): string {
   // Null-prototype so field names like `constructor` / `__proto__` are plain keys, not inherited members.
   const fields: Record<string, string | string[]> = Object.create(null);

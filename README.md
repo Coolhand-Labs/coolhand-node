@@ -380,7 +380,7 @@ workload and template they belong to, skipping log-to-template matching. `upsert
 | `debug` | boolean | `false` | Enable verbose logging (endpoint URL and payload size logged before each call) |
 | `dryRun` | boolean | `false` | Skip all API submissions — no data is sent to Coolhand |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
-| `excludeApiPatterns` | string[] | `[]` | Glob patterns for endpoints to exclude from monitoring (e.g. health checks). |
+| `excludeApiPatterns` | string[] | `DEFAULT_EXCLUDE_API_PATTERNS` | URL substrings (not globs) to exclude from monitoring — a request is skipped if its full URL contains any entry. See [Excluding endpoints](./docs/exclude-patterns.md). |
 | `baseUrl` | string | `'https://coolhandlabs.com'` | Override the API host for self-hosted deployments. Must be `https://` (or `http://localhost` for local dev). |
 | `requestTimeoutMs` | number | `30000` | Timeout for Coolhand API calls in milliseconds. Raise it for slow self-hosted backends. File uploads use a separate, longer limit. |
 
@@ -394,6 +394,7 @@ workload and template they belong to, skipping log-to-template matching. `upsert
 | `COOLHAND_DRY_RUN` | `'true'` \| `'false'` | `'false'` | Skip all API submissions (dry-run mode) |
 | `COOLHAND_PATTERNS_FILE` | string | `undefined` | Path to custom API patterns file |
 | `COOLHAND_BASE_URL` | string | `undefined` | Override the API host (e.g. `https://feedback.example.com`). Same rules as `baseUrl` option. |
+| `COOLHAND_EXCLUDE_API_PATTERNS` | string | `undefined` | Comma-separated URL substrings (not globs) to exclude from monitoring. See [Excluding endpoints](./docs/exclude-patterns.md). |
 
 ### Instance-Based Monitoring Options
 
@@ -599,6 +600,9 @@ unlike `logRequest`/`createFeedback`'s JSON requests. Unlike those two, it requi
 API key (the public key 401s) — same as the read methods below. See
 [docs/client-file-upload.md](./docs/client-file-upload.md).
 
+`listClientFiles`, `downloadClientFile` and `updateClientFileStatus` throw like the read methods,
+but need a client admin's **per-user** API key rather than the client-level private key.
+
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
 `getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
@@ -610,7 +614,7 @@ taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 
 ## Security
 
-- API keys and other credentials in request headers, URL query strings and request and response bodies (Azure OpenAI "On Your Data" datastore credentials, MCP tokens, realtime client secrets) are automatically redacted
+- API keys and other credentials in request headers, URL query strings and request and response bodies (Azure OpenAI "On Your Data" datastore credentials, MCP tokens, realtime client secrets, OAuth tokens) are automatically redacted; see [docs/global-monitoring.md](./docs/global-monitoring.md) for the full list
 - No sensitive data is exposed in logs
 - Dry-run mode (`dryRun: true`) prevents any data from being sent to external servers
 
@@ -619,8 +623,9 @@ taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 - **[Framework Integration Guide](./docs/framework-integration.md)** - Complete setup for all frameworks. (Well, some are more complete than others.)
 - **[Global Monitoring Guide](./docs/global-monitoring.md)** - Advanced global monitoring features. Even easier than asking your favorite LLM coding tool to do it for you.
 - **[React Integration Guide](./docs/frameworks/react.md)** - Frontend integration patterns. We won't ask about how you are planning to keep your API keys secret.
+- **[Excluding Endpoints](./docs/exclude-patterns.md)** - How `excludeApiPatterns` matches (substrings, not globs) and how to avoid over-matching.
 - **[Manual Submission API](./docs/manual-submission.md)** - Submit captured LLM requests outside of automatic monitoring (e.g. from a CLI tool).
-- **[Client File Upload API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand.
+- **[Client Files API](./docs/client-file-upload.md)** - Upload a slide deck, report, or document to Coolhand; client admins can list, download and publish them.
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
