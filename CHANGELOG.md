@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-10-20
+
+### ✨ New Features
+- **Client-file admin methods: `Coolhand#listClientFiles`, `downloadClientFile` and `updateClientFileStatus`** (also on `ClientFileService`), next to the existing `uploadClientFile`. `listClientFiles({ status?, fileType?, page?, per? })` returns `{ files, pagination }` with pagination read from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages` headers; `downloadClientFile(id)` returns `{ content: Buffer, contentType, filename }` as raw bytes; `updateClientFileStatus(id, status)` sets `draft`, `published` or `archived` (returns `null` in `dryRun`). All three require a client admin's **per-user** API key and throw `HttpError` (with `.status`) on a non-2xx response, unlike `uploadClientFile`, which resolves to `null`. Needs a backend carrying Coolhand-Labs/coolhand#1762. See `docs/client-file-upload.md`. ([#278](https://github.com/Coolhand-Labs/coolhand-node/issues/278), [#280](https://github.com/Coolhand-Labs/coolhand-node/pull/280))
+
+### ⚠️ Upgrade Notes
+- **Bare `openai.com` is no longer an OpenAI domain.** It matched every `*.openai.com` host (auth, platform, www), so TLS-intercepting proxies hit the apex domain and OAuth token exchanges on `auth.openai.com` were captured. `api.openai.com` and its subdomains still match. If you relied on another `openai.com` host being logged, add it through a custom `patternsFile`. ([#73](https://github.com/Coolhand-Labs/coolhand-node/issues/73), [#281](https://github.com/Coolhand-Labs/coolhand-node/pull/281))
+- **`excludeApiPatterns` entries are plain substrings, not globs, and the SDK now warns when an entry contains `*`.** Matching behavior is unchanged: `'/internal-*'` has always matched only URLs that literally contain `/internal-*`. Non-string entries (e.g. a `RegExp` from untyped JavaScript) are now ignored instead of throwing a `TypeError` inside the patched request path. See the new `docs/exclude-patterns.md`. ([#231](https://github.com/Coolhand-Labs/coolhand-node/issues/231), [#283](https://github.com/Coolhand-Labs/coolhand-node/pull/283))
+
+### 🔒 Security
+- **Generic credential keys are now redacted in JSON and form bodies.** String values under `api_key`, `password`, `access_token`, `refresh_token`, `id_token`, `secret`, `private_key`, `session_token` and similar names (matched case- and `_`/`-`-insensitively, including bracketed names such as `user[password]`) are replaced with `[REDACTED]` anywhere in a JSON or `FormData` body, and `application/x-www-form-urlencoded` bodies get the same names plus bare `token`, `assertion` and `client_assertion`. Object and non-string values (tool-schema properties named `password`) are left alone, and `pwd` is deliberately not redacted in bodies. Known gaps are documented in `docs/global-monitoring.md`. ([#276](https://github.com/Coolhand-Labs/coolhand-node/issues/276), [#284](https://github.com/Coolhand-Labs/coolhand-node/pull/284))
+
+- **More credential names are redacted.** URL query strings now also redact `oauth_token`, `passwd` and `secret_access_key`, and JSON, `FormData` and form-urlencoded bodies now also redact string values under the env-var style names `GOOGLE_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `GITHUB_TOKEN` and `apiSecret` (the same case- and separator-insensitive matching as the existing names).
+
+### 🐛 Bug Fixes
+- **Capturing a stream-bodied `Request` no longer lets the host's branch queue the whole upload.** `fetch(new Request(url, { body: stream }))` capture now cancels its own branch of the `clone()` as soon as the 50 MiB cap is exceeded, so queued memory is bounded at about the cap plus one chunk and an endless stream no longer grows memory without bound. `CappedBuffer` also ignores empty chunks, which removes a false "truncated" flag when a stream emits a zero-length chunk after exactly filling the cap (affects the `http`/`https` paths too). Backpressure is still not restored for the first ~50 MiB of a stream upload. ([#277](https://github.com/Coolhand-Labs/coolhand-node/issues/277), [#282](https://github.com/Coolhand-Labs/coolhand-node/pull/282))
+
+### 📖 Documentation
+- **New `docs/exclude-patterns.md`** covering how `excludeApiPatterns` matches (substrings of the full URL, case-sensitive), the built-in defaults, and how to avoid over-matching; the README option and `COOLHAND_EXCLUDE_API_PATTERNS` rows now state the correct default and semantics. ([#231](https://github.com/Coolhand-Labs/coolhand-node/issues/231), [#283](https://github.com/Coolhand-Labs/coolhand-node/pull/283))
+
+### 🔧 Build & CI
+- **GitHub Actions bumps:** `actions/setup-node` 7.0.0 → 7.1.0, `actions/download-artifact` 8.0.1 → 8.0.2, `actions/upload-artifact` 7.0.1 → 7.0.2. ([#275](https://github.com/Coolhand-Labs/coolhand-node/pull/275), [#274](https://github.com/Coolhand-Labs/coolhand-node/pull/274), [#273](https://github.com/Coolhand-Labs/coolhand-node/pull/273))
+
 ## [0.15.0] - 2026-10-08
 
 ### ✨ New Features
