@@ -49,7 +49,36 @@ export interface CoolhandLogPayload {
     raw_request: CoolhandCallData;
     collector?: string;
     metadata?: Record<string, unknown>;
+    /** Declared workload/template identity — see {@link DeclaredContext}. Omitted when none. */
+    declared?: DeclaredContext;
   };
+}
+
+/**
+ * A workload named by an existing hashid (`id`) or a stable `key` that is find-or-created.
+ * `name`/`description` apply only when the server creates the record; ingest never renames.
+ */
+export interface DeclaredWorkload {
+  id?: string;
+  key?: string;
+  name?: string;
+  /** At most 1000 characters. */
+  description?: string;
+}
+
+/** A template named by `id` or `key` (`id` wins). A `key` needs a workload in scope. */
+export interface DeclaredTemplate {
+  id?: string;
+  key?: string;
+  name?: string;
+}
+
+/** The identity passed to `withContext` and sent as `llm_request_log.declared`. */
+export interface DeclaredContext {
+  /** Who is declaring (e.g. `"squishling"`). Applies only when a record is first created. */
+  reporter?: string;
+  workload?: DeclaredWorkload;
+  template?: DeclaredTemplate;
 }
 
 export interface CoolhandLogResponse {
@@ -782,4 +811,53 @@ export interface BulkLinkFeedbackResult {
   errored: number;
   /** Unknown, malformed and other-client ids, reported together. */
   not_found: string[];
+}
+
+// --- Upserts (PUT .../by_key/*key, private key only) ---
+
+/** Whether the server created the record (201) or updated an existing one (200). */
+export interface UpsertResult {
+  created: boolean;
+}
+
+/**
+ * Fields for `WorkloadService#upsert`. Only the fields given are sent, so an update changes only
+ * what you pass. The key is immutable; a new `name` renames the workload.
+ */
+export interface UpsertWorkloadParams {
+  key: string;
+  name?: string;
+  /** At most 1000 characters. */
+  description?: string;
+  reporter?: string;
+}
+
+/** The record the upsert endpoints return. Open-ended on the wire, so extra fields are kept. */
+export interface UpsertedWorkload {
+  id: string;
+  name: string;
+  [key: string]: unknown;
+}
+
+export interface UpsertWorkloadResponse extends UpsertResult {
+  workload: UpsertedWorkload;
+}
+
+/** Fields for `TemplateService#upsert`. */
+export interface UpsertTemplateParams {
+  key: string;
+  /** The owning workload, by `{ id }` or `{ key }` (`id` wins); flattened to `workload_id` / `workload_key`. */
+  workload?: { id: string } | { key: string };
+  name?: string;
+  reporter?: string;
+}
+
+export interface UpsertedTemplate {
+  id: string;
+  name: string;
+  [key: string]: unknown;
+}
+
+export interface UpsertTemplateResponse extends UpsertResult {
+  template: UpsertedTemplate;
 }

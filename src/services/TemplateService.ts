@@ -3,23 +3,27 @@ import {
   LlmRequestTemplateDetail,
   LlmRequestTemplateSummary,
   SearchTemplatesParams,
-  SearchTemplatesResponse
+  SearchTemplatesResponse,
+  UpsertedTemplate,
+  UpsertTemplateParams,
+  UpsertTemplateResponse
 } from '../types';
+import { keyProblem } from '../utils/entity-key.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface TemplateServiceConfig extends BaseServiceConfig {}
 
 /**
- * Read-only access to `GET /api/v2/llm_request_templates` and
- * `GET /api/v2/llm_request_templates/{id}`.
+ * Access to `GET /api/v2/llm_request_templates`, `GET /api/v2/llm_request_templates/{id}` and the
+ * `PUT /api/v2/llm_request_templates/by_key/*key` upsert.
  *
- * Both require the client's **private** API key — the public key is write-only on this API and is
+ * All require the client's **private** API key — the public key is write-only on this API and is
  * rejected exactly like an invalid key. Both throw on failure (the read-method convention shared
  * with `FeedbackService`/`LoggingService`'s read methods), rather than logging and returning
  * `null` the way the write methods do.
  *
- * Template *mutation* stays on the MCP surface: this REST surface has no create/update/deprecate,
- * and no version-history sub-resource.
+ * Beyond the by-key upsert, template *mutation* stays on the MCP surface: this REST surface has no
+ * deprecate, and no version-history sub-resource.
  */
 export class TemplateService extends BaseService {
   constructor(config: TemplateServiceConfig) {
@@ -103,5 +107,48 @@ export class TemplateService extends BaseService {
       until: this.toTimestampParam(opts.until, 'until')
     });
     return this.getJson<LlmRequestTemplateDetail>(url.toString(), 'Template');
+  }
+
+  /**
+   * Create or update a template by its stable `key` (`PUT /api/v2/llm_request_templates/by_key/*key`).
+   * Requires the **private** API key.
+   *
+   * Only the fields you pass are sent. The key is immutable; a new `name` renames the template.
+   * `workload` names the owning workload as `{ id }` or `{ key }` (`id` wins if both are somehow
+   * present) and is flattened to the endpoint's `workload_id` / `workload_key` params. It is
+   * required when creating.
+   *
+   * @returns `{ template, created }` — `created` is `true` for a new template (201), `false` for an
+   *   update (200). Resolves to `null` on a dry run (nothing is sent).
+   * @throws Error if `key` is blank or has an empty/`.`/`..` segment, or `workload` has neither a
+   *   non-blank `id` nor `key` (before any request), or on network failure or a non-JSON body. A
+   *   non-2xx response throws an {@link HttpError} whose `status` holds the HTTP status code: `401`
+   *   for a missing/invalid/public key, `422` for a taken name, a missing workload when creating, a
+   *   different workload for an existing template, or a key held by a deprecated template.
+   */
+  public async upsert(params: UpsertTemplateParams): Promise<UpsertTemplateResponse | null> {
+    const body: Record<string, unknown> = {};
+    if (params.name !== undefined) { body.name = params.name; }
+    if (params.reporter !== undefined) { body.reporter = params.reporter; }
+    if (params.workload !== undefined) {
+      if (typeof params.workload !== 'object' || params.workload === null) {
+        throw new Error('Template upsert: workload must be { id } or { key } with a non-blank string');
+      }
+      // `in` checks (not property reads) so a loosely-typed JS caller passing `{}` is rejected below.
+      const id: unknown = 'id' in params.workload ? params.workload.id : undefined;
+      const key: unknown = 'key' in params.workload ? params.workload.key : undefined;
+      if (typeof id === 'string' && id.trim() !== '') {
+        body.workload_id = id;
+      } else if (typeof key === 'string' && key.trim() !== '') {
+        const problem = keyProblem(key);
+        if (problem) { throw new Error(`Template upsert: workload key ${problem} (got: "${key}")`); }
+        body.workload_key = key;
+      } else {
+        throw new Error('Template upsert: workload must be { id } or { key } with a non-blank string');
+      }
+    }
+
+    const result = await this.putByKey<UpsertedTemplate>(params.key, body, 'Template');
+    return result && { template: result.record, created: result.created };
   }
 }

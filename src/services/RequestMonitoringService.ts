@@ -17,6 +17,7 @@ import { formatErrorMessage } from '../utils/format-error.js';
 import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from '../utils/request-capture.js';
 import { getState } from '../utils/global-state.js';
 import { createRequireBase } from '../utils/require-base.js';
+import { snapshotDeclared } from '../utils/declared-context.js';
 
 type OriginalRequestFn = typeof import('http').request | typeof import('https').request;
 
@@ -383,6 +384,8 @@ export class RequestMonitoringService {
         status_code: null,
         protocol: protocol
       };
+      // Snapshot now, synchronously: the log is sent from a later async context (see declared-context.ts).
+      snapshotDeclared(callData);
     } catch (err) {
       // Building the (sanitized) log record must never stop the host's own request from being made.
       this.log(`⚠️ Could not prepare capture; not intercepting this request: ${formatErrorMessage(err)}`);
@@ -549,6 +552,8 @@ export class RequestMonitoringService {
         status_code: null,
         protocol: 'fetch'
       };
+      // Snapshot now, synchronously: the log is sent from a later async context (see declared-context.ts).
+      snapshotDeclared(callData);
     } catch (err) {
       // Building the (sanitized) log record must never stop the host's own fetch from being made.
       this.log(`⚠️ Could not prepare capture; not intercepting this fetch: ${formatErrorMessage(err)}`);

@@ -1,10 +1,19 @@
-import { SearchWorkloadsParams, SearchWorkloadsResponse, WorkloadSummary } from '../types';
+import {
+  SearchWorkloadsParams,
+  SearchWorkloadsResponse,
+  UpsertedWorkload,
+  UpsertWorkloadParams,
+  UpsertWorkloadResponse,
+  WorkloadSummary
+} from '../types';
+import { descriptionProblem } from '../utils/entity-key.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface WorkloadServiceConfig extends BaseServiceConfig {}
 
 /**
- * Read-only access to `GET /api/v2/workloads`. There is no per-workload endpoint.
+ * Access to `GET /api/v2/workloads` (read-only; there is no per-workload endpoint) and the
+ * `PUT /api/v2/workloads/by_key/*key` upsert.
  *
  * Requires the client's **private** API key — the public key is write-only on this API and is
  * rejected exactly like an invalid key. Throws on failure, like the other read services.
@@ -47,5 +56,36 @@ export class WorkloadService extends BaseService {
 
     const { body, headers } = await this.getJsonWithHeaders<WorkloadSummary[]>(url.toString(), 'Workload');
     return { workloads: body, pagination: this.paginationFromHeaders(headers, body, params) };
+  }
+
+  /**
+   * Create or update a workload by its stable `key` (`PUT /api/v2/workloads/by_key/*key`). Requires
+   * the **private** API key.
+   *
+   * Only the fields you pass are sent, so an update changes only what you send. The key is
+   * immutable; a new `name` renames the workload. Use this to name a workload ahead of the calls
+   * that declare it with `withContext`.
+   *
+   * @returns `{ workload, created }` — `created` is `true` for a new workload (201), `false` for
+   *   an update (200). Resolves to `null` on a dry run (nothing is sent).
+   * @throws Error if `key` is invalid or `description` is over 1000 characters (before any request), or on
+   *   network failure or a non-JSON body. A non-2xx response throws an {@link HttpError} whose
+   *   `status` holds the HTTP status code: `401` for a missing/invalid/public key, `422` for a
+   *   taken name or an invalid key/description.
+   */
+  public async upsert(params: UpsertWorkloadParams): Promise<UpsertWorkloadResponse | null> {
+    const body: Record<string, unknown> = {};
+    if (params.name !== undefined) { body.name = params.name; }
+    if (params.description !== undefined) {
+      // Array.from(non-string) would report length 0 and let a number/object through to the server.
+      if (typeof params.description !== 'string') { throw new Error('Workload upsert: description must be a string'); }
+      const problem = descriptionProblem(params.description);
+      if (problem) { throw new Error(`Workload upsert: description ${problem}`); }
+      body.description = params.description;
+    }
+    if (params.reporter !== undefined) { body.reporter = params.reporter; }
+
+    const result = await this.putByKey<UpsertedWorkload>(params.key, body, 'Workload');
+    return result && { workload: result.record, created: result.created };
   }
 }

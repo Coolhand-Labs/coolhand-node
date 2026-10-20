@@ -2,7 +2,8 @@
 
 `searchWorkloads()` lists your workloads — the groups of prompt templates that make up one task or
 agent — optionally with a cost and performance `metrics` rollup per workload. It is read-only, and
-there is no per-workload endpoint.
+there is no per-workload endpoint. To create or rename a workload, see
+[declared-workloads.md](./declared-workloads.md).
 
 **Auth:** requires your **private** API key, passed as `apiKey` in the `Coolhand` constructor. The
 public key is write-only on this API and is rejected exactly like an invalid key.

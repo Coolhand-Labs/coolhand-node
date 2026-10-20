@@ -26,6 +26,7 @@ import { createRequireBase } from './utils/require-base.js';
 import { getState, _resetGlobalState as resetGlobalState } from './utils/global-state.js';
 import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from './utils/request-capture.js';
 import type { PassThrough } from 'stream';
+import { snapshotDeclared } from './utils/declared-context.js';
 
 type HttpClientRequest = any; // Will be properly typed when http is loaded
 type HttpIncomingMessage = any; // Will be properly typed when http is loaded
@@ -648,6 +649,8 @@ function interceptRequest(
       status_code: null,
       protocol: protocol
     };
+    // Snapshot now, synchronously: the log is sent from a later async context (see declared-context.ts).
+    snapshotDeclared(callData);
   } catch (err) {
     // Building the (sanitized) log record must never stop the host's own request from being made.
     log(`⚠️ Could not prepare capture; not intercepting this request: ${formatErrorMessage(err)}`);
@@ -830,6 +833,8 @@ async function interceptFetch(
       status_code: null,
       protocol: 'fetch'
     };
+    // Snapshot now, synchronously: the log is sent from a later async context (see declared-context.ts).
+    snapshotDeclared(callData);
   } catch (err) {
     // Building the (sanitized) log record must never stop the host's own fetch from being made.
     log(`⚠️ Could not prepare capture; not intercepting this fetch: ${formatErrorMessage(err)}`);

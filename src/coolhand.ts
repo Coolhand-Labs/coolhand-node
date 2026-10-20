@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -341,6 +341,33 @@ export class Coolhand {
    */
   public async searchWorkloads(params?: SearchWorkloadsParams): Promise<SearchWorkloadsResponse> {
     return this.workloadService.searchWorkloads(params);
+  }
+
+  /**
+   * Create or update a workload by its stable `key` (private API key). Only the fields you pass
+   * are sent; the key is immutable and a new `name` renames. Pair with `withContext` to declare
+   * calls against it. Resolves to `null` on a dry run.
+   *
+   * @returns `{ workload, created }` (`created` is true for 201, false for 200).
+   * @throws Error on a blank key / empty or dot path segment (before any request) or a network
+   *   failure. A non-2xx response throws an error whose `status` holds the HTTP status code (`422`
+   *   for a taken name). See `WorkloadService#upsert`/`docs/declared-workloads.md`.
+   */
+  public async upsertWorkload(params: UpsertWorkloadParams): Promise<UpsertWorkloadResponse | null> {
+    return this.workloadService.upsert(params);
+  }
+
+  /**
+   * Create or update a template by its stable `key` (private API key). `workload` is `{ id }` or
+   * `{ key }`, required when creating. Resolves to `null` on a dry run.
+   *
+   * @returns `{ template, created }` (`created` is true for 201, false for 200).
+   * @throws Error as {@link upsertWorkload}; `422` also covers a missing workload when creating, a
+   *   different workload for an existing template, and a key held by a deprecated template. See
+   *   `TemplateService#upsert`/`docs/declared-workloads.md`.
+   */
+  public async upsertTemplate(params: UpsertTemplateParams): Promise<UpsertTemplateResponse | null> {
+    return this.templateService.upsert(params);
   }
 
   /**
