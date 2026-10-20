@@ -1940,6 +1940,29 @@ describe('PatternMatchingService', () => {
     });
 
     describe('generic credential keys (#276)', () => {
+      it('redacts a credential reached through a shared (diamond) object reference', () => {
+        // The same sub-object referenced from many places is not a cycle and must be redacted at
+        // every occurrence. Kept shallow: the sanitizer walks each reference path, so total work
+        // doubles per shared level.
+        let node: unknown = { password: 'hunter2', note: 'ok' };
+        for (let i = 0; i < 10; i++) { node = { left: node, right: node }; }
+
+        const text = JSON.stringify(service.sanitizeBody(node as Record<string, unknown>));
+
+        expect(text).not.toContain('hunter2');
+        expect(text).toContain('[REDACTED]');
+        expect(text).toContain('"note":"ok"');
+      });
+
+      it('survives a self-referencing object without hanging or leaking the credential', () => {
+        const body: Record<string, unknown> = { password: 'hunter2', note: 'ok' };
+        body.self = body;
+
+        const sanitized = service.sanitizeBody(body);
+
+        expect(JSON.stringify(sanitized)).not.toContain('hunter2');
+      });
+
       it.each(['GOOGLE_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'GITHUB_TOKEN', 'apiSecret'])('redacts the env-var style name %s', (key) => {
         expect(service.sanitizeBody({ [key]: 'live', note: 'ok' })).toEqual({ [key]: '[REDACTED]', note: 'ok' });
         expect(service.sanitizeBody(`${key}=live&scope=read`)).toBe(`${key}=[REDACTED]&scope=read`);
