@@ -329,7 +329,7 @@ console.log('Stats:', {
 🎯 POST https://api.openai.com/v1/chat/completions
 📊 Status: 200
 🔧 Protocol: fetch
-🔍 Matched by: domain (openai.com)
+🔍 Matched by: domain (api.openai.com)
 🤖 Model: gpt-3.5-turbo
 💬 Messages: 1
 🌡️  Temperature: 0.7
