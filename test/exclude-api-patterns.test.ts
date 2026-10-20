@@ -2,7 +2,7 @@ import { DEFAULT_EXCLUDE_API_PATTERNS } from '../src/default-exclude-api-pattern
 import { RequestMonitoringService, _resetActiveOwner } from '../src/services/RequestMonitoringService';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandMatchedPattern, CoolhandAPIPattern } from '../src/types';
-import { matchesExcludePattern } from '../src/utils/exclude-patterns';
+import { matchesExcludePattern, warnOnGlobLikePatterns } from '../src/utils/exclude-patterns';
 
 jest.mock('https');
 jest.mock('http');
@@ -81,6 +81,71 @@ describe('matchesExcludePattern (shared helper)', () => {
     // config source) must not silently exclude all traffic from monitoring.
     expect(matchesExcludePattern('https://example.com/foo/bar', [''])).toBe(false);
     expect(matchesExcludePattern('https://example.com/foo/bar', ['', '/foo/'])).toBe(true);
+  });
+});
+
+describe('matchesExcludePattern semantics (substring, not glob — see issue #231)', () => {
+  it('treats * as a literal character, not a wildcard', () => {
+    expect(matchesExcludePattern('https://example.com/internal-foo', ['/internal-*'])).toBe(false);
+    expect(matchesExcludePattern('https://example.com/internal-*', ['/internal-*'])).toBe(true);
+  });
+
+  it('matches against the full URL, so a bare host also matches a query string value', () => {
+    expect(matchesExcludePattern('https://api.example.com/x?referrer=internal.corp.com', ['internal.corp.com'])).toBe(true);
+  });
+
+  it('lets a leading // pin the host and reject the query-string and lookalike-host cases', () => {
+    const patterns = ['//internal.corp.com/'];
+    expect(matchesExcludePattern('https://internal.corp.com/x', patterns)).toBe(true);
+    expect(matchesExcludePattern('https://api.example.com/x?referrer=internal.corp.com', patterns)).toBe(false);
+    expect(matchesExcludePattern('https://internal.corp.com.attacker.io/', patterns)).toBe(false);
+  });
+});
+
+describe('matchesExcludePattern with non-string entries (untyped JS callers)', () => {
+  it('ignores RegExp/number entries instead of throwing from String.prototype.includes', () => {
+    const patterns = [/internal-.*/ as unknown as string, 42 as unknown as string, '/ok/'];
+    expect(() => matchesExcludePattern('https://example.com/internal-foo', patterns)).not.toThrow();
+    expect(matchesExcludePattern('https://example.com/internal-foo', patterns)).toBe(false);
+    expect(matchesExcludePattern('https://example.com/ok/', patterns)).toBe(true);
+  });
+});
+
+describe('warnOnGlobLikePatterns', () => {
+  let warnSpy: jest.SpyInstance;
+  beforeEach(() => { warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined); });
+  afterEach(() => { warnSpy.mockRestore(); });
+
+  it('warns once per entry containing *', () => {
+    warnOnGlobLikePatterns(['/internal-*', '/ok/', '/a*b']);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy.mock.calls[0][0]).toContain('/internal-*');
+    expect(warnSpy.mock.calls[1][0]).toContain('/a*b');
+  });
+
+  it('does not warn for ? (a legitimate query-string literal) or undefined', () => {
+    warnOnGlobLikePatterns(['/v1/foo?stream=true']);
+    warnOnGlobLikePatterns(undefined);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('warns (without throwing) that non-string entries from untyped JS callers are ignored', () => {
+    expect(() => warnOnGlobLikePatterns([/internal-.*/ as unknown as string, 42 as unknown as string])).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy.mock.calls[0][0]).toContain('type object');
+    expect(warnSpy.mock.calls[1][0]).toContain('type number');
+  });
+
+  it('still warns for a string glob entry in an array that also holds non-strings', () => {
+    warnOnGlobLikePatterns([/x/ as unknown as string, '/internal-*', 42 as unknown as string]);
+    expect(warnSpy).toHaveBeenCalledTimes(3);
+    expect(warnSpy.mock.calls[1][0]).toContain('/internal-*');
+  });
+
+  it('stays silent for plain substrings and for the built-in defaults', () => {
+    warnOnGlobLikePatterns(['/internal/', 'internal.corp.com']);
+    warnOnGlobLikePatterns(DEFAULT_EXCLUDE_API_PATTERNS);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
 

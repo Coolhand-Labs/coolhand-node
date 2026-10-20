@@ -157,6 +157,19 @@ describe('Global Monitor — excludeApiPatterns and self-endpoint exclusion', ()
       expect(globalMonitor.getGlobalStats().interceptedCalls).toBe(0);
     });
 
+    it('warns from initializeGlobalMonitoring for an entry containing *', async () => {
+      const warnMock = console.warn as jest.Mock;
+      warnMock.mockClear();
+
+      await globalMonitor.initializeGlobalMonitoring({
+        apiKey: 'test-key',
+        silent: true,
+        excludeApiPatterns: ['/internal-*']
+      });
+
+      expect(warnMock.mock.calls.some(([msg]) => typeof msg === 'string' && msg.includes('/internal-*'))).toBe(true);
+    });
+
     it('suppresses interception for a custom excludeApiPatterns entry on the https.request path', async () => {
       mockPatternMatchingService.matchesAPIPatternSync.mockReturnValue({
         pattern: { name: 'Test API', domains: ['api.test.com'] },

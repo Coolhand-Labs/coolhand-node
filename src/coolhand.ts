@@ -9,6 +9,7 @@ import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
+import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
 
 export class Coolhand {
@@ -65,6 +66,7 @@ export class Coolhand {
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
+    warnOnGlobLikePatterns(options.excludeApiPatterns);
     this.requestMonitoringService.excludeApiPatterns = [...(options.excludeApiPatterns ?? DEFAULT_EXCLUDE_API_PATTERNS)];
     this.requestMonitoringService.setSelfApiEndpoint(this.loggingService.getApiEndpoint());
 
@@ -399,6 +401,7 @@ export class Coolhand {
   }
 
   public set excludeApiPatterns(patterns: string[]) {
+    warnOnGlobLikePatterns(patterns);
     this.requestMonitoringService.excludeApiPatterns = [...patterns];
   }
 }

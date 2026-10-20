@@ -7,6 +7,7 @@ export interface CoolhandOptions {
   baseUrl?: string;
   /** Timeout in ms for Coolhand API calls (default 30000). Useful for slow self-hosted backends. */
   requestTimeoutMs?: number;
+  /** URL substrings (not globs) — a request is skipped if its full URL contains any entry. Defaults to DEFAULT_EXCLUDE_API_PATTERNS. See docs/exclude-patterns.md. */
   excludeApiPatterns?: string[];
   /** @deprecated Use `baseUrl` instead. Removed in v0.4.0; shim will be removed after v1.x.x. */
   environment?: 'local' | 'production';
