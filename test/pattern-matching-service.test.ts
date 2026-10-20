@@ -3,6 +3,8 @@ import * as path from 'path';
 import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CoolhandAPIPattern } from '../src/types';
 import { DEFAULT_API_PATTERNS } from '../src/default-api-patterns';
+import { getFetchRequestBody } from '../src/utils/fetch-request-helpers';
+import { parseBody } from '../src/utils/parse-body';
 
 // Mock fs module
 jest.mock('fs');
@@ -1934,6 +1936,156 @@ describe('PatternMatchingService', () => {
 
         expect(sanitized.client_secret).toBe('[REDACTED]');
         expect(sanitized.id).toBe('sess_1');
+      });
+    });
+
+    describe('generic credential keys (#276)', () => {
+      it('redacts a credential held in a nested array of strings', () => {
+        const sanitized = service.sanitizeBody({ password: [['hunter2']] }) as Record<string, unknown>;
+
+        expect(sanitized.password).toBe('[REDACTED]');
+      });
+
+      it('redacts a bracketed form field whose name has a malformed percent-escape', () => {
+        const sanitized = service.sanitizeBody('user%5Bpassword%5D%zz=hunter2&scope=read') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+        expect(sanitized).toContain('scope=read');
+      });
+
+      it('redacts the tokens in an OAuth token response and keeps the rest', () => {
+        const sanitized = service.sanitizeBody({
+          access_token: 'at-live', refresh_token: 'rt-live', id_token: 'it-live',
+          token_type: 'Bearer', expires_in: 3600
+        }) as Record<string, any>;
+
+        expect(sanitized).toEqual({
+          access_token: '[REDACTED]', refresh_token: '[REDACTED]', id_token: '[REDACTED]',
+          token_type: 'Bearer', expires_in: 3600
+        });
+      });
+
+      it('redacts api_key and password string values, including nested and in arrays', () => {
+        const sanitized = service.sanitizeBody({
+          api_key: 'sk-live',
+          user: { password: 'hunter2', name: 'ada' },
+          accounts: [{ apiKey: 'sk-other' }]
+        }) as Record<string, any>;
+
+        expect(sanitized.api_key).toBe('[REDACTED]');
+        expect(sanitized.user).toEqual({ password: '[REDACTED]', name: 'ada' });
+        expect(sanitized.accounts[0].apiKey).toBe('[REDACTED]');
+      });
+
+      it.each(['accessToken', 'access-token', 'ACCESS_TOKEN', 'ApiKey'])('matches %s separator- and case-insensitively', (key) => {
+        const sanitized = service.sanitizeBody({ [key]: 'live' }) as Record<string, any>;
+
+        expect(sanitized[key]).toBe('[REDACTED]');
+      });
+
+      it('redacts them in an NDJSON string body', () => {
+        const sanitized = service.sanitizeBody(
+          [JSON.stringify({ refresh_token: 'rt-live' }), JSON.stringify({ ok: true })].join('\n')
+        ) as string;
+
+        expect(sanitized).not.toContain('rt-live');
+        expect(sanitized.split('\n')).toHaveLength(2);
+      });
+
+      it('leaves tool-schema properties named password/api_key untouched', () => {
+        const body = {
+          tools: [{
+            type: 'function',
+            function: {
+              name: 'login',
+              parameters: { type: 'object', properties: { password: { type: 'string' }, api_key: { type: 'string' } }, required: ['password'] }
+            }
+          }]
+        };
+
+        expect(service.sanitizeBody(body)).toEqual(body);
+      });
+
+      it('leaves message content, non-string values and bare token keys untouched', () => {
+        const body = {
+          messages: [{ role: 'user', content: 'my password and api_key are in the vault' }],
+          password: 12345,
+          api_key: null,
+          id_token: { sub: 'x' },
+          logprobs: { content: [{ token: 'hi', logprob: -0.1 }] }
+        };
+
+        expect(service.sanitizeBody(body)).toEqual(body);
+      });
+
+      it('redacts a repeated (array-valued) credential field', () => {
+        const sanitized = service.sanitizeBody({ password: ['hunter2', 'hunter3'], model: 'x' }) as Record<string, any>;
+
+        expect(sanitized).toEqual({ password: '[REDACTED]', model: 'x' });
+      });
+
+      it('redacts credentials in a form-urlencoded string body', () => {
+        const sanitized = service.sanitizeBody(
+          'grant_type=refresh_token&refresh_token=rt-live&client_secret=cs-live&user%5Bpassword%5D=hunter2&scope=read'
+        ) as string;
+
+        expect(sanitized).toBe(
+          'grant_type=refresh_token&refresh_token=[REDACTED]&client_secret=[REDACTED]&user%5Bpassword%5D=[REDACTED]&scope=read'
+        );
+      });
+
+      it('redacts bracketed array fields and tolerates a trailing newline in a form-urlencoded body', () => {
+        const sanitized = service.sanitizeBody('password%5B%5D=hunter2&user%5Bapi_key%5D%5B%5D=sk-live&scope=read\n') as string;
+
+        expect(sanitized).toBe('password%5B%5D=[REDACTED]&user%5Bapi_key%5D%5B%5D=[REDACTED]&scope=read');
+      });
+
+      it('still redacts a credential in a form body whose other values contain spaces or quotes', () => {
+        const sanitized = service.sanitizeBody('password=hunter2&note=hello world "quoted"') as string;
+
+        expect(sanitized).not.toContain('hunter2');
+        expect(sanitized).toContain('note=hello world "quoted"');
+      });
+
+      it('redacts the other credential names the URL sanitizer already knows', () => {
+        const sanitized = service.sanitizeBody({ session_token: 'st', private_key: 'pk', 'x-api-key': 'xk', note: 'ok' });
+
+        expect(sanitized).toEqual({ session_token: '[REDACTED]', private_key: '[REDACTED]', 'x-api-key': '[REDACTED]', note: 'ok' });
+      });
+
+      it('leaves a pwd key alone in a body, since tool payloads use it for the working directory', () => {
+        const body = { tool: 'shell', pwd: '/home/me/project' };
+
+        expect(service.sanitizeBody(body)).toEqual(body);
+        expect(service.sanitizeBody('pwd=/home/me/project&scope=read')).toBe('pwd=/home/me/project&scope=read');
+      });
+
+      it('redacts AWS-style secret_access_key and a form field name padded with spaces', () => {
+        expect(service.sanitizeBody({ secret_access_key: 'aws-live', oauth_token: 'ot' })).toEqual({
+          secret_access_key: '[REDACTED]', oauth_token: '[REDACTED]'
+        });
+        const sanitized = service.sanitizeBody('scope=read& password =hunter2') as string;
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts bracketed FormData field names and a bare form-urlencoded token', () => {
+        expect(service.sanitizeBody({ 'user[password]': 'hunter2', 'keys[api_key][]': ['a', 'b'], model: 'x' })).toEqual({
+          'user[password]': '[REDACTED]', 'keys[api_key][]': '[REDACTED]', model: 'x'
+        });
+        expect(service.sanitizeBody('token=tk-live&token_type_hint=refresh_token')).toBe('token=[REDACTED]&token_type_hint=refresh_token');
+        expect(service.sanitizeBody({ token: 'hi' })).toEqual({ token: 'hi' });
+      });
+
+      it('redacts credential-named FormData fields end to end', async () => {
+        const form = new FormData();
+        form.append('model', 'whisper-1');
+        form.append('api_key', 'sk-live');
+        form.append('password', 'hunter2');
+
+        const text = await getFetchRequestBody('https://api.openai.com/v1/audio', { body: form });
+        const sanitized = service.sanitizeBody(parseBody(text)) as Record<string, any>;
+
+        expect(sanitized).toEqual({ model: 'whisper-1', api_key: '[REDACTED]', password: '[REDACTED]' });
       });
     });
 
