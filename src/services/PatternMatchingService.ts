@@ -483,7 +483,7 @@ export class PatternMatchingService {
     'x-amz-signature', 'x-amz-credential', 'x-amz-security-token',
     'subscription-key', 'ocp-apim-subscription-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'authorization',
     'api_token', 'auth_token', 'bearer_token', 'secret_key', 'private_key', 'access_key', 'auth', 'bearer', 'pwd',
-    'x-goog-signature', 'x-goog-credential', 'session_token'
+    'x-goog-signature', 'x-goog-credential', 'session_token', 'oauth_token', 'passwd', 'secret_access_key'
   ].map((name) => PatternMatchingService.normalizeKey(name)));
 
   public sanitizeURL(url: string): string {
@@ -544,7 +544,8 @@ export class PatternMatchingService {
     'accesstoken', 'refreshtoken', 'idtoken', 'apikey', 'xapikey', 'password', 'secret', 'secretkey', 'privatekey',
     'apitoken', 'authtoken', 'bearertoken', 'accesskey', 'sessiontoken', 'passwd', 'secretaccesskey', 'oauthtoken',
     'newpassword', 'oldpassword', 'currentpassword', 'confirmpassword', 'passwordconfirmation',
-    'openaiapikey', 'anthropicapikey', 'awssessiontoken', 'awssecretaccesskey'
+    'openaiapikey', 'anthropicapikey', 'awssessiontoken', 'awssecretaccesskey',
+    'googleapikey', 'anthropicauthtoken', 'githubtoken', 'apisecret'
   ]);
 
   // A repeated FormData field (`formDataToText`) or a list of secrets arrives as an array of strings.

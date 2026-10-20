@@ -539,7 +539,7 @@ describe('PatternMatchingService', () => {
 
     it.each([
       'ocp-apim-subscription-key', 'api-key', 'x-api-key', 'client_secret', 'refresh_token', 'id_token', 'access-token',
-      'X-Goog-Signature', 'X-Goog-Credential', 'session_token'
+      'X-Goog-Signature', 'X-Goog-Credential', 'session_token', 'oauth_token', 'passwd', 'secret_access_key'
     ])('redacts the %s query param', (param) => {
       expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain(`${param}=%5BREDACTED%5D`);
       expect(service.sanitizeURL(`https://a.com/x?${param}=abc&q=1`)).toContain('q=1');
@@ -1940,6 +1940,11 @@ describe('PatternMatchingService', () => {
     });
 
     describe('generic credential keys (#276)', () => {
+      it.each(['GOOGLE_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'GITHUB_TOKEN', 'apiSecret'])('redacts the env-var style name %s', (key) => {
+        expect(service.sanitizeBody({ [key]: 'live', note: 'ok' })).toEqual({ [key]: '[REDACTED]', note: 'ok' });
+        expect(service.sanitizeBody(`${key}=live&scope=read`)).toBe(`${key}=[REDACTED]&scope=read`);
+      });
+
       it('redacts a credential held in a nested array of strings', () => {
         const sanitized = service.sanitizeBody({ password: [['hunter2']] }) as Record<string, unknown>;
 
