@@ -230,4 +230,114 @@ describe('WorkloadService', () => {
       await expect(newService().searchWorkloads()).rejects.toThrow('Workload response was not valid JSON');
     });
   });
+
+  describe('upsert', () => {
+    function captureRequest(status = 201, body: any = { id: 'abc', name: 'Parser#call' }): { call: () => { url: string; init: any } } {
+      let captured: { url: string; init: any } | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, init: any) => {
+        captured = { url, init };
+        return { ok: true, status, text: jest.fn().mockResolvedValue(JSON.stringify(body)), headers: new Headers() };
+      });
+      return { call: () => captured as { url: string; init: any } };
+    }
+
+    it('PUTs only the given fields to by_key with the private key', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 'Parser', name: 'Parser', reporter: 'squishling' });
+
+      const { url, init } = seen.call();
+      expect(url).toBe('https://coolhandlabs.com/api/v2/workloads/by_key/Parser');
+      expect(init.method).toBe('PUT');
+      expect(init.headers['X-API-Key']).toBe('private-key-123');
+      expect(init.redirect).toBe('error');
+      expect(JSON.parse(init.body)).toEqual({ name: 'Parser', reporter: 'squishling' });
+    });
+
+    it('sends an empty object when only the key is given', async () => {
+      const seen = captureRequest(200);
+
+      await newService().upsert({ key: 'Parser' });
+
+      expect(JSON.parse(seen.call().init.body)).toEqual({});
+    });
+
+    it('includes description when given', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 'Parser', description: 'Parses things' });
+
+      expect(JSON.parse(seen.call().init.body)).toEqual({ description: 'Parses things' });
+    });
+
+    it('escapes reserved characters per segment and keeps "/" literal', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 'Parser#call/squish:L2' });
+
+      expect(seen.call().url).toBe('https://coolhandlabs.com/api/v2/workloads/by_key/Parser%23call/squish%3AL2');
+    });
+
+    it('also escapes ?, %, spaces and non-ASCII', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 'a b?c%d/é·' });
+
+      expect(seen.call().url).toBe('https://coolhandlabs.com/api/v2/workloads/by_key/a%20b%3Fc%25d/%C3%A9%C2%B7');
+    });
+
+    it('reports created=true on 201 and created=false on 200', async () => {
+      captureRequest(201);
+      await expect(newService().upsert({ key: 'k' })).resolves.toEqual({ workload: { id: 'abc', name: 'Parser#call' }, created: true });
+
+      captureRequest(200);
+      await expect(newService().upsert({ key: 'k' })).resolves.toEqual({ workload: { id: 'abc', name: 'Parser#call' }, created: false });
+    });
+
+    it('throws an HttpError carrying the status on a 422', async () => {
+      (global as any).fetch = mockGetFetch({ errors: { name: ['has already been taken'] } }, { ok: false, status: 422 });
+
+      await expect(newService().upsert({ key: 'k', name: 'Taken' })).rejects.toMatchObject({ name: 'HttpError', status: 422 });
+    });
+
+    it('throws on a 401 (public key)', async () => {
+      (global as any).fetch = mockGetFetch('unauthorized', { ok: false, status: 401 });
+
+      await expect(newService().upsert({ key: 'k' })).rejects.toMatchObject({ status: 401 });
+    });
+
+    it.each(['', '   ', '.', '..', 'a/../b', 'a/./b', '/a', 'a/', 'a//b'])('rejects key %j before any request', async (key) => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key })).rejects.toThrow(/key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['a\u200Bb', ' a', 'a ', 'x'.repeat(256)])('applies the same key rules as withContext (%j)', async (key) => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key })).rejects.toThrow(/key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects a description over 1000 characters before any request', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key: 'k', description: 'd'.repeat(1001) })).rejects.toThrow(/description/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('does not send in dry-run mode but still validates', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+      const service = newService({ dryRun: true });
+
+      await expect(service.upsert({ key: 'k' })).resolves.toBeNull();
+      await expect(service.upsert({ key: '..' })).rejects.toThrow(/key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

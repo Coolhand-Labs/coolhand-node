@@ -1,8 +1,9 @@
 # Reading Templates (Search + Get)
 
 `searchTemplates()` and `getTemplate()` read back the LLM request templates your logs are matched
-against. Both are read-only — creating, updating and deprecating templates stays on the MCP
-surface, and there is no version-history sub-resource on this REST API.
+against. Both are read-only — deprecating templates stays on the MCP surface, and there is no
+version-history sub-resource on this REST API. To create or rename a template by key, see
+[declared-workloads.md](./declared-workloads.md).
 
 **Auth:** both require your **private** API key, passed as `apiKey` in the `Coolhand` constructor.
 The public key is write-only on this API and is rejected exactly like an invalid key — construct a

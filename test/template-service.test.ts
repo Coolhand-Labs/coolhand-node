@@ -396,4 +396,82 @@ describe('TemplateService', () => {
       await expect(newService().getTemplate('aaa')).rejects.toThrow('Template response was not valid JSON');
     });
   });
+
+  describe('upsert', () => {
+    function captureRequest(status = 201, body: any = { id: 'tpl1', name: 'Squish L2' }): { call: () => { url: string; init: any } } {
+      let captured: { url: string; init: any } | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, init: any) => {
+        captured = { url, init };
+        return { ok: true, status, text: jest.fn().mockResolvedValue(JSON.stringify(body)), headers: new Headers() };
+      });
+      return { call: () => captured as { url: string; init: any } };
+    }
+    const newService = () => new TemplateService({ apiKey: 'private-key-123', silent: true });
+
+    it('PUTs to by_key with the escaped key and a flat workload_key', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 'Parser#call/squish:L2', workload: { key: 'Parser#call' }, name: 'Squish L2', reporter: 'squishling' });
+
+      const { url, init } = seen.call();
+      expect(url).toBe('https://coolhandlabs.com/api/v2/llm_request_templates/by_key/Parser%23call/squish%3AL2');
+      expect(init.method).toBe('PUT');
+      expect(init.headers['X-API-Key']).toBe('private-key-123');
+      expect(JSON.parse(init.body)).toEqual({ workload_key: 'Parser#call', name: 'Squish L2', reporter: 'squishling' });
+    });
+
+    it('flattens a workload id to workload_id', async () => {
+      const seen = captureRequest();
+
+      await newService().upsert({ key: 't', workload: { id: 'j35494sql6yd' } });
+
+      expect(JSON.parse(seen.call().init.body)).toEqual({ workload_id: 'j35494sql6yd' });
+    });
+
+    it('sends no workload param when workload is omitted (update-only)', async () => {
+      const seen = captureRequest(200);
+
+      await newService().upsert({ key: 't', name: 'Renamed' });
+
+      expect(JSON.parse(seen.call().init.body)).toEqual({ name: 'Renamed' });
+    });
+
+    it('reports created from the status code', async () => {
+      captureRequest(201);
+      await expect(newService().upsert({ key: 't', workload: { key: 'w' } })).resolves.toEqual({ template: { id: 'tpl1', name: 'Squish L2' }, created: true });
+
+      captureRequest(200);
+      await expect(newService().upsert({ key: 't' })).resolves.toMatchObject({ created: false });
+    });
+
+    it('throws an HttpError with status on 422', async () => {
+      (global as any).fetch = mockGetFetch({ errors: { workload: ['must exist'] } }, { ok: false, status: 422 });
+
+      await expect(newService().upsert({ key: 't' })).rejects.toMatchObject({ name: 'HttpError', status: 422 });
+    });
+
+    it.each([{}, { id: ' ' }, { key: '' }, { id: 5 }])('rejects workload %j before any request', async (workload) => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key: 't', workload: workload as any })).rejects.toThrow(/workload/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid workload key before any request', async () => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key: 't', workload: { key: ' bad//key ' } })).rejects.toThrow(/workload key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['', '..', 'a/./b'])('rejects key %j before any request', async (key) => {
+      const fetchMock = jest.fn();
+      (global as any).fetch = fetchMock;
+
+      await expect(newService().upsert({ key })).rejects.toThrow(/key/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });
