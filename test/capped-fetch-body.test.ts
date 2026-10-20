@@ -123,7 +123,13 @@ describe('readCappedRequestText on a cloned stream Request (#277)', () => {
     expect(pullsAfterCapture).toBeLessThan(30);
   });
 
-  it('cancels the source when the host cancels after the capture branch stopped', async () => {
+  // Node 18's Request.clone() never forwards a cancel from either branch to the underlying source
+  // (verified without any Coolhand code involved: cancelling both the clone and the original Request
+  // leaves the source uncancelled and the cancel() promise pending), so the host-cancel assertion
+  // can only hold on Node 20+. The capture branch itself is still cancelled on 18 (see the bounded
+  // pull-count tests above).
+  const itPropagatesCancel = Number(process.versions.node.split('.')[0]) >= 20 ? it : it.skip;
+  itPropagatesCancel('cancels the source when the host cancels after the capture branch stopped', async () => {
     const { stream, stats } = makeSource(Infinity, 100);
     const request = streamRequest(stream);
 
