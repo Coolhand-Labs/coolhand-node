@@ -9,8 +9,9 @@ import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface PublicContentServiceConfig extends Omit<BaseServiceConfig, 'apiKey' | 'silent'> {
   /**
-   * Optional: reads need no key. Falls back to `COOLHAND_API_KEY` (so with a custom `baseUrl` that key
-   * goes to that host); with neither, no key header is sent.
+   * Optional: reads need no key. When omitted, falls back to `COOLHAND_API_KEY` (so with a custom
+   * `baseUrl` that key goes to that host); with neither, no key header is sent. An explicit `''` means
+   * "no key" and skips the environment fallback.
    */
   apiKey?: string;
   silent?: boolean;
@@ -29,13 +30,13 @@ function keyFromEnv(): string | undefined {
  * Unlike every other service, this one works with no API key, so it can be constructed on its own
  * (`new PublicContentService()`) rather than through `Coolhand`, whose constructor requires a key.
  * Anonymous callers are rate limited to 30 requests per minute per IP (`429` beyond that); a key —
- * `apiKey`, else `COOLHAND_API_KEY` — is sent as `X-API-Key` and lifts the limit. A key the server
+ * `apiKey`, else `COOLHAND_API_KEY` when `apiKey` is omitted — is sent as `X-API-Key` and lifts the limit. A key the server
  * does not recognise is a `401`, not a silent fallback to anonymous.
  */
 export class PublicContentService extends BaseService {
   constructor(config: PublicContentServiceConfig = {}) {
     super(
-      { ...config, apiKey: config.apiKey || keyFromEnv() || '', silent: config.silent ?? true },
+      { ...config, apiKey: config.apiKey ?? keyFromEnv() ?? '', silent: config.silent ?? true },
       '/api/v2/public_content'
     );
   }

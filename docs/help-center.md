@@ -17,7 +17,7 @@ const keyed = new PublicContentService({ apiKey: 'any-key' }); // lifts the rate
 
 - No key is configured: no `X-API-Key` header is sent, and the calls work. Anonymous callers are
   limited to **30 requests per minute per IP**; beyond that the server answers `429`.
-- A key is sent as `X-API-Key` when `apiKey` is passed, else when `COOLHAND_API_KEY` is set. Callers
+- A key is sent as `X-API-Key` when `apiKey` is passed, else when `COOLHAND_API_KEY` is set. Pass `apiKey: ''` to force an anonymous call even when `COOLHAND_API_KEY` is set (for example when pointing `baseUrl` at a host that key was not issued for). Callers
   with a valid key are not rate limited.
 - A key the server does not recognise is a `401` (`{"error":"Invalid API key."}`) even though the
   endpoint is public. It is thrown, not retried anonymously.

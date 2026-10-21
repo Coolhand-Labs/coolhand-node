@@ -90,7 +90,8 @@ describe('PublicContentService', () => {
       expect(lastHeaders(fetchMock)['X-API-Key']).toBe('explicit-key');
     });
 
-    it('treats an empty apiKey as no key', async () => {
+    it('treats an explicit empty apiKey as no key, without reading COOLHAND_API_KEY', async () => {
+      process.env.COOLHAND_API_KEY = 'env-key';
       const fetchMock = mockFetch([]);
 
       await newService({ apiKey: '' }).getHelpArticle('a-slug').catch(() => undefined);
