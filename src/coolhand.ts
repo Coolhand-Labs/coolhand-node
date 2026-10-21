@@ -22,7 +22,7 @@ export class Coolhand {
   private workloadService: WorkloadService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
-  private publicContentService: HelpCenterDocsService;
+  private helpCenterDocsService: HelpCenterDocsService;
   private optimizationFeedbackLinkService: OptimizationFeedbackLinkService;
   private silent: boolean;
 
@@ -66,7 +66,7 @@ export class Coolhand {
     this.workloadService = new WorkloadService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
-    this.publicContentService = new HelpCenterDocsService(serviceConfig);
+    this.helpCenterDocsService = new HelpCenterDocsService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     warnOnGlobLikePatterns(options.excludeApiPatterns);
@@ -462,7 +462,7 @@ export class Coolhand {
    *   rate limited).
    */
   public async searchHelpArticles(params?: SearchHelpArticlesParams): Promise<SearchHelpArticlesResponse> {
-    return this.publicContentService.searchHelpArticles(params);
+    return this.helpCenterDocsService.searchHelpArticles(params);
   }
 
   /**
@@ -473,7 +473,7 @@ export class Coolhand {
    *   an unknown or unpublished slug). See `HelpCenterDocsService#getHelpArticle`.
    */
   public async getHelpArticle(slug: string): Promise<HelpArticle> {
-    return this.publicContentService.getHelpArticle(slug);
+    return this.helpCenterDocsService.getHelpArticle(slug);
   }
 
   /**
@@ -482,7 +482,7 @@ export class Coolhand {
    * See `HelpCenterDocsService#listHelpCategories`.
    */
   public async listHelpCategories(): Promise<HelpCategory[]> {
-    return this.publicContentService.listHelpCategories();
+    return this.helpCenterDocsService.listHelpCategories();
   }
 
   /**

@@ -179,8 +179,9 @@ export abstract class BaseService {
   /**
    * Loggable message for a caught `unknown`, with the configured API key masked. Backstop for
    * anything the constructor's {@link normalizeApiKey} can't see, e.g. a proxy echoing the key back.
+   * Subclasses should log caught errors through this rather than `formatErrorMessage` directly.
    */
-  private describeError(err: unknown): string {
+  protected describeError(err: unknown): string {
     return this.mask(formatErrorMessage(err));
   }
 
@@ -231,7 +232,7 @@ export abstract class BaseService {
         try {
           console.log(`🚫 DRY RUN: Would send payload:`, JSON.stringify(payload, null, 2));
         } catch (error) {
-          console.error(`❌ Failed to stringify payload for dry-run log:`, formatErrorMessage(error));
+          console.error(`❌ Failed to stringify payload for dry-run log:`, this.describeError(error));
         }
       }
       this.log(`🚫 DRY RUN: ${successMessage.replace('✅', '🚫')}`);

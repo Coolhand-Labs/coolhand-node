@@ -15,7 +15,6 @@ import {
 } from '../types';
 import { CollectionMethod } from '../utils/collector.js';
 import { consumeDeclared } from '../utils/declared-context.js';
-import { formatErrorMessage } from '../utils/format-error.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface LoggingServiceConfig extends BaseServiceConfig {}
@@ -58,7 +57,7 @@ export class LoggingService extends BaseService {
       return result;
     } catch (error) {
       if (!this.silent) {
-        console.error(`❌ Failed to log request to API:`, this.mask(formatErrorMessage(error)));
+        console.error(`❌ Failed to log request to API:`, this.describeError(error));
       }
       return null;
     }
