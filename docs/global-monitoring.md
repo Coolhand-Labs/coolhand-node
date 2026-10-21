@@ -462,7 +462,8 @@ Any header whose name contains `auth`, `key`, `token`, `secret` or `cookie` (for
   named `password`) and non-string values are left alone. Form-urlencoded bodies get the same
   names, plus bare `token`, `assertion` and `client_assertion` (OAuth revocation, introspection and
   JWT-bearer requests). Bodies that are not a single JSON document (NDJSON, truncated bodies) are
-  scrubbed too.
+  scrubbed too. Raw `multipart/form-data` bodies sent through `http`/`https` (file uploads) have the
+  values of parts with those names redacted, recognized by shape rather than `Content-Type`.
 
   Known gaps, by design:
 

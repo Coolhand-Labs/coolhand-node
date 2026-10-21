@@ -617,6 +617,83 @@ export class PatternMatchingService {
     return changed ? redacted : rawText;
   }
 
+  // `;name=value` header parameters. The first treats `\` as an escape; the second does not, for a
+  // client that writes a literal backslash (`filename="C:\dir\"`) where the first would swallow the closing quote.
+  private static readonly MULTIPART_PARAM_PATTERNS = [
+    /;\s*([\w*-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^;\s]*))/g,
+    /;\s*([\w*-]+)\s*=\s*(?:"([^"]*)"|([^;\s]*))/g,
+  ];
+
+  // A `multipart/form-data` body (file uploads, e.g. audio transcription) reaches sanitizeBody as a
+  // plain string with no content type, so it is recognized by shape: a `--boundary` delimiter line
+  // (after an optional preamble) followed within a few header lines by `Content-Disposition:
+  // form-data`. The values of credential-named parts are replaced (`name="api_key"`,
+  // `user[password]`, ...), keeping the framing so the rest of the body still reads. Returns `null`
+  // when the text isn't multipart, and the input untouched when no part is redacted.
+  private static redactMultipartFields(text: string): string | null {
+    // The header-line count is bounded so a pile of `--x` lines can't make the scan quadratic.
+    const delimiterMatch = /(?:^\s*|\n)(--[^\r\n]{1,200})\r?\n(?:[^\r\n]*\r?\n){0,4}?content-disposition:\s*form-data/i.exec(text);
+    if (!delimiterMatch) { return null; }
+
+    // Transport padding after the delimiter is allowed (RFC 2046), so it is trimmed before matching.
+    // Only a delimiter at the start of a line splits: a short boundary (`--B`) must not cut through
+    // part content that happens to contain it, which would leave a secret fragment unredacted.
+    const delimiter = delimiterMatch[1].trimEnd();
+    // A line-start lookbehind of `^\s*|\n` would rescan back over every whitespace run in a part
+    // (quadratic on a large whitespace-heavy upload), so leading whitespace is peeled off instead.
+    const leading = /^\s*/.exec(text)?.[0] ?? '';
+    const delimiterPattern = new RegExp(
+      `(?<=^|\\n)${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=(?:--)?[ \\t]*(?:\\r?\\n|$))`
+    );
+    let changed = false;
+    const redacted = text
+      .slice(leading.length)
+      .split(delimiterPattern)
+      .map((piece, index) => {
+        // The first piece is the preamble; a piece starting `--` is the closing delimiter.
+        if (index === 0 || piece.startsWith('--')) { return piece; }
+        const separator = /\r?\n\r?\n/.exec(piece);
+        if (!separator) { return piece; }
+        const headers = piece.slice(0, separator.index);
+        // Header parameters are tokenized in sequence, so a quoted value (`filename="x; name=y"`,
+        // `name="a\"b"`) is consumed whole and can't be mistaken for the part name. `name*=UTF-8''api_key`
+        // is the RFC 5987 form; its charset/language prefix is dropped.
+        // Every `name` / `name*` parameter is checked, not just the first: receivers disagree on which
+        // wins when both (or a duplicate) are present, so a decoy first name must not hide the real one.
+        // A second pass without backslash escapes covers a client that writes a literal backslash
+        // (`filename="C:\dir\"`), where the escape-aware pass would swallow the closing quote.
+        const isCredentialPart = PatternMatchingService.MULTIPART_PARAM_PATTERNS
+          .some((paramPattern, pass) => Array.from(headers.matchAll(paramPattern)).some((param) => {
+            const key = param[1].toLowerCase();
+            if (key !== 'name' && key !== 'name*') { return false; }
+            // An unquoted value may still be wrapped in single quotes by a non-browser client.
+            let name = (param[2] ?? param[3].replace(/^'(.*)'$/, '$1'));
+            if (pass === 0) { name = name.replace(/\\(.)/g, '$1'); }
+            if (key === 'name*') { name = name.replace(/^[^']*'[^']*'/, ''); }
+            try {
+              name = decodeURIComponent(name);
+            } catch { /* keep the raw name */ }
+            return PatternMatchingService.isFormCredentialKey(name.trim());
+          }));
+        const valueStart = separator.index + separator[0].length;
+        const value = piece.slice(valueStart);
+        const trailingNewline = /\r?\n$/.exec(value)?.[0] ?? '';
+        if (isCredentialPart) {
+          changed = true;
+          return `${piece.slice(0, valueStart)}[REDACTED]${trailingNewline}`;
+        }
+        // A part can itself carry a form-urlencoded value (`grant_type=x&client_secret=...`); the
+        // whole-body form pass is skipped for multipart, so that part value is scrubbed here.
+        const plainValue = value.slice(0, value.length - trailingNewline.length);
+        const scrubbed = PatternMatchingService.redactFormEncodedFields(plainValue);
+        if (scrubbed === plainValue) { return piece; }
+        changed = true;
+        return `${piece.slice(0, valueStart)}${scrubbed}${trailingNewline}`;
+      })
+      .join(delimiter);
+    return changed ? leading + redacted : text;
+  }
+
   // `authorization` / `headers` are only credentials on an MCP tool/server definition — OpenAI
   // Responses MCP tools carry `{ type: 'mcp', server_url, authorization, headers }`. Scoped to
   // those objects because a bare `headers` or `authorization` key elsewhere (tool schemas, message
@@ -765,6 +842,11 @@ export class PatternMatchingService {
           .join('\n');
       } catch { /* not NDJSON either */ }
     }
+
+    // Multipart skips the form-urlencoded pass (it would split part content on `&`) but still gets
+    // the key-name scrub, so a `"password": "..."` inside a JSON part is caught too.
+    const multipart = PatternMatchingService.redactMultipartFields(stripped);
+    if (multipart !== null) { return this.redactCredentialStrings(multipart); }
 
     // Unparseable (truncated, malformed): can't know the structure, so redact by key name instead.
     // Deliberately over-inclusive — a body we can't parse is safer over-redacted than leaked.
