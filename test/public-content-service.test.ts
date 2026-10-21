@@ -165,6 +165,14 @@ describe('PublicContentService', () => {
       expect(url.searchParams.get('per_page')).toBe('3');
     });
 
+    it('treats a blank category as omitted', async () => {
+      const fetchMock = mockFetch([]);
+
+      await newService().searchHelpArticles({ category: '  ', query: 'x' });
+
+      expect(lastUrl(fetchMock).search).toBe('?q=x');
+    });
+
     it('never sends a corpus or plain category param', async () => {
       const fetchMock = mockFetch([]);
 
@@ -255,9 +263,15 @@ describe('PublicContentService', () => {
 describe('Coolhand help center methods', () => {
   afterEach(() => {
     (global as any).fetch = originalFetch;
+    if (originalEnvKey === undefined) {
+      delete process.env.COOLHAND_API_KEY;
+    } else {
+      process.env.COOLHAND_API_KEY = originalEnvKey;
+    }
   });
 
-  it('delegate to the service and send the instance key', async () => {
+  it('delegate to the service and send the instance key, not COOLHAND_API_KEY', async () => {
+    process.env.COOLHAND_API_KEY = 'env-key';
     const fetchMock = mockFetch([]);
     const coolhand = new Coolhand({ apiKey: 'instance-key', baseUrl: 'http://localhost:3000' });
 

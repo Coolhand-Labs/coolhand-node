@@ -888,7 +888,9 @@ export interface HelpArticleSummary {
   updated_content_at: string | null;
 }
 
-/** A heading in an article's table of contents; h3s are nested under their h2 as `children`. */
+// The definition types a toc entry only as `object`; the server sends { id, text, level, children }
+// (h3s nested under their h2), but that is not part of the definition, so it stays open-ended here.
+/** A heading in an article's table of contents. */
 export interface HelpArticleTocEntry {
   [key: string]: unknown;
 }

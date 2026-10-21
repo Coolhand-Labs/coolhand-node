@@ -8,13 +8,16 @@ import {
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
 export interface PublicContentServiceConfig extends Omit<BaseServiceConfig, 'apiKey' | 'silent'> {
-  /** Optional: reads need no key. Falls back to `COOLHAND_API_KEY`; with neither, no key header is sent. */
+  /**
+   * Optional: reads need no key. Falls back to `COOLHAND_API_KEY` (so with a custom `baseUrl` that key
+   * goes to that host); with neither, no key header is sent.
+   */
   apiKey?: string;
   silent?: boolean;
 }
 
 function keyFromEnv(): string | undefined {
-  return typeof process !== 'undefined' ? process.env?.COOLHAND_API_KEY : undefined;
+  return typeof process !== 'undefined' ? process.env.COOLHAND_API_KEY : undefined;
 }
 
 /**
@@ -55,7 +58,7 @@ export class PublicContentService extends BaseService {
   public async searchHelpArticles(params: SearchHelpArticlesParams = {}): Promise<SearchHelpArticlesResponse> {
     const url = new URL(this.apiEndpoint);
     const query = params.query?.trim() ? params.query : undefined;
-    if (params.category) {
+    if (params.category?.trim()) {
       this.setQueryParams(url, { 'q[help_category_slug_eq]': params.category, 'q[full_text]': query });
     } else {
       this.setQueryParams(url, { q: query });

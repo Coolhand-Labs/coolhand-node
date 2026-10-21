@@ -8,4 +8,5 @@ export { OptimizationFeedbackLinkService, type OptimizationFeedbackLinkServiceCo
 export { WorkloadService, type WorkloadServiceConfig } from './WorkloadService.js';
 export { LlmReferenceService, type LlmReferenceServiceConfig } from './LlmReferenceService.js';
 export { McpService, type McpServiceConfig } from './McpService.js';
-export { ClientFileService, type ClientFileServiceConfig } from './ClientFileService.js';export { PublicContentService, type PublicContentServiceConfig } from './PublicContentService.js';
+export { ClientFileService, type ClientFileServiceConfig } from './ClientFileService.js';
+export { PublicContentService, type PublicContentServiceConfig } from './PublicContentService.js';

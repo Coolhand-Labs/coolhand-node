@@ -117,7 +117,7 @@ whose `status` holds the HTTP status code: `401` for an invalid key, `404` for a
 `test/live/public-content.live.ts` runs against a real server with no key:
 
 ```bash
-COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npm run test:live -- --testPathPatterns 'test/live/public-content'
+COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns 'test/live/public-content'
 ```
 
-It makes about ten anonymous requests, so running it repeatedly within a minute can hit the `429`.
+It makes about thirteen anonymous requests, so running it repeatedly within a minute can hit the `429`.
