@@ -58,9 +58,10 @@ export class PublicContentService extends BaseService {
    */
   public async searchHelpArticles(params: SearchHelpArticlesParams = {}): Promise<SearchHelpArticlesResponse> {
     const url = new URL(this.apiEndpoint);
-    const query = params.query?.trim() ? params.query : undefined;
-    if (params.category?.trim()) {
-      this.setQueryParams(url, { 'q[help_category_slug_eq]': params.category, 'q[full_text]': query });
+    const query = params.query?.trim() || undefined;
+    const category = params.category?.trim();
+    if (category) {
+      this.setQueryParams(url, { 'q[help_category_slug_eq]': category, 'q[full_text]': query });
     } else {
       this.setQueryParams(url, { q: query });
     }

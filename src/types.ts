@@ -915,9 +915,9 @@ export interface HelpCategory {
 }
 
 export interface SearchHelpArticlesParams {
-  /** Relevance search: quoted phrases, `-exclusions` and `or` are supported. Omit for a full listing. */
+  /** Relevance search: quoted phrases, `-exclusions` and `or` are supported. Omit for a full listing. Trimmed; blank is treated as omitted. */
   query?: string;
-  /** Restrict to one section by slug (see `listHelpCategories`). */
+  /** Restrict to one section by slug (see `listHelpCategories`). Trimmed; blank is treated as omitted. */
   category?: string;
   /** 1-based page number. */
   page?: number;

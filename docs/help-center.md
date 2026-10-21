@@ -39,8 +39,8 @@ const { articles, pagination } = await helpCenter.searchHelpArticles({
 
 | Field | Type | Description |
 |---|---|---|
-| `query` | `string` | Relevance search (Postgres full text, the same as the website's). Supports quoted phrases, `-exclusions` and `or`. Omit for a full listing. A blank string is treated as omitted |
-| `category` | `string` | Restrict to one section by slug (see `listHelpCategories`) |
+| `query` | `string` | Relevance search (Postgres full text, the same as the website's). Supports quoted phrases, `-exclusions` and `or`. Omit for a full listing. Surrounding whitespace is trimmed; a blank string is treated as omitted |
+| `category` | `string` | Restrict to one section by slug (see `listHelpCategories`). Surrounding whitespace is trimmed; a blank string is treated as omitted |
 | `page` | `number` | Page number, 1-based |
 | `perPage` | `number` | Page size (default 25, max 100) |
 

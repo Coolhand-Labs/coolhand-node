@@ -174,6 +174,33 @@ describe('PublicContentService', () => {
       expect(lastUrl(fetchMock).search).toBe('?q=x');
     });
 
+    it('trims surrounding whitespace from query before sending it', async () => {
+      const fetchMock = mockFetch([]);
+
+      await newService().searchHelpArticles({ query: '  match rate ' });
+
+      expect(lastUrl(fetchMock).searchParams.get('q')).toBe('match rate');
+    });
+
+    it('trims surrounding whitespace from category before sending it', async () => {
+      const fetchMock = mockFetch([]);
+
+      await newService().searchHelpArticles({ category: '  providers ' });
+
+      expect(lastUrl(fetchMock).searchParams.get('q[help_category_slug_eq]')).toBe('providers');
+    });
+
+    it('trims both query and category when sent together in the structured form', async () => {
+      const fetchMock = mockFetch([]);
+
+      await newService().searchHelpArticles({ query: ' match rate ', category: ' providers ' });
+
+      const url = lastUrl(fetchMock);
+      expect(url.searchParams.get('q[full_text]')).toBe('match rate');
+      expect(url.searchParams.get('q[help_category_slug_eq]')).toBe('providers');
+      expect(url.searchParams.has('q')).toBe(false);
+    });
+
     it('never sends a corpus or plain category param', async () => {
       const fetchMock = mockFetch([]);
 
