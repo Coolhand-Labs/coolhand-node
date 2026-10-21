@@ -64,10 +64,10 @@ proceeds on its own; a full run takes about 16 minutes.
 
 1. Save the PR's current description outside the repo:
    `gh pr view <n> --json body --jq .body > /tmp/release-pr-body-vX.Y.Z.md`.
-2. `gh pr merge <n> --squash --delete-branch --subject "chore: release vX.Y.Z
-   (#<n>)" --body-file /tmp/release-pr-body-vX.Y.Z.md`. This matches the
-   existing history (`chore: release v0.16.0 (#286)`); `--subject` is used
-   verbatim, so keep the `(#<n>)` suffix. The default squash body would be the
+2. `gh pr merge <n> --squash --delete-branch --subject "release vX.Y.Z
+   (#<n>)" --body-file /tmp/release-pr-body-vX.Y.Z.md`. The squash title has no
+   `chore:` prefix (the PR's own title does); `--subject` is used verbatim, so
+   keep the `(#<n>)` suffix. The default squash body would be the
    commit list, hence the explicit PR body. Add no AI attribution. Never use
    `--admin` or bypass checks; if the merge is refused, stop and report.
 3. `git fetch origin main --tags`. Get the merge commit with `gh pr view <n>
@@ -136,7 +136,7 @@ State, in the final message:
 - *"CI checks the version, so I can skip the consistency check."* CI compares
   the tag to `package.json` only, and npm versions can't be republished.
 - *"I'll use the default squash message."* The title and body are the record of
-  the release. Use `chore: release vX.Y.Z (#N)` and the PR description.
+  the release. Use `release vX.Y.Z (#N)` and the PR description.
 - *"I'll tag `origin/main` HEAD, it's the same thing."* Not if `main` moved.
 - *"I'll publish the notes first and tag after."* `--verify-tag` exists so a
   release can't point at nothing; GitHub would otherwise create the tag itself
