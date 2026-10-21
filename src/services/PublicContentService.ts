@@ -37,7 +37,8 @@ export class PublicContentService extends BaseService {
   constructor(config: PublicContentServiceConfig = {}) {
     super(
       { ...config, apiKey: config.apiKey ?? keyFromEnv() ?? '', silent: config.silent ?? true },
-      '/api/v2/public_content'
+      '/api/v2/public_content',
+      { allowAnonymous: true }
     );
   }
 

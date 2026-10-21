@@ -92,7 +92,10 @@ function validateBaseUrl(raw: string): void {
 // removed: `Headers` trims exactly that set before checking, but the https fallback does not, and
 // error masking needs the exact string that `fetch` would quote. (Not `String#trim`, which also
 // strips \v, \f and Unicode spaces that `Headers` rejects.)
-function normalizeApiKey(raw: unknown): string {
+function normalizeApiKey(raw: unknown, allowAnonymous: boolean): string {
+  if (allowAnonymous && (raw === undefined || (typeof raw === 'string' && raw.trim() === ''))) {
+    return '';
+  }
   if (typeof raw !== 'string' || raw.trim() === '') {
     throw new Error('apiKey must be a non-empty string');
   }
@@ -132,8 +135,13 @@ export abstract class BaseService {
   protected apiEndpoint: string;
   protected requestTimeoutMs: number;
 
-  constructor(config: BaseServiceConfig, endpointPath: string) {
-    this.apiKey = normalizeApiKey(config.apiKey);
+  /**
+   * @param options.allowAnonymous Let an empty/blank `apiKey` through as "no key" instead of throwing,
+   *   for services whose endpoints are public (only `PublicContentService`). A non-empty key is still
+   *   validated, and no `X-API-Key` header is sent when there is none.
+   */
+  constructor(config: BaseServiceConfig, endpointPath: string, options: { allowAnonymous?: boolean } = {}) {
+    this.apiKey = normalizeApiKey(config.apiKey, options.allowAnonymous ?? false);
     this.silent = config.silent;
     this.debug = config.debug || false;
     this.dryRun = config.dryRun || false;
@@ -153,6 +161,10 @@ export abstract class BaseService {
 
   /** `text` with every occurrence of the configured API key masked. */
   protected mask(text: string): string {
+    // No key (anonymous service): `''.split('')` would splice the marker between every character.
+    if (!this.apiKey) {
+      return text;
+    }
     return text.split(this.apiKey).join('[redacted]');
   }
 
@@ -174,6 +186,9 @@ export abstract class BaseService {
 
   /** Whether `err` or anything in its `cause` chain quotes the API key. */
   private leaksKey(err: unknown, depth = 0): boolean {
+    if (!this.apiKey) {
+      return false;
+    }
     if (typeof err === 'string') {
       return err.includes(this.apiKey);
     }
