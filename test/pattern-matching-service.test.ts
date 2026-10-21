@@ -2227,6 +2227,153 @@ describe('PatternMatchingService', () => {
       });
     });
 
+    describe('multipart/form-data string bodies (#288)', () => {
+      type Part = [name: string, value: string, filename?: string];
+
+      const multipart = (parts: Part[], { eol = '\r\n', boundary = 'XBOUNDARYX', close = true } = {}): string =>
+        parts
+          .map(([name, value, filename]) =>
+            `--${boundary}${eol}Content-Disposition: form-data; name="${name}"${filename ? `; filename="${filename}"` : ''}${eol}${eol}${value}${eol}`
+          )
+          .join('') + (close ? `--${boundary}--${eol}` : '');
+
+      it('redacts the value of a credential-named part and keeps the rest verbatim', () => {
+        const body = multipart([['model', 'whisper-1'], ['api_key', 'sk-SECRET123'], ['file', 'audio-bytes', 'a.wav']]);
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).toBe(multipart([['model', 'whisper-1'], ['api_key', '[REDACTED]'], ['file', 'audio-bytes', 'a.wav']]));
+      });
+
+      it('handles LF-only line endings', () => {
+        const sanitized = service.sanitizeBody(multipart([['password', 'hunter2'], ['note', 'ok']], { eol: '\n' })) as string;
+
+        expect(sanitized).toBe(multipart([['password', '[REDACTED]'], ['note', 'ok']], { eol: '\n' }));
+      });
+
+      it('redacts unquoted, bracketed and bare-token part names', () => {
+        const body = [
+          '--B', 'Content-Disposition: form-data; name=client_secret', '', 'cs-live',
+          '--B', 'Content-Disposition: form-data; name="user[password]"', '', 'hunter2',
+          '--B', 'Content-Disposition: form-data; name="token"', '', 'tk-live',
+          '--B', 'Content-Disposition: form-data; name="scope"', '', 'read',
+          '--B--', ''
+        ].join('\r\n');
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).not.toMatch(/cs-live|hunter2|tk-live/);
+        expect(sanitized).toContain('read');
+        expect(sanitized.match(/\[REDACTED\]/g)).toHaveLength(3);
+      });
+
+      it('does not mistake a credential-looking filename for the part name, but redacts a credential-named file part', () => {
+        const sanitized = service.sanitizeBody(
+          multipart([['upload', 'file-body', 'api_key.txt'], ['secret_key', 'file-secret', 'k.pem']])
+        ) as string;
+
+        expect(sanitized).toContain('file-body');
+        expect(sanitized).not.toContain('file-secret');
+      });
+
+      it('does not read a name= inside a quoted filename as the part name', () => {
+        const body = '--B\r\nContent-Disposition: form-data; filename="x;name=foo"; name="password"\r\n\r\nSECRET\r\n--B--\r\n';
+
+        expect(service.sanitizeBody(body) as string).not.toContain('SECRET');
+      });
+
+      it('redacts a credential value cut off by truncation, and survives a body cut inside the headers', () => {
+        const truncated = multipart([['model', 'm'], ['api_key', 'sk-SECRET123']], { close: false }).slice(0, -4);
+        const sanitized = service.sanitizeBody(truncated) as string;
+        expect(sanitized).not.toContain('sk-SECRET');
+
+        const cutInHeaders = multipart([['model', 'm']]).replace('--XBOUNDARYX--\r\n', '--XBOUNDARYX\r\nContent-Disposition: form-data; name="api_k');
+        expect(() => service.sanitizeBody(cutInHeaders)).not.toThrow();
+      });
+
+      it('redacts every credential part when the delimiter line has trailing padding', () => {
+        const body = '--B  \r\nContent-Disposition: form-data; name="api_key"\r\n\r\nSECRET1\r\n'
+          + '--B\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--B--\r\n';
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).not.toContain('SECRET1');
+        expect(sanitized).toContain('whisper-1');
+      });
+
+      it('does not split part content on a short boundary found mid-line', () => {
+        const body = '--B\r\nContent-Disposition: form-data; name="api_key"\r\n\r\nSE--BCRET7\r\n--B--\r\n';
+
+        expect(service.sanitizeBody(body) as string).not.toContain('CRET7');
+      });
+
+      it('redacts a body with a preamble before the first delimiter and an RFC 5987 encoded part name', () => {
+        const body = 'preamble text\r\n--B\r\nContent-Disposition: form-data; name*=UTF-8\'\'api_key\r\n\r\nSECRET\r\n--B--';
+
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(sanitized).not.toContain('SECRET');
+        expect(sanitized).toContain('preamble text');
+      });
+
+      it('redacts a credential part that follows a filename ending in a backslash', () => {
+        const body = '--B\r\nContent-Disposition: form-data; filename="C:\\dir\\"; name="api_key"\r\n\r\nSECRET\r\n--B--';
+
+        expect(service.sanitizeBody(body)).not.toContain('SECRET');
+      });
+
+      it('redacts credential fields of a form-urlencoded value inside a non-credential part', () => {
+        const sanitized = service.sanitizeBody(multipart([['note', 'x&password=hunter2'], ['model', 'whisper-1']])) as string;
+
+        expect(sanitized).not.toContain('hunter2');
+        expect(sanitized).toContain('whisper-1');
+      });
+
+      it('returns a multipart body without credential parts unchanged', () => {
+        const body = multipart([['model', 'whisper-1'], ['file', 'a=1&b=2', 'a.txt']]);
+
+        expect(service.sanitizeBody(body)).toBe(body);
+      });
+
+      it('redacts a credential name* even when a decoy name precedes it', () => {
+        const body = '--B\r\nContent-Disposition: form-data; name="decoy"; name*=UTF-8\'\'api_key\r\n\r\nSECRET\r\n--B--\r\n';
+
+        expect(service.sanitizeBody(body) as string).not.toContain('SECRET');
+      });
+
+      it('stays fast on a large whitespace-heavy part', () => {
+        const body = multipart([['api_key', 'sk-SECRET'], ['file', ' \n'.repeat(100_000), 'a.txt']]);
+
+        const started = Date.now();
+        const sanitized = service.sanitizeBody(body) as string;
+
+        expect(Date.now() - started).toBeLessThan(1000);
+        expect(sanitized).not.toContain('sk-SECRET');
+      });
+
+      it('still scrubs a credential inside a JSON part', () => {
+        const sanitized = service.sanitizeBody(multipart([['metadata', '{"password":"hunter2"}']])) as string;
+
+        expect(sanitized).not.toContain('hunter2');
+      });
+
+      it('redacts a single-quoted part name', () => {
+        const body = "--B\r\nContent-Disposition: form-data; name='api_key'\r\n\r\nSECRET\r\n--B--\r\n";
+
+        expect(service.sanitizeBody(body) as string).not.toContain('SECRET');
+      });
+
+      it('does not treat a content line starting with the closing delimiter text as the end of the body', () => {
+        const body = '--B\r\nContent-Disposition: form-data; name="api_key"\r\n\r\nSEC\r\n--B--RET9\r\n--B--\r\n';
+
+        expect(service.sanitizeBody(body) as string).not.toContain('RET9');
+      });
+
+      it('leaves a non-multipart string that starts with -- alone', () => {
+        expect(service.sanitizeBody('--flag=x\npassword=notaform')).toBe('--flag=x\npassword=notaform');
+      });
+    });
+
     it('keeps a JSON __proto__ key in the sanitized body', () => {
       const body = JSON.parse('{"__proto__": {"x": 1}, "a": 2}');
 

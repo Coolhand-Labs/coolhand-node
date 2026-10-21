@@ -1,3 +1,4 @@
+import { PatternMatchingService } from '../src/services/PatternMatchingService';
 import { CappedBuffer } from '../src/utils/capped-buffer';
 import { captureRequestChunk, parseAndSanitizeBody, settleWithin, toChunkBuffer } from '../src/utils/request-capture';
 
@@ -39,6 +40,20 @@ describe('parseAndSanitizeBody', () => {
 
     expect(result).toBeNull();
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts credential parts of a multipart request body captured chunk by chunk (#288)', () => {
+    const buffer = new CappedBuffer(1024 * 1024);
+    const service = new PatternMatchingService({ silent: true });
+    const body = '--B\r\nContent-Disposition: form-data; name="api_key"\r\n\r\nsk-SECRET123\r\n'
+      + '--B\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--B--\r\n';
+    captureRequestChunk(buffer, body.slice(0, 50), undefined, jest.fn());
+    captureRequestChunk(buffer, Buffer.from(body.slice(50)), undefined, jest.fn());
+
+    const result = parseAndSanitizeBody(buffer.concat().toString('utf-8'), (b) => service.sanitizeBody(b), jest.fn());
+
+    expect(result).not.toContain('sk-SECRET123');
+    expect(result).toContain('whisper-1');
   });
 });
 
