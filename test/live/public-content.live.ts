@@ -4,7 +4,7 @@
  * constructs the service without one. The keyed path is covered by the unit tests.
  *
  * Run it with `COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns test/live/public-content`.
- * Anonymous callers are limited to 30 requests per minute per IP and this suite makes about 10, so
+ * Anonymous callers are limited to 30 requests per minute per IP and this suite makes about 13, so
  * re-running it back to back can hit a 429 that has nothing to do with the wrapper.
  */
 import { HttpError } from '../../src/services/BaseService';
