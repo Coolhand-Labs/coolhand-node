@@ -1223,6 +1223,22 @@ describe('RequestMonitoringService', () => {
       expect(url).toBe('https://api.test.com:443/test');
     });
 
+    it('should bracket an unbracketed IPv6 hostname so the URL stays parseable', () => {
+      const url = (service as any).buildURL({ hostname: '::1', port: 3000, path: '/x' }, 'http');
+      expect(url).toBe('http://[::1]:3000/x');
+      expect(() => new URL(url)).not.toThrow();
+    });
+
+    it('should not double-bracket an already-bracketed IPv6 hostname', () => {
+      const url = (service as any).buildURL({ hostname: '[::1]', port: 3000, path: '/x' }, 'http');
+      expect(url).toBe('http://[::1]:3000/x');
+    });
+
+    it('should not bracket a host that carries a port rather than an IPv6 literal', () => {
+      const url = (service as any).buildURL({ host: 'localhost:3000', path: '/x' }, 'http');
+      expect(url).toBe('http://localhost:3000/x');
+    });
+
     it('should handle missing components gracefully', () => {
       const options = {};
       const url = (service as any).buildURL(options, 'https');

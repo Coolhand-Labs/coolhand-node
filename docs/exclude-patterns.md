@@ -17,11 +17,17 @@ const coolhand = new Coolhand({
   options object (`{ hostname, port, path }`), the URL is rebuilt as `scheme://hostname[:port]path`
   from those options as given (an `href`, and on the auto-monitor path a `url`, property on the options
   object is used verbatim instead): an explicit `port` appears in the URL (e.g. `https://host:443/x`) and
-  the hostname's case is not normalized. The same rebuild applies to `https.request(url, options)`,
+  an IPv6 `hostname` is bracketed (`http://[::1]:3000/x`). The same rebuild applies to `https.request(url, options)`,
   where the URL is first split into options. A lone URL string, `URL` object, or `fetch` call uses
   the URL it was given, so the exact form can differ between call styles; path-based entries
   are the most reliable.
-- Matching is **case-sensitive**.
+- Matching is **case-sensitive** against the URL as given, so path and query entries must match
+  exactly. Hostnames are case-insensitive, so the URL is also checked in canonical form (the URL as
+  parsed by the WHATWG `URL` class: scheme and host lowercased, IPv6 normalized, IDN hosts punycoded,
+  default ports and `.`/`..` path segments resolved, `/` added after a bare host; plus a variant with one trailing
+  host dot dropped): `internal.corp` excludes
+  `https://Internal.Corp/v1` and `https://internal.corp./`. Write host entries in lowercase; this
+  never removes a match the raw URL would have had.
 - `*` and `?` have no special meaning (so `?` can be used to match a query string, e.g.
   `/v1/foo?stream=true`). `'/internal-*'` only matches URLs that literally contain `/internal-*`,
   so it will never match `https://example.com/internal-foo`. The SDK logs a warning when an entry

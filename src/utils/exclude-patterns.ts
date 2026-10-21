@@ -1,7 +1,32 @@
+import { normalizeHostname } from './url-host.js';
+
+/**
+ * Canonical forms of `url` to match in addition to the raw string: hostnames are case-insensitive
+ * and may carry a trailing dot, so `https://Internal.Corp./x` is the same host as
+ * `internal.corp` but would not substring-match it raw (issue #290). The WHATWG `href` lowercases
+ * scheme and host and normalizes IPv6; the second candidate also drops a trailing host dot.
+ * Unparseable URLs yield no candidates (this runs inside the patched request paths and must not throw).
+ */
+function canonicalUrlCandidates(url: string): string[] {
+  try {
+    const parsed = new URL(url);
+    const canonical = parsed.href;
+    if (!parsed.hostname.endsWith('.')) { return [canonical]; }
+    parsed.hostname = normalizeHostname(parsed.hostname);
+    return [canonical, parsed.href];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Substring-match exclusion (NOT glob matching) shared by RequestMonitoringService (the `Coolhand` class path)
  * and global-monitor.ts (the auto-monitor path), so both honor the same `excludeApiPatterns`
  * semantics instead of maintaining two independent implementations.
+ *
+ * Entries match the URL as given, and also its canonical form (host lowercased, one trailing
+ * host dot dropped), so host-case and trailing-dot variants can't bypass an entry. Strictly
+ * additive: nothing that matched the raw URL stops matching. Paths and queries stay case-sensitive.
  */
 export function matchesExcludePattern(url: string, patterns: readonly string[]): boolean {
   if (patterns.length === 0) { return false; }
@@ -12,7 +37,11 @@ export function matchesExcludePattern(url: string, patterns: readonly string[]):
   // typeof guard: `url.includes(regex)` throws TypeError, and this runs inside the patched
   // request/fetch paths, so a RegExp entry from an untyped JS caller would break the host app's
   // LLM calls. Non-string entries are ignored instead.
-  return patterns.some(p => typeof p === 'string' && p !== '' && url.includes(p));
+  const valid = patterns.filter((p): p is string => typeof p === 'string' && p !== '');
+  if (valid.some(p => url.includes(p))) { return true; }
+  if (valid.length === 0) { return false; }
+  const candidates = canonicalUrlCandidates(url);
+  return valid.some(p => candidates.some(c => c.includes(p)));
 }
 
 const EXCLUDE_PATTERNS_DOCS_URL = 'https://github.com/Coolhand-Labs/coolhand-node/blob/main/docs/exclude-patterns.md';

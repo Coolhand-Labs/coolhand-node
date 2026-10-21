@@ -1,4 +1,5 @@
 import { matchesExcludePattern } from './exclude-patterns.js';
+import { normalizeHostname } from './url-host.js';
 
 /**
  * Guards against the SDK re-intercepting its own outbound log-upload calls. Without this, a
@@ -15,15 +16,6 @@ export interface SelfEndpoint {
 
 function effectivePort(url: URL): string {
   return url.port || (url.protocol === 'https:' ? '443' : '80');
-}
-
-// Strips a single trailing dot from a hostname before comparing — `new URL(...).hostname` does
-// NOT normalize a trailing-dot FQDN (e.g. `coolhandlabs.com.`, a semantically identical DNS name
-// some proxies/resolvers canonicalize to) against its dotless form, so without this an intercepted
-// request whose host happens to arrive dotted would silently bypass the self-endpoint check.
-export function normalizeHostname(hostname: string): string {
-  const lower = hostname.toLowerCase();
-  return lower.endsWith('.') ? lower.slice(0, -1) : lower;
 }
 
 export function computeSelfEndpoint(apiEndpoint: string): SelfEndpoint | null {
