@@ -85,6 +85,27 @@ function validateBaseUrl(raw: string): void {
   );
 }
 
+// The key is sent as the `X-API-Key` header. A value that isn't a legal header value (typically a
+// newline or control character from a bad `.env` parse) makes `fetch` throw an error that quotes
+// the whole value, which would then land in logs and exceptions. Reject it up front with a message
+// that never echoes the key. Returns the key with surrounding HTTP whitespace (tab, LF, CR, space)
+// removed: `Headers` trims exactly that set before checking, but the https fallback does not, and
+// error masking needs the exact string that `fetch` would quote. (Not `String#trim`, which also
+// strips \v, \f and Unicode spaces that `Headers` rejects.)
+function normalizeApiKey(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error('apiKey must be a non-empty string');
+  }
+  const key = raw.replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, '');
+  if (!/^[\t\x20-\x7e\x80-\xff]*$/.test(key)) {
+    throw new Error(
+      'apiKey contains characters that are not valid in an HTTP header (e.g. a newline or control ' +
+      'character). Check how the key is loaded (.env parsing, stray whitespace).'
+    );
+  }
+  return key;
+}
+
 function normalizeBaseUrl(raw: string): string {
   return raw.replace(/\/+$/, '');
 }
@@ -112,7 +133,7 @@ export abstract class BaseService {
   protected requestTimeoutMs: number;
 
   constructor(config: BaseServiceConfig, endpointPath: string) {
-    this.apiKey = config.apiKey;
+    this.apiKey = normalizeApiKey(config.apiKey);
     this.silent = config.silent;
     this.debug = config.debug || false;
     this.dryRun = config.dryRun || false;
@@ -128,6 +149,42 @@ export abstract class BaseService {
     const rawBase = config.baseUrl ?? 'https://coolhandlabs.com';
     validateBaseUrl(rawBase);
     this.apiEndpoint = normalizeBaseUrl(rawBase) + endpointPath;
+  }
+
+  /** `text` with every occurrence of the configured API key masked. */
+  protected mask(text: string): string {
+    return text.split(this.apiKey).join('[redacted]');
+  }
+
+  /**
+   * First 2000 characters of a response body for an error message, with the API key masked.
+   * Masks before truncating so a key straddling the cut can't leave a readable fragment behind.
+   */
+  protected excerpt(text: string): string {
+    return this.mask(text).slice(0, 2000);
+  }
+
+  /**
+   * Loggable message for a caught `unknown`, with the configured API key masked. Backstop for
+   * anything the constructor's {@link normalizeApiKey} can't see, e.g. a proxy echoing the key back.
+   */
+  private describeError(err: unknown): string {
+    return this.mask(formatErrorMessage(err));
+  }
+
+  /** Whether `err` or anything in its `cause` chain quotes the API key. */
+  private leaksKey(err: unknown, depth = 0): boolean {
+    if (typeof err === 'string') {
+      return err.includes(this.apiKey);
+    }
+    if (typeof err !== 'object' || err === null || depth > 5) {
+      return false;
+    }
+    // Duck-typed (not `instanceof Error`): a cross-realm Error or a plain `{ message, cause }`
+    // object would otherwise slip through and be kept as `cause` with the key inside.
+    const message = 'message' in err ? err.message : undefined;
+    const cause = 'cause' in err ? err.cause : undefined;
+    return (typeof message === 'string' && message.includes(this.apiKey)) || this.leaksKey(cause, depth + 1);
   }
 
   protected createRequestOptions(payload: any): RequestInit {
@@ -184,7 +241,7 @@ export abstract class BaseService {
         return null; // HTTPS fallback doesn't return parsed response
       }
     } catch (error) {
-      console.error(`❌ Request error:`, (error as Error).message);
+      console.error(`❌ Request error:`, this.describeError(error));
       return null;
     }
   }
@@ -200,7 +257,7 @@ export abstract class BaseService {
       return result;
     } else {
       const errorText = await response.text();
-      console.error(`❌ Request failed: ${response.status} - ${errorText.slice(0, 2000)}`);
+      console.error(`❌ Request failed: ${response.status} - ${this.excerpt(errorText)}`);
       return null;
     }
   }
@@ -243,7 +300,7 @@ export abstract class BaseService {
 
       return await this.parseJsonResponse<T>(response, successMessage);
     } catch (error) {
-      console.error(`❌ Request error:`, (error as Error).message);
+      console.error(`❌ Request error:`, this.describeError(error));
       return null;
     }
   }
@@ -272,8 +329,9 @@ export abstract class BaseService {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {
-            console.error(`❌ Request failed: ${res.statusCode} - ${data.slice(0, 2000)}`);
-            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 2000)}`));
+            const body = this.excerpt(data);
+            console.error(`❌ Request failed: ${res.statusCode} - ${body}`);
+            reject(new Error(`HTTP ${res.statusCode}: ${body}`));
           }
         });
       });
@@ -310,7 +368,7 @@ export abstract class BaseService {
     const res = await this.fetchResponse(url, init, errorPrefix);
     const text = await res.text().catch(() => '');
     if (!res.ok) {
-      throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
+      throw new HttpError(`${errorPrefix} (${res.status}): ${this.excerpt(text)}`, res.status);
     }
     return { text, headers: res.headers, status: res.status };
   }
@@ -332,14 +390,23 @@ export abstract class BaseService {
     const res = await this.fetchResponse(url, init, errorPrefix);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new HttpError(`${errorPrefix} (${res.status}): ${text.slice(0, 2000)}`, res.status);
+      throw new HttpError(`${errorPrefix} (${res.status}): ${this.excerpt(text)}`, res.status);
     }
     try {
       return { bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers };
     } catch (err) {
       // The request timeout also bounds the body read, so a slow download surfaces here.
-      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
+      throw this.scrubbedError(errorPrefix, err);
     }
+  }
+
+  /**
+   * `Error` for a failed request. Keeps the original as `cause` unless it (or a nested cause)
+   * quotes the key, in which case the raw error is dropped.
+   */
+  private scrubbedError(errorPrefix: string, err: unknown): Error {
+    const message = `${errorPrefix}: ${this.describeError(err)}`;
+    return this.leaksKey(err) ? new Error(message) : new Error(message, { cause: err });
   }
 
   private async fetchResponse(url: string, init: RequestInit, errorPrefix: string): Promise<Response> {
@@ -350,7 +417,7 @@ export abstract class BaseService {
     try {
       return await fetch(url, { signal: timeoutSignal(this.requestTimeoutMs), ...init, redirect: 'error' });
     } catch (err) {
-      throw new Error(`${errorPrefix}: ${(err as Error).message}`, { cause: err });
+      throw this.scrubbedError(errorPrefix, err);
     }
   }
 
@@ -404,12 +471,12 @@ export abstract class BaseService {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
+      throw new Error(`${noun} response was not valid JSON: ${this.excerpt(text)}`);
     }
     // Callers dereference the result (`body.data`, `body.pagination`, ...); `null` or a bare
     // scalar would otherwise surface as an unrelated TypeError far from here.
     if (parsed === null || typeof parsed !== 'object') {
-      throw new Error(`${noun} response was not a JSON object: ${text.slice(0, 2000)}`);
+      throw new Error(`${noun} response was not a JSON object: ${this.excerpt(text)}`);
     }
     return { body: parsed as T, headers };
   }
@@ -468,10 +535,10 @@ export abstract class BaseService {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error(`${noun} response was not valid JSON: ${text.slice(0, 2000)}`);
+      throw new Error(`${noun} response was not valid JSON: ${this.excerpt(text)}`);
     }
     if (parsed === null || typeof parsed !== 'object') {
-      throw new Error(`${noun} response was not a JSON object: ${text.slice(0, 2000)}`);
+      throw new Error(`${noun} response was not a JSON object: ${this.excerpt(text)}`);
     }
     return { record: parsed as T, created: status === 201 };
   }

@@ -170,10 +170,10 @@ export class ClientFileService extends BaseService {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error(`Client file response was not valid JSON: ${text.slice(0, 2000)}`);
+      throw new Error(`Client file response was not valid JSON: ${this.excerpt(text)}`);
     }
     if (parsed === null || typeof parsed !== 'object') {
-      throw new Error(`Client file response was not a JSON object: ${text.slice(0, 2000)}`);
+      throw new Error(`Client file response was not a JSON object: ${this.excerpt(text)}`);
     }
     return parsed as CoolhandClientFileResponse;
   }

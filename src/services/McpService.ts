@@ -61,16 +61,16 @@ export class McpService extends BaseService {
     try {
       json = JSON.parse(text) as McpToolCallResponse;
     } catch {
-      throw new Error(`MCP response was not valid JSON: ${text.slice(0, 2000)}`);
+      throw new Error(`MCP response was not valid JSON: ${this.excerpt(text)}`);
     }
 
     // `JSON.parse('null')` (and bare scalars) succeed, but there is no envelope to read from them.
     if (json === null || typeof json !== 'object') {
-      throw new Error(`MCP response was not a JSON object: ${text.slice(0, 2000)}`);
+      throw new Error(`MCP response was not a JSON object: ${this.excerpt(text)}`);
     }
 
     if (json.error) {
-      throw new Error(`MCP error: ${json.error.message ?? JSON.stringify(json.error)}`);
+      throw new Error(`MCP error: ${this.mask(String(json.error.message ?? JSON.stringify(json.error)))}`);
     }
 
     // A tool can reject at the execution level (e.g. "Cannot rename system workloads") while the
@@ -78,7 +78,7 @@ export class McpService extends BaseService {
     if (json.result !== null && typeof json.result === 'object' && !Array.isArray(json.result)) {
       const result = json.result as { error?: unknown };
       if (typeof result.error === 'string' && result.error.length > 0) {
-        throw new Error(result.error);
+        throw new Error(this.mask(result.error));
       }
     }
 
