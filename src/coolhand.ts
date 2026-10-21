@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -8,6 +8,7 @@ import { WorkloadService } from './services/WorkloadService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
+import { PublicContentService } from './services/PublicContentService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
@@ -21,6 +22,7 @@ export class Coolhand {
   private workloadService: WorkloadService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
+  private publicContentService: PublicContentService;
   private optimizationFeedbackLinkService: OptimizationFeedbackLinkService;
   private silent: boolean;
 
@@ -64,6 +66,7 @@ export class Coolhand {
     this.workloadService = new WorkloadService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
+    this.publicContentService = new PublicContentService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     warnOnGlobLikePatterns(options.excludeApiPatterns);
@@ -445,6 +448,41 @@ export class Coolhand {
    */
   public async unlinkFeedback(optimizationId: string, linkId: string): Promise<void> {
     return this.optimizationFeedbackLinkService.unlinkFeedback(optimizationId, linkId);
+  }
+
+  /**
+   * Search the Coolhand help center (the `public_content` endpoints) by relevance, optionally
+   * within one section, or list every published article. Read-only. Any key works here, and this
+   * instance's key is sent. To read the help center with no key at all, use `PublicContentService`
+   * directly. See `PublicContentService#searchHelpArticles`/`docs/help-center.md`.
+   *
+   * @returns `{ articles, pagination }`. `pagination` comes from the response headers.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an
+   *   {@link HttpError} whose `status` holds the HTTP status code (`401` invalid key, `429`
+   *   rate limited).
+   */
+  public async searchHelpArticles(params?: SearchHelpArticlesParams): Promise<SearchHelpArticlesResponse> {
+    return this.publicContentService.searchHelpArticles(params);
+  }
+
+  /**
+   * Fetch one help center article by slug, with its full markdown `body` and `toc`.
+   *
+   * @throws Error if `slug` is blank or a bare dot-segment, or on network failure. A non-2xx
+   *   response throws an {@link HttpError} whose `status` holds the HTTP status code (`404` for
+   *   an unknown or unpublished slug). See `PublicContentService#getHelpArticle`.
+   */
+  public async getHelpArticle(slug: string): Promise<HelpArticle> {
+    return this.publicContentService.getHelpArticle(slug);
+  }
+
+  /**
+   * List the help center sections, with each one's URL prefix and tag vocabulary. A section's
+   * `slug` is the `category` filter on {@link searchHelpArticles}.
+   * See `PublicContentService#listHelpCategories`.
+   */
+  public async listHelpCategories(): Promise<HelpCategory[]> {
+    return this.publicContentService.listHelpCategories();
   }
 
   /**

@@ -388,7 +388,8 @@ export abstract class BaseService {
   /**
    * Like {@link getJson}, but also returns the response headers — for endpoints (e.g.
    * searchLogs) that expose metadata like pagination totals via X-Total-Count/etc. headers
-   * rather than the response body.
+   * rather than the response body. Sends no `X-API-Key` header when the service has no key
+   * (only `PublicContentService`, whose reads are open, can be constructed without one).
    *
    * @throws Error on network failure or a non-JSON body. {@link HttpError} (with `.status`) on a
    *   non-2xx response.
@@ -396,7 +397,7 @@ export abstract class BaseService {
   protected async getJsonWithHeaders<T>(url: string, noun: string): Promise<{ body: T; headers: Headers }> {
     const { text, headers } = await this.fetchWithHeaders(
       url,
-      { method: 'GET', headers: { Accept: 'application/json', 'X-API-Key': this.apiKey } },
+      { method: 'GET', headers: { Accept: 'application/json', ...(this.apiKey ? { 'X-API-Key': this.apiKey } : {}) } },
       `${noun} request failed`
     );
 
