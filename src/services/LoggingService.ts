@@ -58,7 +58,7 @@ export class LoggingService extends BaseService {
       return result;
     } catch (error) {
       if (!this.silent) {
-        console.error(`❌ Failed to log request to API:`, formatErrorMessage(error));
+        console.error(`❌ Failed to log request to API:`, this.mask(formatErrorMessage(error)));
       }
       return null;
     }

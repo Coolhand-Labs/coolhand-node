@@ -45,6 +45,16 @@ describe('request errors mask the apiKey', () => {
 
   const leaky = () => jest.fn().mockRejectedValue(new Error(`proxy rejected header "${KEY}"`));
 
+  it('logRequestToAPI masks the key when sendRequest itself throws', async () => {
+    const service = new LoggingService({ apiKey: KEY, silent: false });
+    jest.spyOn(service as any, 'sendRequest').mockRejectedValue(new Error(`proxy rejected header "${KEY}"`));
+
+    await expect(service.logRequestToAPI({ id: 1, url: 'https://api.openai.com/v1/chat/completions' } as any)).resolves.toBeNull();
+
+    expect(errorOutput()).toContain('[redacted]');
+    expect(errorOutput()).not.toContain(KEY);
+  });
+
   it('sendRequest logs a masked message', async () => {
     (global as any).fetch = leaky();
     const service = new LoggingService({ apiKey: KEY, silent: true });
