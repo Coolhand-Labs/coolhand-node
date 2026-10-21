@@ -447,11 +447,12 @@ commit is self-consistent), and run `npm install --package-lock-only` so
      — don't leave the user to infer readiness from the bullet points
      above on their own.
    - A reminder of the concrete next step, since this skill stops short of
-     it: once the user reviews and merges the Phase 5 PR, tagging and
-     publishing are their action — `git tag vX.Y.Z && git push origin
-     vX.Y.Z` pushes only the new tag (plain `--tags` pushes every local
-     tag, including any stray one from an aborted prior release attempt,
-     which would trigger its own publish run) — the tag push is what
+     it: once the user has reviewed the Phase 5 PR, `/finish-release`
+     merges, tags and publishes it. By hand, after merging, `git tag
+     vX.Y.Z && git push origin vX.Y.Z` pushes only the new tag (plain
+     `--tags` pushes every local tag, including any stray one from an
+     aborted prior release attempt, which would trigger its own publish
+     run) — the tag push is what
      triggers `.github/workflows/publish.yml`'s npm Trusted Publishing
      flow, no local `npm publish` needed.
 
@@ -472,12 +473,14 @@ commit is self-consistent), and run `npm install --package-lock-only` so
   when the fix is itself safe and mechanical; anything that isn't follows
   the same "flag, don't silently apply" rule as an unsafe red-team fix.
 - Never push a commit directly to `main`. All release-branch work lands on
-  `main` only via the Phase 5 PR, which the user reviews and merges
-  themselves.
+  `main` only via the Phase 5 PR, which the user reviews (and merges, or
+  has `/finish-release` merge).
 - Never create or push a git tag, never run `npm publish`, and never merge
-  the Phase 5 PR yourself. Tagging and publishing are the user's action
-  once they've reviewed and merged this skill's PR, not something this
-  skill does — the tag push is what triggers the npm publish workflow.
+  the Phase 5 PR yourself. Merging, tagging and publishing happen only
+  after the user has reviewed this skill's PR, not in this skill — the tag
+  push is what triggers the npm publish workflow.
+  `/finish-release` is that follow-up: the user invokes it after reviewing
+  the release PR, and it merges, tags and publishes the GitHub release.
 
 ## Rationalizations to resist
 
