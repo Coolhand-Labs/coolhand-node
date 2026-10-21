@@ -89,7 +89,7 @@ export class OptimizationFeedbackLinkService extends BaseService {
         !Number.isFinite(result.errored) ||
         !Array.isArray(result.not_found)
       ) {
-        throw new Error(`Feedback link response was not a valid bulk result: ${JSON.stringify(result).slice(0, 2000)}`);
+        throw new Error(`Feedback link response was not a valid bulk result: ${this.excerpt(JSON.stringify(result))}`);
       }
       total.linked += result.linked;
       total.already_linked += result.already_linked;
@@ -158,10 +158,10 @@ export class OptimizationFeedbackLinkService extends BaseService {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error(`Feedback link response was not valid JSON: ${text.slice(0, 2000)}`);
+      throw new Error(`Feedback link response was not valid JSON: ${this.excerpt(text)}`);
     }
     if (parsed === null || typeof parsed !== 'object') {
-      throw new Error(`Feedback link response was not a JSON object: ${text.slice(0, 2000)}`);
+      throw new Error(`Feedback link response was not a JSON object: ${this.excerpt(text)}`);
     }
     return parsed as T;
   }
