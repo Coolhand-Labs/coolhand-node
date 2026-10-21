@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-10-21
+
+### ✨ New Features
+- **`PublicContentService` reads the Coolhand help center, with no API key required.** `searchHelpArticles({ query, category, page, perPage })` returns `{ articles, pagination }`, `getHelpArticle(slug)` returns one article with its markdown `body`, and `listHelpCategories()` lists the sections. `Coolhand` exposes the same three methods and sends its own key; keyless use goes through `new PublicContentService()` directly, since the `Coolhand` constructor requires a key. A key (`apiKey`, else `COOLHAND_API_KEY`) is sent as `X-API-Key` and lifts the anonymous limit of 30 requests per minute per IP; pass `apiKey: ''` to stay anonymous. A rejected key throws `HttpError` 401, never an anonymous retry. `category` is sent as `q[help_category_slug_eq]` because the endpoint has no `category` parameter. See `docs/help-center.md`. ([#296](https://github.com/Coolhand-Labs/coolhand-node/issues/296), [#297](https://github.com/Coolhand-Labs/coolhand-node/pull/297))
+
+### ⚠️ Upgrade Notes
+- **Constructors now throw on an invalid `apiKey`.** `new Coolhand(...)`, direct service construction and `initializeGlobalMonitoring` throw if the key is empty, whitespace-only, not a string, or contains characters that are not valid in an HTTP header (for example a newline from a bad `.env` parse). Previously such a key only made requests fail. Surrounding whitespace is trimmed, matching what `fetch` does. `auto-monitor` already catches the throw. ([#287](https://github.com/Coolhand-Labs/coolhand-node/issues/287), [#293](https://github.com/Coolhand-Labs/coolhand-node/pull/293))
+- **`http.request('https://…', opts)` and `https.request('http://…', opts)` now throw `ERR_INVALID_PROTOCOL`,** as native Node does. Calls with a mismatched URL scheme and module used to be sent anyway, so code that relied on that must use the matching module. ([#289](https://github.com/Coolhand-Labs/coolhand-node/issues/289), [#295](https://github.com/Coolhand-Labs/coolhand-node/pull/295))
+- **More requests can now be excluded.** `excludeApiPatterns` also matches the canonical form of each URL, so `internal.corp` now excludes `https://Internal.Corp/v1` and `https://internal.corp./`, and an `example.com/` entry also excludes a bare `https://example.com`. Nothing that matched before stops matching. Write host entries in lowercase. ([#290](https://github.com/Coolhand-Labs/coolhand-node/issues/290), [#294](https://github.com/Coolhand-Labs/coolhand-node/pull/294))
+
+### 🔒 Security
+- **Credential parts in raw `multipart/form-data` request bodies are redacted.** Bodies captured through `http`/`https` (file and audio uploads) were logged with parts such as `name="api_key"` unredacted; the `fetch` + `FormData` path was already safe. Values of credential-named parts (`api_key`, `password`, `client_secret`, `user[password]`, bare `token`, ...) are replaced with `[REDACTED]`, recognized by body shape rather than `Content-Type`; other parts and the multipart framing are untouched. Known gap: a first part with five or more headers before `Content-Disposition` is not recognized. ([#288](https://github.com/Coolhand-Labs/coolhand-node/issues/288), [#292](https://github.com/Coolhand-Labs/coolhand-node/pull/292))
+- **`excludeApiPatterns` can no longer be bypassed by host case, a trailing host dot or an IPv6 literal.** Previously `https://Internal.Corp/v1` and `https://internal.corp./` were logged to Coolhand despite an `internal.corp` exclusion. ([#290](https://github.com/Coolhand-Labs/coolhand-node/issues/290), [#294](https://github.com/Coolhand-Labs/coolhand-node/pull/294))
+- **`http.request('https://…', opts)` no longer sends the request, including its `Authorization` header, as cleartext HTTP on port 80.** The URL-to-options conversion dropped the scheme, so the mismatch never reached Node. ([#289](https://github.com/Coolhand-Labs/coolhand-node/issues/289), [#295](https://github.com/Coolhand-Labs/coolhand-node/pull/295))
+- **A malformed `apiKey` is no longer echoed in error messages.** undici's `Headers.append: "<key>" is an invalid header value` used to be printed to stderr and re-thrown to callers. The configured key is now masked as `[redacted]` in request-error logs, thrown errors and response-body excerpts (`BaseService`, `McpService`, `ClientFileService`, `OptimizationFeedbackLinkService`), and the raw error is no longer attached as `cause` when it would still contain the key. ([#287](https://github.com/Coolhand-Labs/coolhand-node/issues/287), [#293](https://github.com/Coolhand-Labs/coolhand-node/pull/293))
+- **`LoggingService`'s catch-all error log masks the key too.** It was the one `BaseService` subclass error log that skipped the masking above.
+
+### 🐛 Bug Fixes
+- **`buildURL` brackets IPv6 hostnames,** so `{ hostname: '::1', port: 3000 }` builds `http://[::1]:3000/x` instead of an unparseable URL, on both the auto-monitor and `Coolhand` paths. ([#290](https://github.com/Coolhand-Labs/coolhand-node/issues/290), [#294](https://github.com/Coolhand-Labs/coolhand-node/pull/294))
+- **A synchronous throw from the real request no longer leaks the dedup entry,** so a retried call is still captured. ([#289](https://github.com/Coolhand-Labs/coolhand-node/issues/289), [#295](https://github.com/Coolhand-Labs/coolhand-node/pull/295))
+
+### 📖 Documentation
+- **New `docs/help-center.md`** and a short README section for the help center methods. `docs/exclude-patterns.md`, `docs/global-monitoring.md` (multipart redaction, `apiKey` validation) are updated for the changes above. ([#296](https://github.com/Coolhand-Labs/coolhand-node/issues/296), [#297](https://github.com/Coolhand-Labs/coolhand-node/pull/297))
+
+### 🧹 Internal
+- **`BaseService` takes an opt-in `allowAnonymous` constructor option** so only `PublicContentService` can be built without a key, with `mask()` and the cause-chain check no-ops when there is no key. `getJsonWithHeaders` omits `X-API-Key` when the key is empty. ([#296](https://github.com/Coolhand-Labs/coolhand-node/issues/296), [#297](https://github.com/Coolhand-Labs/coolhand-node/pull/297))
+- **`normalizeHostname` moved to the new `src/utils/url-host.ts`** (it was never exported from `src/index.ts`), alongside `formatHostForUrl`. ([#290](https://github.com/Coolhand-Labs/coolhand-node/issues/290), [#294](https://github.com/Coolhand-Labs/coolhand-node/pull/294))
+
 ## [0.16.0] - 2026-10-20
 
 ### ✨ New Features
