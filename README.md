@@ -320,6 +320,27 @@ const { logs } = await coolhand.searchLogs({
 See [docs/workload-search.md](./docs/workload-search.md) for the workload reference and
 [docs/template-search.md](./docs/template-search.md#metrics) for the `metrics` fields and window rules.
 
+## Reading the Help Center
+
+`PublicContentService` reads the Coolhand help center (the same pages as coolhandlabs.com/help and
+/updates) — no API key required, so it works without a `Coolhand` instance:
+
+```typescript
+import { PublicContentService } from 'coolhand-node';
+
+const helpCenter = new PublicContentService();
+
+const { articles, pagination } = await helpCenter.searchHelpArticles({ query: 'match rate', perPage: 5 });
+const article = await helpCenter.getHelpArticle(articles[0].slug); // full markdown `body`
+const categories = await helpCenter.listHelpCategories();
+```
+
+Anonymous callers are limited to 30 requests per minute per IP. If `apiKey` is passed (or
+`COOLHAND_API_KEY` is set) it is sent and lifts the limit; a key the server rejects is a `401`. A
+`Coolhand` instance exposes the same three methods and sends its own key.
+
+See [docs/help-center.md](./docs/help-center.md) for parameters, the category filter and errors.
+
 ## Reading Referenced Files
 
 `searchReferencedFiles` and `listReferencedFileSessions` read back which files your logged requests
@@ -604,11 +625,11 @@ API key (the public key 401s) — same as the read methods below. See
 but need a client admin's **per-user** API key rather than the client-level private key.
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
-`getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`) throw instead, since callers
+`getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 [docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md),
-[docs/workload-search.md](./docs/workload-search.md) and [docs/llm-reference-search.md](./docs/llm-reference-search.md) for details.
+[docs/workload-search.md](./docs/workload-search.md), [docs/llm-reference-search.md](./docs/llm-reference-search.md) and [docs/help-center.md](./docs/help-center.md) for details.
 `upsertWorkload` and `upsertTemplate` also throw (invalid keys, or an `HttpError` such as `422` for a
 taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 
@@ -631,6 +652,7 @@ taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
+- **[Reading the Help Center (Search + Get + Categories)](./docs/help-center.md)** - Search and read Coolhand's help center articles, with no API key required.
 - **[Linking Feedback to an Optimization](./docs/feedback-links.md)** - Attach feedback to an optimization as evidence, singly or in bulk, using the private API key.
 - **[Declared Workloads and Templates](./docs/declared-workloads.md)** - Declare which workload and template captured calls belong to with `withContext`, and create or rename them by key.
 - **[diagnostics_channel Interception (design)](./docs/diagnostics-channel-interception.md)** - Design exploration of a structural fix for requests that bypass global monitoring.

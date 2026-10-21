@@ -862,3 +862,73 @@ export interface UpsertedTemplate {
 export interface UpsertTemplateResponse extends UpsertResult {
   template: UpsertedTemplate;
 }
+
+/** `article_kind` on the help center endpoints; drives the page's schema.org type server-side. */
+export type HelpArticleKind = 'reference' | 'concept' | 'how_to' | 'troubleshooting' | 'faq_answer' | 'release_note';
+
+/** One article in a {@link SearchHelpArticlesResponse}. Bodies are omitted from lists. */
+export interface HelpArticleSummary {
+  /** URL-safe identifier; also the article's path under `/help`. */
+  slug: string;
+  title: string;
+  /** A short, self-contained answer to the question the article addresses. */
+  answer: string | null;
+  article_kind: HelpArticleKind;
+  tags: string[];
+  /** Slug of the section the article belongs to (see {@link HelpCategory}). */
+  category: string;
+  /** Public HTML page. */
+  url: string;
+  /** Machine-readable markdown twin of the same page. */
+  markdown_url: string;
+  reading_time_minutes: number | null;
+  /** On a relevance search, the matching passage with `<mark>` tags around matched terms; `null` on a plain listing. */
+  search_headline: string | null;
+  published_at: string | null;
+  /** When the prose last changed. Not bumped by background re-renders. */
+  updated_content_at: string | null;
+}
+
+// The definition types a toc entry only as `object`; the server sends { id, text, level, children }
+// (h3s nested under their h2), but that is not part of the definition, so it stays open-ended here.
+/** A heading in an article's table of contents. */
+export interface HelpArticleTocEntry {
+  [key: string]: unknown;
+}
+
+/** A single article from `getHelpArticle`: the summary fields minus `search_headline`, plus the markdown body. */
+export interface HelpArticle extends Omit<HelpArticleSummary, 'search_headline'> {
+  /** Full markdown source. */
+  body: string;
+  noindex: boolean;
+  toc: HelpArticleTocEntry[];
+}
+
+/** A section articles are filed under. */
+export interface HelpCategory {
+  slug: string;
+  name: string;
+  description: string;
+  /** Where the section's articles are served. */
+  url_prefix: '/help' | '/updates';
+  /** The only tags the section accepts; `null` means any tag, an empty array means none. */
+  allowed_tags: string[] | null;
+}
+
+export interface SearchHelpArticlesParams {
+  /** Relevance search: quoted phrases, `-exclusions` and `or` are supported. Omit for a full listing. Trimmed; blank is treated as omitted. */
+  query?: string;
+  /** Restrict to one section by slug (see `listHelpCategories`). Trimmed; blank is treated as omitted. */
+  category?: string;
+  /** 1-based page number. */
+  page?: number;
+  /** Page size (server default 25, max 100). */
+  perPage?: number;
+}
+
+// The endpoint renders a bare array and carries pagination in the X-Page/X-Per-Page/X-Total-Count/
+// X-Total-Pages response headers, which PublicContentService reads into the shared Pagination shape.
+export interface SearchHelpArticlesResponse {
+  articles: HelpArticleSummary[];
+  pagination: Pagination;
+}
