@@ -679,7 +679,15 @@ function interceptRequest(
   // .request()/.get() (re-registered below) or via req.on('response', ...) by host code. Passing
   // a callback to originalRequest would make Node deliver the *raw* res to it directly, bypassing
   // the substitution and reopening the starvation bug for that calling convention.
-  const req = originalRequest(options as any);
+  let req: HttpClientRequest;
+  try {
+    req = originalRequest(options as any);
+  } catch (err) {
+    // The real request can throw synchronously (e.g. ERR_INVALID_PROTOCOL on a URL/module scheme
+    // mismatch); no req exists to carry the cleanup handlers below, so release the dedup entry here.
+    unregisterActiveRequest(requestId, uniqueId);
+    throw err;
+  }
 
   patchResponseEmit(req, (res: HttpIncomingMessage): HttpIncomingMessage => {
     log(`📥 Response received for call #${callData.id}, status: ${res.statusCode}`);

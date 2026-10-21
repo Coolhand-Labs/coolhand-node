@@ -71,6 +71,22 @@ describe('normalizeRequestArgs', () => {
     expect(result.options).toMatchObject({ hostname: 'api.test.com', path: '/v1/test', method: 'DELETE' });
   });
 
+  it('carries the URL scheme through as `protocol` so scheme/module mismatches still throw natively (#289)', () => {
+    const https = normalizeRequestArgs('https://api.test.com/v1/test', { method: 'POST' });
+    const http = normalizeRequestArgs('http://api.test.com/v1/test', { method: 'POST' });
+    const urlObject = normalizeRequestArgs(new URL('https://api.test.com/v1/test'), { method: 'POST' });
+
+    expect(https.options).toMatchObject({ protocol: 'https:' });
+    expect(http.options).toMatchObject({ protocol: 'http:' });
+    expect(urlObject.options).toMatchObject({ protocol: 'https:' });
+  });
+
+  it('lets a caller-supplied `protocol` override the URL scheme, as Node does', () => {
+    const result = normalizeRequestArgs('https://api.test.com/v1/test', { protocol: 'http:' });
+
+    expect(result.options).toMatchObject({ protocol: 'http:' });
+  });
+
   it('strips brackets from IPv6 hostnames', () => {
     const result = normalizeRequestArgs('https://[::1]:8443/v1/test', { method: 'GET' });
 

@@ -33,6 +33,7 @@ describe('Global Monitor', () => {
   let underlyingHttpsRequestMock: jest.Mock;
   let underlyingHttpsGetMock: jest.Mock;
   let underlyingHttpGetMock: jest.Mock;
+  let underlyingHttpRequestMock: jest.Mock;
   let mockPatternMatchingService: jest.Mocked<PatternMatchingService>;
   let mockLoggingService: jest.Mocked<LoggingService>;
   let globalMonitor: any;
@@ -104,6 +105,7 @@ describe('Global Monitor', () => {
     underlyingHttpsRequestMock = require('https').request as jest.Mock;
     underlyingHttpsGetMock = require('https').get as jest.Mock;
     underlyingHttpGetMock = require('http').get as jest.Mock;
+    underlyingHttpRequestMock = require('http').request as jest.Mock;
 
     // Import the module after all mocks are set up
     globalMonitor = await import('../src/global-monitor');
@@ -448,6 +450,89 @@ describe('Global Monitor', () => {
 
       expect(hostCallback).toHaveBeenCalledTimes(1);
       expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
+    });
+
+    it.each([
+      // [module under test, URL scheme, expected protocol forwarded to the underlying request]
+      ['https', 'https://api.test.com/v1/chat/completions', 'https:'],
+      ['http', 'http://api.test.com/v1/chat/completions', 'http:'],
+      // Scheme/module mismatches must reach the real request with the URL's protocol intact so
+      // native Node throws ERR_INVALID_PROTOCOL instead of sending cleartext (regression for #289).
+      ['http', 'https://api.test.com/v1/chat/completions', 'https:'],
+      ['https', 'http://api.test.com/v1/chat/completions', 'http:']
+    ] as const)('forwards the URL protocol to the underlying %s.request for %s (3-arg form) (#289)', async (moduleName, url, expectedProtocol) => {
+      const { EventEmitter } = require('events');
+      const underlying = moduleName === 'https' ? underlyingHttpsRequestMock : underlyingHttpRequestMock;
+      underlying.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+        return fakeReq;
+      });
+
+      // Match the pattern so the call goes through interceptRequest, not the passthrough branch.
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      require(moduleName).request(url, { method: 'POST' }, jest.fn());
+
+      expect(underlying).toHaveBeenCalled();
+      const forwarded = underlying.mock.calls[underlying.mock.calls.length - 1][0];
+      expect(forwarded).toMatchObject({ protocol: expectedProtocol, hostname: 'api.test.com', method: 'POST' });
+    });
+
+    it('rethrows a synchronous error from the real request on an intercepted call (#289)', async () => {
+      const err = Object.assign(new Error('Protocol "https:" not supported. Expected "http:"'), { code: 'ERR_INVALID_PROTOCOL' });
+      underlyingHttpRequestMock.mockImplementationOnce(() => { throw err; });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      expect(() => require('http').request('https://api.test.com/v1/chat/completions', { method: 'POST' }, jest.fn())).toThrow(err);
+    });
+
+    it('releases the dedup entry when the real request throws synchronously, so a retry is still intercepted (#289)', async () => {
+      const { EventEmitter } = require('events');
+      const err = Object.assign(new Error('Protocol "https:" not supported. Expected "http:"'), { code: 'ERR_INVALID_PROTOCOL' });
+      underlyingHttpRequestMock.mockImplementationOnce(() => { throw err; });
+      underlyingHttpRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+        return fakeReq;
+      });
+
+      // Once-only (two requests below): jest.clearAllMocks() in beforeEach doesn't reset
+      // implementations, so a persistent mockReturnValue would leak into later tests.
+      const matched = {
+        pattern: { name: 'Test API', domains: ['api.test.com'] },
+        matchType: 'domain',
+        matchValue: 'api.test.com'
+      } as any;
+      mockPatternMatchingService.matchesAPIPatternSync
+        .mockReturnValueOnce(matched)
+        .mockReturnValueOnce(matched);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      const url = 'https://api.test.com/v1/models';
+      expect(() => require('http').request(url, { method: 'GET' }, jest.fn())).toThrow(err);
+
+      // A leaked dedup entry would send the retry down the passthrough branch, which forwards the
+      // callback; an intercepted call withholds it from the underlying request.
+      require('http').request(url, { method: 'GET' }, jest.fn());
+      const retryCall = underlyingHttpRequestMock.mock.calls[underlyingHttpRequestMock.mock.calls.length - 1];
+      expect(retryCall).toHaveLength(1);
     });
 
     it.each([

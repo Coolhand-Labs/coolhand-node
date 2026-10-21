@@ -33,6 +33,7 @@ export interface CoolhandStats {
 }
 
 export interface CoolhandRequestOptions {
+  protocol?: string;
   hostname?: string;
   host?: string;
   port?: number;
