@@ -322,13 +322,13 @@ See [docs/workload-search.md](./docs/workload-search.md) for the workload refere
 
 ## Reading the Help Center
 
-`PublicContentService` reads the Coolhand help center (the same pages as coolhandlabs.com/help and
+`HelpCenterDocsService` reads the Coolhand help center (the same pages as coolhandlabs.com/help and
 /updates) — no API key required, so it works without a `Coolhand` instance:
 
 ```typescript
-import { PublicContentService } from 'coolhand-node';
+import { HelpCenterDocsService } from 'coolhand-node';
 
-const helpCenter = new PublicContentService();
+const helpCenter = new HelpCenterDocsService();
 
 const { articles, pagination } = await helpCenter.searchHelpArticles({ query: 'match rate', perPage: 5 });
 const article = await helpCenter.getHelpArticle(articles[0].slug); // full markdown `body`

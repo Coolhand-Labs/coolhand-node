@@ -137,7 +137,7 @@ export abstract class BaseService {
 
   /**
    * @param options.allowAnonymous Let an empty/blank `apiKey` through as "no key" instead of throwing,
-   *   for services whose endpoints are public (only `PublicContentService`). A non-empty key is still
+   *   for services whose endpoints are public (only `HelpCenterDocsService`). A non-empty key is still
    *   validated, and no `X-API-Key` header is sent when there is none.
    */
   constructor(config: BaseServiceConfig, endpointPath: string, options: { allowAnonymous?: boolean } = {}) {
@@ -471,7 +471,7 @@ export abstract class BaseService {
    * Like {@link getJson}, but also returns the response headers — for endpoints (e.g.
    * searchLogs) that expose metadata like pagination totals via X-Total-Count/etc. headers
    * rather than the response body. Sends no `X-API-Key` header when the service has no key
-   * (only `PublicContentService`, whose reads are open, can be constructed without one).
+   * (only `HelpCenterDocsService`, whose reads are open, can be constructed without one).
    *
    * @throws Error on network failure or a non-JSON body. {@link HttpError} (with `.status`) on a
    *   non-2xx response.
@@ -614,7 +614,7 @@ export abstract class BaseService {
    * response headers the paginated v2 list endpoints set, for endpoints that render a bare array
    * on the wire and carry pagination in headers rather than a body envelope — currently
    * `LoggingService#searchLogs`, `TemplateService#searchTemplates`, `ClientFileService#listClientFiles`
-   * and `PublicContentService#searchHelpArticles`.
+   * and `HelpCenterDocsService#searchHelpArticles`.
    *
    * `/llm_request_templates` always sends these headers. `/llm_request_logs` sends `X-Total-Count`/
    * `X-Total-Pages` only when the caller opts in with `include_total`, so the header-less branches

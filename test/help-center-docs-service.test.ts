@@ -1,4 +1,4 @@
-import { PublicContentService, PublicContentServiceConfig } from '../src/services/PublicContentService';
+import { HelpCenterDocsService, HelpCenterDocsServiceConfig } from '../src/services/HelpCenterDocsService';
 import { Coolhand } from '../src/coolhand';
 import { HelpArticleSummary } from '../src/types';
 
@@ -40,11 +40,11 @@ function mockFetch(
 const lastUrl = (fn: jest.Mock): URL => new URL(fn.mock.calls[fn.mock.calls.length - 1][0]);
 const lastHeaders = (fn: jest.Mock): Record<string, string> => fn.mock.calls[fn.mock.calls.length - 1][1].headers;
 
-function newService(overrides: PublicContentServiceConfig = {}): PublicContentService {
-  return new PublicContentService(overrides);
+function newService(overrides: HelpCenterDocsServiceConfig = {}): HelpCenterDocsService {
+  return new HelpCenterDocsService(overrides);
 }
 
-describe('PublicContentService', () => {
+describe('HelpCenterDocsService', () => {
   beforeEach(() => {
     delete process.env.COOLHAND_API_KEY;
   });
