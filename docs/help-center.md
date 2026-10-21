@@ -1,6 +1,6 @@
 # Reading the Help Center
 
-`PublicContentService` reads Coolhand's help center: the articles served at `coolhandlabs.com/help/:slug`
+`HelpCenterDocsService` reads Coolhand's help center: the articles served at `coolhandlabs.com/help/:slug`
 and the posts at `/updates/:slug`. "Help center" is the user-facing name; on the wire the resource is
 `public_content` (`GET /api/v2/public_content`, `/:slug` and `/categories`). It is read-only —
 creating, updating and archiving articles is Coolhand-internal and not wrapped.
@@ -9,10 +9,10 @@ creating, updating and archiving articles is Coolhand-internal and not wrapped.
 without a `Coolhand` instance (whose constructor requires one):
 
 ```typescript
-import { PublicContentService } from 'coolhand-node';
+import { HelpCenterDocsService } from 'coolhand-node';
 
-const helpCenter = new PublicContentService();                 // anonymous
-const keyed = new PublicContentService({ apiKey: 'any-key' }); // lifts the rate limit
+const helpCenter = new HelpCenterDocsService();                 // anonymous
+const keyed = new HelpCenterDocsService({ apiKey: 'any-key' }); // lifts the rate limit
 ```
 
 - No key is configured: no `X-API-Key` header is sent, and the calls work. Anonymous callers are
@@ -114,10 +114,10 @@ whose `status` holds the HTTP status code: `401` for an invalid key, `404` for a
 
 ## Verifying against a live server
 
-`test/live/public-content.live.ts` runs against a real server with no key:
+`test/live/help-center-docs.live.ts` runs against a real server with no key:
 
 ```bash
-COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns 'test/live/public-content'
+COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns 'test/live/help-center-docs'
 ```
 
 It makes about thirteen anonymous requests, so running it repeatedly within a minute can hit the `429`.

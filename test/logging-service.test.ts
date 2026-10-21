@@ -187,6 +187,22 @@ describe('LoggingService', () => {
       );
     });
 
+    it('should mask the API key in the catch-all error log', async () => {
+      (global as any).fetch = createMockFetch({ id: 1, status: 'success' });
+
+      const service = new LoggingService({ apiKey: 'secret-key-1234567890', silent: false });
+      const leakyPattern = {
+        get pattern(): never {
+          throw new Error('boom: key secret-key-1234567890 echoed');
+        }
+      } as unknown as CoolhandMatchedPattern;
+
+      await expect(service.logRequestToAPI(createMockCallData(), leakyPattern)).resolves.toBeNull();
+      const logged = (console.error as jest.Mock).mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+      expect(logged).toContain('[redacted]');
+      expect(logged).not.toContain('secret-key-1234567890');
+    });
+
     it('should structure payload correctly', async () => {
       let capturedRequestBody: any;
 

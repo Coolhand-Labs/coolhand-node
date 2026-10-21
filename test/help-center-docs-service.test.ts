@@ -1,4 +1,4 @@
-import { PublicContentService, PublicContentServiceConfig } from '../src/services/PublicContentService';
+import { HelpCenterDocsService, HelpCenterDocsServiceConfig } from '../src/services/HelpCenterDocsService';
 import { Coolhand } from '../src/coolhand';
 import { HelpArticleSummary } from '../src/types';
 
@@ -40,11 +40,11 @@ function mockFetch(
 const lastUrl = (fn: jest.Mock): URL => new URL(fn.mock.calls[fn.mock.calls.length - 1][0]);
 const lastHeaders = (fn: jest.Mock): Record<string, string> => fn.mock.calls[fn.mock.calls.length - 1][1].headers;
 
-function newService(overrides: PublicContentServiceConfig = {}): PublicContentService {
-  return new PublicContentService(overrides);
+function newService(overrides: HelpCenterDocsServiceConfig = {}): HelpCenterDocsService {
+  return new HelpCenterDocsService(overrides);
 }
 
-describe('PublicContentService', () => {
+describe('HelpCenterDocsService', () => {
   beforeEach(() => {
     delete process.env.COOLHAND_API_KEY;
   });
@@ -97,6 +97,24 @@ describe('PublicContentService', () => {
       await newService({ apiKey: '' }).getHelpArticle('a-slug').catch(() => undefined);
 
       expect(lastHeaders(fetchMock)).not.toHaveProperty('X-API-Key');
+    });
+
+    it('constructs anonymously with no key, an empty key, or a whitespace-only key', () => {
+      expect(() => newService()).not.toThrow();
+      expect(() => newService({ apiKey: '' })).not.toThrow();
+      expect(() => newService({ apiKey: '  \n' })).not.toThrow();
+    });
+
+    it('still rejects a non-empty key that is not a legal header value', () => {
+      expect(() => newService({ apiKey: 'bad\nkey' })).toThrow(/not valid in an HTTP header/);
+      expect(() => newService({ apiKey: 123 as unknown as string })).toThrow('apiKey must be a non-empty string');
+      expect(() => newService({ apiKey: null as unknown as string })).not.toThrow();
+    });
+
+    it('leaves error messages intact when there is no key to mask', async () => {
+      mockFetch('Rate limit exceeded.', { ok: false, status: 429 });
+
+      await expect(newService().searchHelpArticles()).rejects.toThrow('Help center request failed (429): Rate limit exceeded.');
     });
 
     it('surfaces a 401 for an invalid key rather than retrying anonymously', async () => {

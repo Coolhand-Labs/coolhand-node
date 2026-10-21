@@ -927,7 +927,7 @@ export interface SearchHelpArticlesParams {
 }
 
 // The endpoint renders a bare array and carries pagination in the X-Page/X-Per-Page/X-Total-Count/
-// X-Total-Pages response headers, which PublicContentService reads into the shared Pagination shape.
+// X-Total-Pages response headers, which HelpCenterDocsService reads into the shared Pagination shape.
 export interface SearchHelpArticlesResponse {
   articles: HelpArticleSummary[];
   pagination: Pagination;

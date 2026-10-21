@@ -8,7 +8,7 @@ import { WorkloadService } from './services/WorkloadService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
-import { PublicContentService } from './services/PublicContentService.js';
+import { HelpCenterDocsService } from './services/HelpCenterDocsService.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { formatErrorMessage } from './utils/format-error.js';
@@ -22,7 +22,7 @@ export class Coolhand {
   private workloadService: WorkloadService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
-  private publicContentService: PublicContentService;
+  private helpCenterDocsService: HelpCenterDocsService;
   private optimizationFeedbackLinkService: OptimizationFeedbackLinkService;
   private silent: boolean;
 
@@ -66,7 +66,7 @@ export class Coolhand {
     this.workloadService = new WorkloadService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
-    this.publicContentService = new PublicContentService(serviceConfig);
+    this.helpCenterDocsService = new HelpCenterDocsService(serviceConfig);
     this.optimizationFeedbackLinkService = new OptimizationFeedbackLinkService(serviceConfig);
     this.requestMonitoringService = new RequestMonitoringService(this.patternMatchingService, this.silent);
     warnOnGlobLikePatterns(options.excludeApiPatterns);
@@ -453,8 +453,8 @@ export class Coolhand {
   /**
    * Search the Coolhand help center (the `public_content` endpoints) by relevance, optionally
    * within one section, or list every published article. Read-only. Any key works here, and this
-   * instance's key is sent. To read the help center with no key at all, use `PublicContentService`
-   * directly. See `PublicContentService#searchHelpArticles`/`docs/help-center.md`.
+   * instance's key is sent. To read the help center with no key at all, use `HelpCenterDocsService`
+   * directly. See `HelpCenterDocsService#searchHelpArticles`/`docs/help-center.md`.
    *
    * @returns `{ articles, pagination }`. `pagination` comes from the response headers.
    * @throws Error on network failure or a non-JSON body. A non-2xx response throws an
@@ -462,7 +462,7 @@ export class Coolhand {
    *   rate limited).
    */
   public async searchHelpArticles(params?: SearchHelpArticlesParams): Promise<SearchHelpArticlesResponse> {
-    return this.publicContentService.searchHelpArticles(params);
+    return this.helpCenterDocsService.searchHelpArticles(params);
   }
 
   /**
@@ -470,19 +470,19 @@ export class Coolhand {
    *
    * @throws Error if `slug` is blank or a bare dot-segment, or on network failure. A non-2xx
    *   response throws an {@link HttpError} whose `status` holds the HTTP status code (`404` for
-   *   an unknown or unpublished slug). See `PublicContentService#getHelpArticle`.
+   *   an unknown or unpublished slug). See `HelpCenterDocsService#getHelpArticle`.
    */
   public async getHelpArticle(slug: string): Promise<HelpArticle> {
-    return this.publicContentService.getHelpArticle(slug);
+    return this.helpCenterDocsService.getHelpArticle(slug);
   }
 
   /**
    * List the help center sections, with each one's URL prefix and tag vocabulary. A section's
    * `slug` is the `category` filter on {@link searchHelpArticles}.
-   * See `PublicContentService#listHelpCategories`.
+   * See `HelpCenterDocsService#listHelpCategories`.
    */
   public async listHelpCategories(): Promise<HelpCategory[]> {
-    return this.publicContentService.listHelpCategories();
+    return this.helpCenterDocsService.listHelpCategories();
   }
 
   /**

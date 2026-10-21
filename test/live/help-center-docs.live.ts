@@ -3,12 +3,12 @@
  * Unlike the other live suites this one needs no API key — reads are open — so it deliberately
  * constructs the service without one. The keyed path is covered by the unit tests.
  *
- * Run it with `COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns test/live/public-content`.
+ * Run it with `COOLHAND_LIVE_BASE_URL=http://127.0.0.1:3111 npx jest --config jest.live.config.cjs --runInBand --testPathPatterns test/live/help-center-docs`.
  * Anonymous callers are limited to 30 requests per minute per IP and this suite makes about 13, so
  * re-running it back to back can hit a 429 that has nothing to do with the wrapper.
  */
 import { HttpError } from '../../src/services/BaseService';
-import { PublicContentService } from '../../src/services/PublicContentService';
+import { HelpCenterDocsService } from '../../src/services/HelpCenterDocsService';
 import { HelpArticle, HelpArticleSummary, HelpCategory } from '../../src/types';
 
 const baseUrl = process.env.COOLHAND_LIVE_BASE_URL;
@@ -18,7 +18,7 @@ if (!baseUrl) {
 
 // The env fallback would otherwise make a "no key" client send COOLHAND_API_KEY.
 delete process.env.COOLHAND_API_KEY;
-const anonymous = new PublicContentService({ baseUrl });
+const anonymous = new HelpCenterDocsService({ baseUrl });
 
 function expectNullableString(value: unknown): void {
   expect(value === null || typeof value === 'string').toBe(true);
@@ -39,7 +39,7 @@ function expectSummaryShape(article: HelpArticleSummary): void {
   expectNullableString(article.updated_content_at);
 }
 
-describe('PublicContentService against a live server, with no API key', () => {
+describe('HelpCenterDocsService against a live server, with no API key', () => {
   it('lists articles and reads pagination off the response headers', async () => {
     const { articles, pagination } = await anonymous.searchHelpArticles({ perPage: 2 });
 
@@ -130,7 +130,7 @@ describe('PublicContentService against a live server, with no API key', () => {
   });
 
   it('gives a 401 for an invalid key instead of falling back to anonymous', async () => {
-    const service = new PublicContentService({ baseUrl, apiKey: 'not-a-real-key' });
+    const service = new HelpCenterDocsService({ baseUrl, apiKey: 'not-a-real-key' });
 
     const error = await service.listHelpCategories().catch((err: unknown) => err);
 

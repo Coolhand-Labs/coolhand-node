@@ -9,4 +9,4 @@ export { WorkloadService, type WorkloadServiceConfig } from './WorkloadService.j
 export { LlmReferenceService, type LlmReferenceServiceConfig } from './LlmReferenceService.js';
 export { McpService, type McpServiceConfig } from './McpService.js';
 export { ClientFileService, type ClientFileServiceConfig } from './ClientFileService.js';
-export { PublicContentService, type PublicContentServiceConfig } from './PublicContentService.js';
+export { HelpCenterDocsService, type HelpCenterDocsServiceConfig } from './HelpCenterDocsService.js';

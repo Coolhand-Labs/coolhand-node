@@ -7,7 +7,7 @@ import {
 } from '../types.js';
 import { BaseService, BaseServiceConfig } from './BaseService.js';
 
-export interface PublicContentServiceConfig extends Omit<BaseServiceConfig, 'apiKey' | 'silent'> {
+export interface HelpCenterDocsServiceConfig extends Omit<BaseServiceConfig, 'apiKey' | 'silent'> {
   /**
    * Optional: reads need no key. When omitted, falls back to `COOLHAND_API_KEY` (so with a custom
    * `baseUrl` that key goes to that host); with neither, no key header is sent. An explicit `''` means
@@ -28,16 +28,17 @@ function keyFromEnv(): string | undefined {
  * wire resource. Create/update/archive are Coolhand-internal and deliberately not wrapped.
  *
  * Unlike every other service, this one works with no API key, so it can be constructed on its own
- * (`new PublicContentService()`) rather than through `Coolhand`, whose constructor requires a key.
+ * (`new HelpCenterDocsService()`) rather than through `Coolhand`, whose constructor requires a key.
  * Anonymous callers are rate limited to 30 requests per minute per IP (`429` beyond that); a key —
  * `apiKey`, else `COOLHAND_API_KEY` when `apiKey` is omitted — is sent as `X-API-Key` and lifts the limit. A key the server
  * does not recognise is a `401`, not a silent fallback to anonymous.
  */
-export class PublicContentService extends BaseService {
-  constructor(config: PublicContentServiceConfig = {}) {
+export class HelpCenterDocsService extends BaseService {
+  constructor(config: HelpCenterDocsServiceConfig = {}) {
     super(
       { ...config, apiKey: config.apiKey ?? keyFromEnv() ?? '', silent: config.silent ?? true },
-      '/api/v2/public_content'
+      '/api/v2/public_content',
+      { allowAnonymous: true }
     );
   }
 

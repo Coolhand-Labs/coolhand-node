@@ -111,7 +111,7 @@ initializeMonitoring();
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `apiKey` | string | *required* | Your Coolhand API key |
+| `apiKey` | string | *required* | Your Coolhand API key. Surrounding whitespace is trimmed; an empty key, or one containing characters that are not valid in an HTTP header (e.g. a newline from a bad `.env` parse), throws when the client is constructed. The key is masked as `[redacted]` in the SDK's own error logs and thrown errors |
 | `silent` | boolean | `true` | Suppress console output |
 | `patternsFile` | string | `undefined` | Path to custom API patterns file |
 | `debug` | boolean | `false` | Enable verbose logging (does not affect data submission) |

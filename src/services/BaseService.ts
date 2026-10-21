@@ -92,7 +92,10 @@ function validateBaseUrl(raw: string): void {
 // removed: `Headers` trims exactly that set before checking, but the https fallback does not, and
 // error masking needs the exact string that `fetch` would quote. (Not `String#trim`, which also
 // strips \v, \f and Unicode spaces that `Headers` rejects.)
-function normalizeApiKey(raw: unknown): string {
+function normalizeApiKey(raw: unknown, allowAnonymous: boolean): string {
+  if (allowAnonymous && (raw === undefined || (typeof raw === 'string' && raw.trim() === ''))) {
+    return '';
+  }
   if (typeof raw !== 'string' || raw.trim() === '') {
     throw new Error('apiKey must be a non-empty string');
   }
@@ -132,8 +135,13 @@ export abstract class BaseService {
   protected apiEndpoint: string;
   protected requestTimeoutMs: number;
 
-  constructor(config: BaseServiceConfig, endpointPath: string) {
-    this.apiKey = normalizeApiKey(config.apiKey);
+  /**
+   * @param options.allowAnonymous Let an empty/blank `apiKey` through as "no key" instead of throwing,
+   *   for services whose endpoints are public (only `HelpCenterDocsService`). A non-empty key is still
+   *   validated, and no `X-API-Key` header is sent when there is none.
+   */
+  constructor(config: BaseServiceConfig, endpointPath: string, options: { allowAnonymous?: boolean } = {}) {
+    this.apiKey = normalizeApiKey(config.apiKey, options.allowAnonymous ?? false);
     this.silent = config.silent;
     this.debug = config.debug || false;
     this.dryRun = config.dryRun || false;
@@ -153,6 +161,10 @@ export abstract class BaseService {
 
   /** `text` with every occurrence of the configured API key masked. */
   protected mask(text: string): string {
+    // No key (anonymous service): `''.split('')` would splice the marker between every character.
+    if (!this.apiKey) {
+      return text;
+    }
     return text.split(this.apiKey).join('[redacted]');
   }
 
@@ -167,13 +179,17 @@ export abstract class BaseService {
   /**
    * Loggable message for a caught `unknown`, with the configured API key masked. Backstop for
    * anything the constructor's {@link normalizeApiKey} can't see, e.g. a proxy echoing the key back.
+   * Subclasses should log caught errors through this rather than `formatErrorMessage` directly.
    */
-  private describeError(err: unknown): string {
+  protected describeError(err: unknown): string {
     return this.mask(formatErrorMessage(err));
   }
 
   /** Whether `err` or anything in its `cause` chain quotes the API key. */
   private leaksKey(err: unknown, depth = 0): boolean {
+    if (!this.apiKey) {
+      return false;
+    }
     if (typeof err === 'string') {
       return err.includes(this.apiKey);
     }
@@ -216,7 +232,7 @@ export abstract class BaseService {
         try {
           console.log(`🚫 DRY RUN: Would send payload:`, JSON.stringify(payload, null, 2));
         } catch (error) {
-          console.error(`❌ Failed to stringify payload for dry-run log:`, formatErrorMessage(error));
+          console.error(`❌ Failed to stringify payload for dry-run log:`, this.describeError(error));
         }
       }
       this.log(`🚫 DRY RUN: ${successMessage.replace('✅', '🚫')}`);
@@ -456,7 +472,7 @@ export abstract class BaseService {
    * Like {@link getJson}, but also returns the response headers — for endpoints (e.g.
    * searchLogs) that expose metadata like pagination totals via X-Total-Count/etc. headers
    * rather than the response body. Sends no `X-API-Key` header when the service has no key
-   * (only `PublicContentService`, whose reads are open, can be constructed without one).
+   * (only `HelpCenterDocsService`, whose reads are open, can be constructed without one).
    *
    * @throws Error on network failure or a non-JSON body. {@link HttpError} (with `.status`) on a
    *   non-2xx response.
@@ -599,7 +615,7 @@ export abstract class BaseService {
    * response headers the paginated v2 list endpoints set, for endpoints that render a bare array
    * on the wire and carry pagination in headers rather than a body envelope — currently
    * `LoggingService#searchLogs`, `TemplateService#searchTemplates`, `ClientFileService#listClientFiles`
-   * and `PublicContentService#searchHelpArticles`.
+   * and `HelpCenterDocsService#searchHelpArticles`.
    *
    * `/llm_request_templates` always sends these headers. `/llm_request_logs` sends `X-Total-Count`/
    * `X-Total-Pages` only when the caller opts in with `include_total`, so the header-less branches
