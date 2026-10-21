@@ -6,7 +6,11 @@ function urlToOptions(url: string | URL): CoolhandRequestOptions {
     ? parsed.hostname.slice(1, -1)
     : parsed.hostname;
 
+  // Keep the scheme (like Node's urlToHttpOptions) so a URL/module mismatch
+  // (e.g. http.request('https://…')) throws ERR_INVALID_PROTOCOL instead of
+  // silently downgrading to cleartext.
   const options: CoolhandRequestOptions = {
+    protocol: parsed.protocol,
     hostname,
     path: `${parsed.pathname}${parsed.search}`,
   };

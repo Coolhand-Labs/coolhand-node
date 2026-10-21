@@ -1193,6 +1193,33 @@ describe('RequestMonitoringService', () => {
       expect(hostCallback).toHaveBeenCalledTimes(1);
       expect(hostCallback.mock.calls[0][0].statusCode).toBe(200);
     });
+
+    it.each([
+      ['https', 'https://api.test.com/v1/chat/completions', 'https:'],
+      ['http', 'http://api.test.com/v1/chat/completions', 'http:'],
+      // Mismatches must reach the real request with the URL's protocol intact so native Node
+      // throws ERR_INVALID_PROTOCOL instead of sending cleartext (regression for #289).
+      ['http', 'https://api.test.com/v1/chat/completions', 'https:'],
+      ['https', 'http://api.test.com/v1/chat/completions', 'http:']
+    ] as const)('forwards the URL protocol to the underlying %s.request for %s (#289)', (moduleName, url, expectedProtocol) => {
+      const nodeModule = moduleName === 'https' ? nodeHttps : nodeHttp;
+      const underlying = jest.fn((_options: unknown) => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+        return fakeReq;
+      });
+      nodeModule.request = underlying;
+
+      (mockPatternMatchingService as any).matchesAPIPatternSync = jest.fn().mockReturnValue(mockMatchedPattern);
+
+      service.setupMonitoring();
+
+      nodeModule.request(url, { method: 'POST' }, jest.fn());
+
+      expect(underlying).toHaveBeenCalledTimes(1);
+      expect(underlying.mock.calls[0][0]).toMatchObject({ protocol: expectedProtocol, hostname: 'api.test.com', method: 'POST' });
+    });
   });
 
   describe('URL Building', () => {
