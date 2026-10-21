@@ -17,6 +17,7 @@ import { teeResponseForCapture } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared } from './utils/self-endpoint.js';
+import { formatHostForUrl } from './utils/url-host.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
@@ -925,7 +926,7 @@ function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol
   if (options.href) { return options.href; }
   if (options.url) { return options.url; }
 
-  const hostname = options.hostname || options.host || 'unknown';
+  const hostname = formatHostForUrl(options.hostname || options.host || 'unknown');
   const path = options.path || '/';
   const port = options.port ? `:${options.port}` : '';
 

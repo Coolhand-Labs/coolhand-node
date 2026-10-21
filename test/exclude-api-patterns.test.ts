@@ -84,6 +84,33 @@ describe('matchesExcludePattern (shared helper)', () => {
   });
 });
 
+describe('matchesExcludePattern host canonicalization (issue #290)', () => {
+  it('matches a mixed-case host against a lowercase entry', () => {
+    expect(matchesExcludePattern('https://Internal.Corp/v1', ['internal.corp'])).toBe(true);
+    expect(matchesExcludePattern('HTTPS://INTERNAL.CORP/v1', ['//internal.corp/'])).toBe(true);
+  });
+
+  it('matches a trailing-dot host against entries without the dot', () => {
+    expect(matchesExcludePattern('https://internal.corp./', ['internal.corp/'])).toBe(true);
+    expect(matchesExcludePattern('https://Internal.Corp./x', ['//internal.corp/'])).toBe(true);
+  });
+
+  it('matches an IPv6 literal in its canonical bracketed form', () => {
+    expect(matchesExcludePattern('http://[::1]:3000/x', ['[::1]'])).toBe(true);
+    expect(matchesExcludePattern('http://[0:0:0:0:0:0:0:1]:3000/x', ['[::1]'])).toBe(true);
+  });
+
+  it('still matches what the raw URL matched, even when the URL is unparseable', () => {
+    expect(matchesExcludePattern('not a url /internal/', ['/internal/'])).toBe(true);
+    expect(matchesExcludePattern('not a url', ['/internal/'])).toBe(false);
+  });
+
+  it('does not lowercase the path or query, and does not widen to lookalike hosts', () => {
+    expect(matchesExcludePattern('https://example.com/FOO/', ['/foo/'])).toBe(false);
+    expect(matchesExcludePattern('https://Internal.Corp.attacker.io/', ['//internal.corp/'])).toBe(false);
+  });
+});
+
 describe('matchesExcludePattern semantics (substring, not glob — see issue #231)', () => {
   it('treats * as a literal character, not a wildcard', () => {
     expect(matchesExcludePattern('https://example.com/internal-foo', ['/internal-*'])).toBe(false);

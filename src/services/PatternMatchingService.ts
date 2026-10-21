@@ -1,6 +1,6 @@
 import { CoolhandAPIPattern, CoolhandMatchedPattern, CoolhandRequestOptions } from '../types';
 import { DEFAULT_API_PATTERNS } from '../default-api-patterns.js';
-import { normalizeHostname } from '../utils/self-endpoint.js';
+import { normalizeHostname } from '../utils/url-host.js';
 
 // Credential-bearing headers redacted unconditionally, regardless of which (if any)
 // pattern matched — closes the gap where an unmatched/misdetected request or a custom

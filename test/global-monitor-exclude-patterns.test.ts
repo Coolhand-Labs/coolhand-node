@@ -190,6 +190,30 @@ describe('Global Monitor — excludeApiPatterns and self-endpoint exclusion', ()
       expect(globalMonitor.getGlobalStats().interceptedCalls).toBe(0);
     });
 
+    it.each([
+      ['mixed-case host', 'Internal.Corp'],
+      ['trailing-dot host', 'internal.corp.'],
+      ['mixed-case trailing-dot host', 'INTERNAL.Corp.']
+    ])('suppresses interception for a %s matching a lowercase entry (issue #290)', async (_label, hostname) => {
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValue({
+        pattern: { name: 'Test API', domains: ['internal.corp'] },
+        matchType: 'domain',
+        matchValue: 'internal.corp'
+      } as any);
+      mockHttpsResponse();
+
+      await globalMonitor.initializeGlobalMonitoring({
+        apiKey: 'test-key',
+        silent: true,
+        excludeApiPatterns: ['//internal.corp/']
+      });
+
+      const https = require('https');
+      https.request(`https://${hostname}/v1`, jest.fn());
+
+      expect(globalMonitor.getGlobalStats().interceptedCalls).toBe(0);
+    });
+
     it('suppresses interception for a custom excludeApiPatterns entry on the fetch path', async () => {
       const originalFetch = jest.fn().mockResolvedValue({
         status: 200,
