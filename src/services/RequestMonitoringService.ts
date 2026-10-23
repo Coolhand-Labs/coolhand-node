@@ -36,16 +36,34 @@ let http: any = null;
 let _createRequire: ((id: string) => any) | null = null;
 try { _createRequire = (require as any)('module').createRequire; } catch { /* not available in native ESM */ }
 
-const loadNodeModules = (): boolean => {
-  if (!_createRequire) { return false; } // native ESM — no synchronous fallback available
+// Tries createRequire first, then `process.getBuiltinModule` (Node 20.16+ / 22.3+) — the only
+// synchronous route in native ESM, which has no `require`. Both return the real, mutable CJS module
+// objects. Mirrors getNodeBuiltin in PatternMatchingService.
+const tryLoadNodeModules = (load: () => [any, any]): boolean => {
   try {
-    const req = _createRequire(createRequireBase());
-    https = req('https');
-    http = req('http');
+    const [httpsModule, httpModule] = load();
+    // Commit only when both resolved, so a failure never leaves one module set without the other.
+    if (!httpsModule || !httpModule) { return false; }
+    https = httpsModule;
+    http = httpModule;
     return true;
   } catch {
-    return false;
+    return false; // let the caller try the next strategy
   }
+};
+
+const loadNodeModules = (): boolean => {
+  const createReq = _createRequire;
+  if (createReq) {
+    const viaRequire = tryLoadNodeModules(() => {
+      const req = createReq(createRequireBase());
+      return [req('https'), req('http')];
+    });
+    if (viaRequire) { return true; }
+  }
+  const getBuiltinModule = (process as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+  if (typeof getBuiltinModule !== 'function') { return false; }
+  return tryLoadNodeModules(() => [getBuiltinModule.call(process, 'https'), getBuiltinModule.call(process, 'http')]);
 };
 
 // Stored on globalThis, not a class-static field — a plain static would only be shared within a
@@ -121,8 +139,11 @@ export class RequestMonitoringService {
 
         // Patch HTTP (some libraries might use HTTP with upgrade)
         this.patchHTTP();
-      } else {
-        console.warn('⚠️  Node.js HTTP modules not available - HTTP/HTTPS interception disabled (fetch() interception still active)');
+      } else if (!this.silent) {
+        console.warn(
+          '⚠️  Node.js HTTP modules not available - HTTP/HTTPS interception disabled (fetch() interception still active). ' +
+          'In native ESM this needs Node 20.16+ / 22.3+; on older Node use initializeGlobalMonitoring() or the CommonJS build.'
+        );
       }
 
       // Patch fetch if available (Node 18+)

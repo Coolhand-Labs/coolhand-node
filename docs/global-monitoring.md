@@ -570,6 +570,8 @@ await model.invoke('hello'); // ✅ intercepted
 
 This only affects libraries that cache `https.request` at import time in native ESM projects. All other interception (including `fetch`) works in both module systems (see item 5 below for an exception involving construction-time `fetch` capture).
 
+**Which entry point patches `http`/`https` in native ESM?** `new Coolhand(...)` patches `http`/`https` synchronously on Node 20.16+ / 22.3+ (via `process.getBuiltinModule`). On older Node versions under native ESM it cannot, so only `fetch` is intercepted (and, unless `silent: true`, a warning says so) — use `await initializeGlobalMonitoring(...)` or the CommonJS build for `http`/`https` interception there.
+
 **5. "AI calls not intercepted even though fetch patching succeeded"**
 
 Some client libraries capture a *reference* to `fetch` once, at construction time, instead of calling `globalThis.fetch` fresh on every request:
