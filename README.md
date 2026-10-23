@@ -467,7 +467,7 @@ The monitor works with any Node.js library that makes HTTP(S) requests to LLM AP
 - xAI (`api.x.ai`)
 - Cohere (`api.cohere.com`, `api.cohere.ai` — v2 chat and v1/v2 embed endpoints only)
 - Ollama (self-hosted at port `11434`, or `ollama.com` — chat, generate and embedding endpoints only)
-- Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com` — model invoke, Converse and OpenAI-compatible endpoints)
+- Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com`, plus `.amazonaws.com.cn`, the `.api.aws` dual-stack hosts and the `bedrock-runtime-fips.<region>` variants — model invoke, Converse and OpenAI-compatible endpoints)
 - ElevenLabs (`api.elevenlabs.io`)
 - TypeSafe Jev (`api.typesafe.ai`, the System One `/v1/systemone` endpoint)
 - LangChain
