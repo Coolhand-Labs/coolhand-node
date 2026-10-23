@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+- **Amazon Bedrock dual-stack (IPv6) endpoints are now captured.** The Bedrock pattern covered the
+  `amazonaws.com`, `amazonaws.com.cn` and FIPS `amazonaws.com` hosts but not the dual-stack ones
+  (`bedrock-runtime.<region>.api.aws` and `bedrock-runtime-fips.<region>.api.aws`), which are not
+  suffixes of `amazonaws.com` and so matched nothing. An app on an IPv6-only or dual-stack-preferring
+  network reaches Bedrock on those hosts, and its calls were silently not captured. coolhand-python
+  already covered all five hosts; `coolhand-ruby` is aligned in a companion PR.
+
 ## [0.17.1] - 2026-10-23
 
 ### 🐛 Bug Fixes

@@ -172,7 +172,7 @@
     },
     {
       "name": "Bedrock",
-      "domains": ["bedrock-runtime.*.amazonaws.com", "bedrock-runtime-fips.*.amazonaws.com", "bedrock-runtime.*.amazonaws.com.cn"],
+      "domains": ["bedrock-runtime.*.amazonaws.com", "bedrock-runtime-fips.*.amazonaws.com", "bedrock-runtime.*.amazonaws.com.cn", "bedrock-runtime.*.api.aws", "bedrock-runtime-fips.*.api.aws"],
       "paths": ["/model/", "/openai/"],
       "requiresPathMatch": true,
       "headers": {
