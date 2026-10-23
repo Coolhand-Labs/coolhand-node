@@ -398,28 +398,84 @@ describe('RequestMonitoringService', () => {
       expect(patchWarnings).toHaveLength(0);
     });
 
-    it('falls back to fetch-only and warns when createRequire is unavailable (native ESM)', async () => {
-      jest.resetModules();
-      jest.doMock('module', () => ({ createRequire: undefined }));
+    // Native ESM has no `require`, so createRequire is unobtainable. Issue #300: http/https
+    // must still be patched via process.getBuiltinModule, and the fallback warning must honour
+    // `silent` rather than firing on every construction.
+    describe('native ESM (createRequire unavailable)', () => {
+      const realGetBuiltinModule = (process as any).getBuiltinModule;
 
-      try {
-        const { RequestMonitoringService: FreshRequestMonitoringService } =
-          await import('../src/services/RequestMonitoringService');
-        const freshService = new FreshRequestMonitoringService(mockPatternMatchingService, true);
+      const loadFreshService = async (silent: boolean) => {
+        jest.resetModules();
+        jest.doMock('module', () => ({ createRequire: undefined }));
+        const { RequestMonitoringService: Fresh } = await import('../src/services/RequestMonitoringService');
+        const freshService = new Fresh(mockPatternMatchingService, silent);
+        return {
+          patchHTTPSSpy: jest.spyOn(freshService as any, 'patchHTTPS'),
+          patchHTTPSpy: jest.spyOn(freshService as any, 'patchHTTP'),
+          patchFetchSpy: jest.spyOn(freshService as any, 'patchFetch'),
+          setup: () => freshService.setupMonitoring(),
+        };
+      };
+
+      const stubGetBuiltinModule = (value: unknown) => {
+        Object.defineProperty(process, 'getBuiltinModule', { value, configurable: true, writable: true });
+      };
+
+      afterEach(() => {
+        stubGetBuiltinModule(realGetBuiltinModule);
+        jest.dontMock('module');
+        jest.resetModules();
+      });
+
+      // Skipped (visibly, not silently passed) on Node < 20.16 / 22.3 where the API doesn't exist.
+      const itWithGetBuiltinModule = typeof realGetBuiltinModule === 'function' ? it : it.skip;
+
+      itWithGetBuiltinModule('patches http/https via process.getBuiltinModule without warning', async () => {
+        const { patchHTTPSSpy, patchHTTPSpy, patchFetchSpy, setup } = await loadFreshService(false);
+
+        setup();
+
+        expect(patchHTTPSSpy).toHaveBeenCalled();
+        expect(patchHTTPSpy).toHaveBeenCalled();
+        expect(patchFetchSpy).toHaveBeenCalled();
+        expect(nodeHttps.request).not.toBe(originalHttpsRequest);
+        expect(consoleWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('HTTP modules not available'));
+      });
+
+      itWithGetBuiltinModule('tries process.getBuiltinModule when createRequire exists but throws', async () => {
+        jest.resetModules();
+        jest.doMock('module', () => ({ createRequire: () => { throw new Error('boom'); } }));
+        const { RequestMonitoringService: Fresh } = await import('../src/services/RequestMonitoringService');
+        const freshService = new Fresh(mockPatternMatchingService, false);
         const patchHTTPSSpy = jest.spyOn(freshService as any, 'patchHTTPS');
-        const patchFetchSpy = jest.spyOn(freshService as any, 'patchFetch');
 
         freshService.setupMonitoring();
 
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('HTTP modules not available')
-        );
+        expect(patchHTTPSSpy).toHaveBeenCalled();
+        expect(consoleWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('HTTP modules not available'));
+      });
+
+      it('falls back to fetch-only and warns when process.getBuiltinModule is also unavailable', async () => {
+        stubGetBuiltinModule(undefined);
+        const { patchHTTPSSpy, patchFetchSpy, setup } = await loadFreshService(false);
+
+        setup();
+
+        expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('HTTP modules not available'));
         expect(patchHTTPSSpy).not.toHaveBeenCalled();
         expect(patchFetchSpy).toHaveBeenCalled();
-      } finally {
-        jest.dontMock('module');
-        jest.resetModules();
-      }
+      });
+
+      it('does not warn in silent mode when http/https cannot be loaded', async () => {
+        stubGetBuiltinModule(undefined);
+        const { patchHTTPSSpy, patchFetchSpy, setup } = await loadFreshService(true);
+
+        setup();
+
+        expect(consoleWarnSpy).not.toHaveBeenCalled();
+        expect(patchHTTPSSpy).not.toHaveBeenCalled();
+        expect(patchFetchSpy).toHaveBeenCalled();
+      });
     });
   });
 
