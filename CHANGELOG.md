@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.1] - 2026-10-23
+
+### 🐛 Bug Fixes
+- **`new Coolhand()` now patches `http`/`https` under native ESM on Node 20.16+ / 22.3+.** With no `require` available, module loading falls back to `process.getBuiltinModule` when `createRequire` is missing or throws, so ESM apps get `http`/`https` interception instead of fetch-only. `http` and `https` are assigned together, so a partial load failure can't leave only one patched. Native ESM on older Node still gets fetch-only interception. ([#300](https://github.com/Coolhand-Labs/coolhand-node/issues/300), [#301](https://github.com/Coolhand-Labs/coolhand-node/pull/301))
+- **The "HTTP modules not available" warning now respects `silent`,** and its text points to `initializeGlobalMonitoring()` or the CommonJS build. With the default `silent: true` it no longer prints. `docs/global-monitoring.md` now says which entry point patches `http`/`https` under ESM. ([#300](https://github.com/Coolhand-Labs/coolhand-node/issues/300), [#301](https://github.com/Coolhand-Labs/coolhand-node/pull/301))
+
 ## [0.17.0] - 2026-10-21
 
 ### ✨ New Features
