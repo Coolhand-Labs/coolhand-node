@@ -90,6 +90,13 @@ const URL_CASES: Array<[string, string | null]> = [
   ['https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1/chat/completions', 'Bedrock'],
   ['https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com/model/x/invoke', 'Bedrock'],
   ['https://bedrock-runtime.cn-north-1.amazonaws.com.cn/model/x/invoke', 'Bedrock'],
+  // Dual-stack (IPv6) endpoints live on api.aws, which is not a suffix of amazonaws.com
+  ['https://bedrock-runtime.us-east-1.api.aws/model/x/invoke', 'Bedrock'],
+  ['https://bedrock-runtime.us-east-1.api.aws/openai/v1/chat/completions', 'Bedrock'],
+  ['https://bedrock-runtime-fips.us-gov-west-1.api.aws/model/x/converse', 'Bedrock'],
+  ['https://bedrock-runtime.us-east-1.api.aws/guardrail/abc/version/1/apply', null],
+  ['https://bedrock-runtime.api.aws/model/x/invoke', null],
+  ['https://bedrock-runtime.us-east-1.api.aws.evil.example/model/x/invoke', null],
   ['https://bedrock-runtime.us-east-1.amazonaws.com/guardrail/abc/version/1/apply', null],
   ['https://bedrock-runtime.us-east-1.amazonaws.com/', null],
   ['https://bedrock.us-east-1.amazonaws.com/model/x/invoke', null],
