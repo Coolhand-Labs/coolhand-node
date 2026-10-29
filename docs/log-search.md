@@ -170,6 +170,7 @@ await coolhand.getLogContent('abc123', { searchQuery: 'timeout' }); // mutually 
 | `maxChars` | `number` | Max characters per content field — slices from the start, or the requested `section`. A non-positive value is rejected with a 422 |
 | `searchQuery` | `string` | Returns up to 5 matching snippets per field with surrounding context instead of raw content. Mutually exclusive with `section`/`maxChars` — `GetLogContentOptions` is a discriminated union, so TypeScript rejects passing both. Must be non-blank — `getLogContent` throws client-side on `''`/whitespace-only rather than silently falling through to the content shape (which is what the backend does with a blank query) |
 | `includeThinking` | `boolean` | Include `thinking_response` (an array of thinking blocks, not a single string) in the result (default: false) |
+| `includeTurnMetrics` | `boolean` | Include `turn_metrics`, the per-turn breakdown of a captured agent session (default: false). See below |
 
 A `searchQuery` you don't know is present at compile time (e.g. typed `string | undefined`) can
 still be passed straight through — a third, catch-all overload accepts the full
@@ -203,9 +204,16 @@ content fields directly (sliced if `section`/`maxChars` were given, with `trunca
   created_at: '2026-01-01T00:00:00Z',
   system_prompt: '...', user_prompt: '...', output: '...',
   truncated: true, total_chars: { system_prompt: 12000, user_prompt: 400, output: 900 },
-  thinking_response: ['...']  // only present when includeThinking was set; an array, not a string
+  thinking_response: ['...'],  // only present when includeThinking was set; an array, not a string
+  turn_metrics: [...]          // only present when includeTurnMetrics was set; see below
 }
 ```
+
+`turn_metrics` has one entry per user message of a captured agent session:
+`{ index, human, started_at, ended_at, assistant_requests, tool_calls, input_tokens, output_tokens,
+cache_read_tokens, cache_creation_tokens }` (the timestamps and token counts are nullable). It is
+`null` for a log that is not a captured session, and the key is omitted entirely unless you ask for
+it. It holds no content, so it is still returned after the content scrub.
 
 When `searchQuery` was passed, `matches`/`search_query` replace the content fields:
 

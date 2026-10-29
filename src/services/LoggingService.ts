@@ -82,7 +82,8 @@ export class LoggingService extends BaseService {
    * @param logId The log's hashid.
    * @param opts `section`/`maxChars` for large logs, or `searchQuery` for snippet search
    *   (mutually exclusive with `section`/`maxChars` — enforced by the overloads below), plus
-   *   `includeThinking`.
+   *   `includeThinking` and `includeTurnMetrics` (adds `turn_metrics`, the per-turn breakdown of a
+   *   captured agent session; `null` for any other log).
    * @throws Error if `logId` is blank/whitespace-only or a bare dot-segment (`.`/`..`) — either
    *   would otherwise silently resolve away to the `index` route or beyond (returning a bare array
    *   typed as a single log's content) rather than 404ing on `show`. Also throws if `searchQuery`
@@ -115,6 +116,9 @@ export class LoggingService extends BaseService {
     }
     if (opts.includeThinking !== undefined) {
       url.searchParams.set('include_thinking', String(opts.includeThinking));
+    }
+    if (opts.includeTurnMetrics !== undefined) {
+      url.searchParams.set('include_turn_metrics', String(opts.includeTurnMetrics));
     }
     return this.getJson<LlmRequestLogContent>(url.toString(), 'Log');
   }

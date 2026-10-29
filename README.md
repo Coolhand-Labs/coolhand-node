@@ -299,6 +299,21 @@ patterns come from `getTemplate` only.
 See [docs/template-search.md](./docs/template-search.md) for the full filter reference, pagination,
 and error handling (including the retryable `504` on the `log_count` aggregate).
 
+## Reading Step Templates
+
+`listStepTemplates` and `getStepTemplate` read the skills and other recurring steps Coolhand
+detects in your captured agent sessions. They need your **private** API key; `includeMetrics` adds
+run, turn, tool and efficiency figures:
+
+```typescript
+const { stepTemplates, pagination } = await coolhand.listStepTemplates({ stepType: 'prompt_step', includeMetrics: true });
+
+const stepTemplate = await coolhand.getStepTemplate(stepTemplates[0].id);
+stepTemplate.metrics?.notes;
+```
+
+See [docs/step-templates.md](./docs/step-templates.md) for the parameters, `metrics` fields and errors.
+
 ## Reading Workloads and Cost Metrics
 
 `searchWorkloads` lists your workloads, and `includeMetrics` adds the dashboard's cost and
@@ -625,7 +640,7 @@ API key (the public key 401s) — same as the read methods below. See
 but need a client admin's **per-user** API key rather than the client-level private key.
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
-`getTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
+`getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 [docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md),
@@ -651,6 +666,7 @@ taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
+- **[Reading Step Templates (List + Get)](./docs/step-templates.md)** - List the skills and recurring steps detected in captured agent sessions, with run and efficiency metrics, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
 - **[Reading the Help Center (Search + Get + Categories)](./docs/help-center.md)** - Search and read Coolhand's help center articles, with no API key required.
 - **[Linking Feedback to an Optimization](./docs/feedback-links.md)** - Attach feedback to an optimization as evidence, singly or in bulk, using the private API key.

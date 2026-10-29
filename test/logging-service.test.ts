@@ -472,6 +472,45 @@ describe('LoggingService', () => {
       expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
     });
 
+    it('sends include_turn_metrics only when includeTurnMetrics is set, and returns turn_metrics', async () => {
+      const turnMetrics = [{
+        index: 0,
+        human: true,
+        started_at: '2026-10-29T10:00:00Z',
+        ended_at: null,
+        assistant_requests: 2,
+        tool_calls: 3,
+        input_tokens: 100,
+        output_tokens: null,
+        cache_read_tokens: null,
+        cache_creation_tokens: null
+      }];
+      const fetchMock = mockGetFetch({ id: 'abc123', turn_metrics: turnMetrics });
+      (global as any).fetch = fetchMock;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.getLogContent('abc123', { includeTurnMetrics: true });
+
+      expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('include_turn_metrics')).toBe('true');
+      expect(result.turn_metrics).toEqual(turnMetrics);
+
+      await service.getLogContent('abc123');
+      expect(new URL(fetchMock.mock.calls[1][0]).searchParams.has('include_turn_metrics')).toBe(false);
+    });
+
+    it('allows includeTurnMetrics together with searchQuery and returns a null turn_metrics', async () => {
+      const fetchMock = mockGetFetch({ id: 'abc123', search_query: 'x', matches: {}, turn_metrics: null });
+      (global as any).fetch = fetchMock;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.getLogContent('abc123', { searchQuery: 'x', includeTurnMetrics: true });
+
+      const url = new URL(fetchMock.mock.calls[0][0]);
+      expect(url.searchParams.get('search_query')).toBe('x');
+      expect(url.searchParams.get('include_turn_metrics')).toBe('true');
+      expect(result.turn_metrics).toBeNull();
+    });
+
     it('GETs the log by id with searchQuery as a query param, omitting section/maxChars', async () => {
       let capturedUrl: string | undefined;
       (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
