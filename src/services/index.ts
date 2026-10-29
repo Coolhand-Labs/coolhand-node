@@ -4,6 +4,7 @@ export { RequestMonitoringService } from './RequestMonitoringService.js';
 export { LoggingService, type LoggingServiceConfig } from './LoggingService.js';
 export { FeedbackService, type FeedbackServiceConfig } from './FeedbackService.js';
 export { TemplateService, type TemplateServiceConfig } from './TemplateService.js';
+export { StepTemplateService, type StepTemplateServiceConfig } from './StepTemplateService.js';
 export { OptimizationFeedbackLinkService, type OptimizationFeedbackLinkServiceConfig } from './OptimizationFeedbackLinkService.js';
 export { WorkloadService, type WorkloadServiceConfig } from './WorkloadService.js';
 export { LlmReferenceService, type LlmReferenceServiceConfig } from './LlmReferenceService.js';

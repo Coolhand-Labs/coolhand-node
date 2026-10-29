@@ -352,6 +352,8 @@ export interface GetLogContentSliceOptions {
   searchQuery?: undefined;
   /** Include `thinking_response` in the result (default: false). */
   includeThinking?: boolean;
+  /** Include `turn_metrics` in the result (default: false). */
+  includeTurnMetrics?: boolean;
 }
 
 export interface GetLogContentSearchOptions {
@@ -361,6 +363,8 @@ export interface GetLogContentSearchOptions {
   searchQuery: string;
   /** Include `thinking_response` in the result (default: false). */
   includeThinking?: boolean;
+  /** Include `turn_metrics` in the result (default: false). */
+  includeTurnMetrics?: boolean;
 }
 
 export type GetLogContentOptions = GetLogContentSliceOptions | GetLogContentSearchOptions;
@@ -380,6 +384,21 @@ export interface LlmRequestLogCostBreakdown {
   cached_input_cost: number;
   cache_creation_input_cost: number;
   reasoning_output_cost: number;
+}
+
+// One user message of a captured agent session and the work the agent did in response. Carries no
+// content, so it survives the content scrub.
+export interface LlmRequestLogTurnMetric {
+  index: number;
+  human: boolean;
+  started_at: string | null;
+  ended_at: string | null;
+  assistant_requests: number;
+  tool_calls: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
 }
 
 export interface LlmRequestLogContentBase {
@@ -408,6 +427,11 @@ export interface LlmRequestLogContentBase {
    * An array of thinking blocks (the backend stores/returns this as `jsonb`, not a single string).
    */
   thinking_response?: string[] | null;
+  /**
+   * Only present when `includeTurnMetrics` was set (the key is omitted otherwise); null when the
+   * log is not a captured agent session.
+   */
+  turn_metrics?: LlmRequestLogTurnMetric[] | null;
 }
 
 // Returned when getLogContent was called without `searchQuery` — the (optionally sliced)
@@ -930,5 +954,108 @@ export interface SearchHelpArticlesParams {
 // X-Total-Pages response headers, which HelpCenterDocsService reads into the shared Pagination shape.
 export interface SearchHelpArticlesResponse {
   articles: HelpArticleSummary[];
+  pagination: Pagination;
+}
+
+// The `step_type` values GET /api/v2/step_templates accepts as a filter; anything else is a 422.
+export type StepTemplateType = 'prompt_step' | 'tool_step';
+
+// Filters for listStepTemplates, applied by GET /api/v2/step_templates. There is deliberately no
+// `clientId`: the client is always derived from the authenticating API key.
+export interface ListStepTemplatesParams {
+  /** Case-insensitive substring match against the step template name. */
+  search?: string;
+  stepType?: StepTemplateType;
+  /** Add a `metrics` object to every row. Off by default; when set, the server caps `per` at 25
+   *  (`pagination.per_page` reports the size actually applied). */
+  includeMetrics?: boolean;
+  /** Page number, 1-based. */
+  page?: number;
+  /** Page size (default 25, max 100 — enforced server-side; `per_page` is accepted on the wire as
+   *  an alias but this SDK only sends `per`, same as searchLogs). */
+  per?: number;
+}
+
+// Options for getStepTemplate. `includeMetrics` defaults to true there, unlike on the list.
+export interface GetStepTemplateOptions {
+  /** Include `metrics` (default: true). */
+  includeMetrics?: boolean;
+}
+
+export interface StepTemplateToolStat {
+  name: string;
+  pct_of_runs: number;
+  avg_per_run: number;
+}
+
+export interface StepTemplateTurnStats {
+  avg: number;
+  median: number;
+  high: number;
+  single_turn_pct: number | null;
+}
+
+// One cohort of runs, measured from the invocation onward. The token figures are null (and
+// `tokens_available` false) when no run in the cohort has token data.
+export interface StepTemplateEfficiencyCohort {
+  runs: number;
+  avg_turns_after: number;
+  avg_tool_calls: number;
+  avg_requests: number;
+  token_runs: number;
+  tokens_available: boolean;
+  median_tokens: number | null;
+  p90_tokens: number | null;
+  tokens_per_tool_call: number | null;
+}
+
+export interface StepTemplateEfficiency {
+  /** Runs where the user kept typing after the invocation. Null when the cohort has no runs. */
+  interactive: StepTemplateEfficiencyCohort | null;
+  /** Runs where nobody did. Null when the cohort has no runs. */
+  automated: StepTemplateEfficiencyCohort | null;
+  all: StepTemplateEfficiencyCohort | null;
+  /** Runs with no per-turn snapshot; they are in none of the cohorts. */
+  unavailable_runs: number;
+}
+
+// The `metrics` object on a step template. It says where data is missing rather than leaving gaps
+// to be guessed at: `notes` explains, in plain sentences, each gap that applies.
+export interface StepTemplateMetrics {
+  total_runs: number;
+  /** Null when there is nothing to show. */
+  tool_stats: StepTemplateToolStat[] | null;
+  /** Null when there is nothing to show. */
+  turn_stats: StepTemplateTurnStats | null;
+  /** Null for tool steps and for step templates with no recorded runs. */
+  efficiency: StepTemplateEfficiency | null;
+  notes: string[];
+}
+
+// A step template as rendered by GET /api/v2/step_templates and /{id}: a skill or other recurring
+// step Coolhand detects in captured agent sessions.
+export interface StepTemplate {
+  /** Integer primary key, unlike the hashids on logs and templates. */
+  id: number;
+  name: string;
+  /** `prompt_step` matches a user prompt such as a slash command; `tool_step` matches tool usage. */
+  step_type: StepTemplateType;
+  status: string;
+  user_turn_pattern: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Distinct sessions it appeared in. */
+  sessions_count: number;
+  occurrences_count: number;
+  last_seen_at: string | null;
+  /** Only with `includeMetrics: true` on the list; present by default on getStepTemplate. */
+  metrics?: StepTemplateMetrics;
+}
+
+// listStepTemplates' backing endpoint renders a bare array on the wire and always sends the
+// X-Page/X-Per-Page/X-Total-Count/X-Total-Pages headers, which StepTemplateService reads into the
+// same Pagination shape the other search methods return.
+export interface ListStepTemplatesResponse {
+  stepTemplates: StepTemplate[];
   pagination: Pagination;
 }
