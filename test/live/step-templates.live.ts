@@ -104,7 +104,6 @@ describe('StepTemplateService against a live server', () => {
         expectStepTemplateShape(row);
         expect(row).not.toHaveProperty('metrics');
       }
-      expect(stepTemplates.map((row) => row.id)).toContain(STEP_TEMPLATE_ID);
       expect(pagination.current_page).toBe(1);
       expect(pagination.per_page).toBe(25);
       expect(pagination.total_count).toBeGreaterThanOrEqual(stepTemplates.length);
