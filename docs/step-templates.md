@@ -4,7 +4,7 @@ A step template is a skill or other recurring step Coolhand detects in captured 
 `prompt_step` matches a user prompt such as a slash command; a `tool_step` matches tool usage.
 `listStepTemplates()` and `getStepTemplate()` are read-only; there are no write endpoints.
 
-**Auth:** both require your **private** API key. The public key and a missing key both return `401`.
+**Auth:** both require your **private** API key; the public key returns `401`.
 The client is derived from the key; there is no `clientId` parameter.
 
 ## `listStepTemplates(params)`

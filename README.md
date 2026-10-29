@@ -643,7 +643,7 @@ Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `s
 `getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
-[docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md),
+[docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md), [docs/step-templates.md](./docs/step-templates.md),
 [docs/workload-search.md](./docs/workload-search.md), [docs/llm-reference-search.md](./docs/llm-reference-search.md) and [docs/help-center.md](./docs/help-center.md) for details.
 `upsertWorkload` and `upsertTemplate` also throw (invalid keys, or an `HttpError` such as `422` for a
 taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).

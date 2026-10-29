@@ -614,8 +614,8 @@ export abstract class BaseService {
    * Build a {@link Pagination} from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages`
    * response headers the paginated v2 list endpoints set, for endpoints that render a bare array
    * on the wire and carry pagination in headers rather than a body envelope — currently
-   * `LoggingService#searchLogs`, `TemplateService#searchTemplates`, `ClientFileService#listClientFiles`
-   * and `HelpCenterDocsService#searchHelpArticles`.
+   * `LoggingService#searchLogs`, `TemplateService#searchTemplates`, `StepTemplateService#listStepTemplates`,
+   * `ClientFileService#listClientFiles` and `HelpCenterDocsService#searchHelpArticles`.
    *
    * `/llm_request_templates` always sends these headers. `/llm_request_logs` sends `X-Total-Count`/
    * `X-Total-Pages` only when the caller opts in with `include_total`, so the header-less branches

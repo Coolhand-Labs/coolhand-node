@@ -498,6 +498,16 @@ describe('LoggingService', () => {
       expect(new URL(fetchMock.mock.calls[1][0]).searchParams.has('include_turn_metrics')).toBe(false);
     });
 
+    it('sends include_turn_metrics=false rather than dropping it', async () => {
+      const fetchMock = mockGetFetch({ id: 'abc123' });
+      (global as any).fetch = fetchMock;
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await service.getLogContent('abc123', { includeTurnMetrics: false });
+
+      expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('include_turn_metrics')).toBe('false');
+    });
+
     it('allows includeTurnMetrics together with searchQuery and returns a null turn_metrics', async () => {
       const fetchMock = mockGetFetch({ id: 'abc123', search_query: 'x', matches: {}, turn_metrics: null });
       (global as any).fetch = fetchMock;

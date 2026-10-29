@@ -63,7 +63,7 @@ export class StepTemplateService extends BaseService {
     if (!Number.isSafeInteger(id) || id <= 0) {
       throw new Error('getStepTemplate: id must be a positive integer');
     }
-    const url = this.buildResourceUrl(String(id), 'getStepTemplate: id must be a positive integer');
+    const url = new URL(`${this.apiEndpoint}/${id}`);
     this.setQueryParams(url, { include_metrics: opts.includeMetrics });
     return this.getJson<StepTemplate>(url.toString(), 'Step template');
   }

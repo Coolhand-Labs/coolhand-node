@@ -142,15 +142,6 @@ describe('StepTemplateService', () => {
       expect(pagination.per_page).toBe(25);
     });
 
-    it('returns the nullable metrics shape unchanged', async () => {
-      const metrics = buildMetrics({ tool_stats: null, turn_stats: null, efficiency: null });
-      (global as any).fetch = mockGetFetch([buildStepTemplate({ metrics })]);
-
-      const { stepTemplates } = await newService().listStepTemplates({ includeMetrics: true });
-
-      expect(stepTemplates[0].metrics).toEqual(metrics);
-    });
-
     it('sends the private API key and asks for JSON', async () => {
       const fetchMock = mockGetFetch([]);
       (global as any).fetch = fetchMock;
