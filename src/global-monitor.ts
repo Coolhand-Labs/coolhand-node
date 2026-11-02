@@ -727,7 +727,7 @@ function interceptRequest(
         try {
           const rawBuffer = responseBuffer.concat();
           const contentEncoding = res.headers?.['content-encoding'];
-          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log, callData.stream_incomplete === true);
+          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log, !ended);
           callData.response_body = parseAndSanitizeBody(
             responseBody,
             (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,

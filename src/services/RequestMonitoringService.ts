@@ -472,7 +472,7 @@ export class RequestMonitoringService {
           try {
             const rawBuffer = responseBuffer.concat();
             const contentEncoding = res.headers?.['content-encoding'];
-            const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this), callData.stream_incomplete === true);
+            const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this), !ended);
             callData.response_body = parseAndSanitizeBody(
               responseBody,
               (body) => this.patternMatchingService.sanitizeBody(body),
