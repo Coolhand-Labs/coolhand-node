@@ -265,7 +265,7 @@ and error handling.
 
 ## Reading Logs
 
-`searchLogs` and `getLogContent` read back logs that have already been submitted. Like
+`searchLogs`, `getLogContent` and `failureSummary` read back logs that have already been submitted. Like
 `searchFeedback`/`getFeedback`, these require your **private** API key (the public key 401s):
 
 ```typescript
@@ -274,6 +274,10 @@ const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
 const { logs } = await coolhand.searchLogs({ model: 'gpt-4', sourceApiResult: 'failed', daysBack: 7 });
 
 const content = await coolhand.getLogContent(logs[0].id);
+
+// Roll failed requests up by error pattern, then list the logs behind one
+const summary = await coolhand.failureSummary({ daysBack: 7 });
+const { logs: failed } = await coolhand.searchLogs({ errorContains: summary.error_breakdown[0].error_pattern });
 ```
 
 See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling

@@ -479,6 +479,9 @@ export interface SearchLogsParams {
   systemPromptContains?: string;
   /** Case-insensitive substring match against the user prompt. */
   userPromptContains?: string;
+  /** Case-insensitive substring match against the failed request's error text. Pass a
+   *  `failureSummary` `error_pattern` here to list the logs behind that pattern. */
+  errorContains?: string;
   model?: string;
   sourceApi?: string;
   sourceApiResult?: string;
@@ -554,6 +557,62 @@ export interface SearchLogsResponse {
   logs: LlmRequestLogSummary[];
   pagination: Pagination;
 }
+
+// Params for GET /api/v2/llm_request_logs/failure_summary (failureSummary).
+export interface FailureSummaryParams {
+  /** Lookback in days (server default 7, max 36500). Zero or negative is a 422. */
+  daysBack?: number;
+}
+
+/** Whose problem a failure pattern is: `client_error` (a 4xx the caller can fix), `rate_limit`
+ *  (429), `server_error` (5xx), `provider_error` (no HTTP status) or `relayed_upstream` (an
+ *  upstream vendor's account or key error surfaced through a relay). */
+export type FailureCategory = 'client_error' | 'rate_limit' | 'server_error' | 'provider_error' | 'relayed_upstream';
+
+export interface FailureErrorPattern {
+  /** Pass as `errorContains` to `searchLogs` to list the logs behind this pattern. */
+  error_pattern: string;
+  source_api: string | null;
+  count: number;
+  /** ISO-8601 UTC. */
+  first_seen_at: string;
+  /** ISO-8601 UTC. */
+  last_seen_at: string;
+  category: FailureCategory;
+  example_error_details: string;
+  /** Up to three log hashids. */
+  example_log_ids: string[];
+  example_log_urls: string[];
+}
+
+export interface FailureTemplateBreakdown {
+  /** Hashid, null for failures not matched to a template. */
+  template_id: string | null;
+  template_name: string;
+  failed_count: number;
+  /** The API definition types the items only as `object`. The live shape is
+   *  `{ category, count, error, source_api }`; keys beyond those are optional. */
+  error_patterns: Array<Record<string, unknown>>;
+  example_log_ids: string[];
+  example_log_urls: string[];
+}
+
+export interface FailureSummaryResponse {
+  client_id: string;
+  client_name: string;
+  days_analyzed: number;
+  total_failed_count: number;
+  /** Failures inside a confirmed provider outage, left out of the breakdowns. */
+  provider_outage_excluded_count: number;
+  /** The 50 most frequent patterns; the totals and `actionable_summary` count every pattern. */
+  error_breakdown: FailureErrorPattern[];
+  by_template: FailureTemplateBreakdown[];
+  actionable_summary: {
+    client_fixable_count: number;
+    server_side_count: number;
+  };
+}
+
 // Window and opt-in for the `metrics` rollup on workloads and templates. Only validated by the
 // server when `includeMetrics` is true; on getTemplate that is the default.
 export interface MetricsParams {
