@@ -25,7 +25,23 @@ In practice this is transparent for the vast majority of code — `res.on('data'
 
 **Not covered**: this only applies when the response is delivered via the callback argument to `http.request()`/`https.request()`. Code that instead does `const req = https.request(options); req.on('response', handler)` still receives the raw `res` directly from Node, bypassing the tee — `handler` remains exposed to the original starvation bug if it consumes the response asynchronously. The callback form is by far the more common pattern and is what this fix targets; if you monitor code using the `req.on('response', ...)` form, be aware it isn't covered yet.
 
-`fetch()` interception is unaffected by that race — the body is captured as your code reads it. The `Response` you receive is a thin wrapper (same status, headers, `url`, `redirected` and `type`) around a pull-driven stream, rather than a `response.clone()` tee: nothing is buffered ahead of your reads, and cancelling the body (e.g. aborting an SSE stream) cancels the underlying download. The request is logged once your code finishes reading or cancels the body. If your code stops asking for data for 30 seconds (including never reading it, e.g. a status-only `if (!res.ok)` check), the request is logged with the body read so far (empty if none) and the body stays usable. Default readers, async iteration, `pipeTo()` and `.text()`/`.json()` all work; BYOB readers (`getReader({ mode: 'byob' })`) are not supported on the wrapped body.
+`fetch()` interception is unaffected by that race — the body is captured as your code reads it. The `Response` you receive is a thin wrapper (same status, headers, `url`, `redirected` and `type`) around a pull-driven stream, rather than a `response.clone()` tee: nothing is buffered ahead of your reads, and cancelling the body (e.g. aborting an SSE stream) cancels the underlying download. The request is logged once your code finishes reading or cancels the body. If your code stops asking for data for 30 seconds (including never reading it, e.g. a status-only `if (!res.ok)` check), the request is logged with the body read so far (empty if none) and the body stays usable. Bodies that did not reach their end are flagged, see [Abandoned streams](#abandoned-streams-stream_incomplete). Default readers, async iteration, `pipeTo()` and `.text()`/`.json()` all work; BYOB readers (`getReader({ mode: 'byob' })`) are not supported on the wrapped body.
+
+### Abandoned streams (`stream_incomplete`)
+
+A streamed response your code stops reading before it ends (a `break` out of `for await`, `reader.cancel()`, an `AbortController` abort, `res.destroy()`, a dropped connection, or an SDK that stops at `data: [DONE]` without draining the stream) is logged with whatever had arrived, and `raw_request.stream_incomplete: true`. A response that ends normally is sent without the field. The backend then nulls latency, and nulls token counts unless the provider's final usage event is in the captured body; the SDK never computes tokens, cost or latency for a partial body.
+
+| Path | Marked `stream_incomplete: true` when |
+|---|---|
+| `fetch` | the body was cancelled, the stream errored (abort, reset), or the capture was finalized early (no read for 30 seconds, or the process is exiting) before the source reached its end |
+| `http`/`https` | `res` emitted `aborted` or `close` without a completed `end`, e.g. after `res.destroy()`, `req.destroy()` or a dropped connection |
+
+- One record per call: the first outcome wins, so a late `close`, a second cancel or the idle timer cannot send a second record.
+- A `fetch` consumer that stops at `[DONE]` is incomplete even though the provider's last frame was seen: only reading the body to its end counts as complete. An `http`/`https` response is captured independently of your reads, so if the server has already ended the response by the time you stop reading, it is a complete record.
+- The 50 MiB capture cap is independent of the marker: a body that was truncated by the cap but read to its end is not marked, and one that is both truncated and abandoned is. The `fetch` capture buffer is dropped as soon as the record is settled (the `http`/`https` one goes with the response), so an abandoned stream never pins more than the cap.
+- A gzip, deflate or Brotli body cut off mid-stream is decoded as far as the received bytes allow, so the partial `response_body` is readable text rather than compressed bytes.
+- Applies to any response body that is cut off, not only SSE. Calls made with `logRequest()` can set `stream_incomplete: true` themselves ([manual submission](./manual-submission.md)).
+- A fetch whose body is never read (a status-only `if (!res.ok)` check) is logged after the 30-second idle window with the body read so far, now also marked incomplete.
 
 ### What Gets Monitored
 

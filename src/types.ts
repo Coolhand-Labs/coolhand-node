@@ -24,6 +24,13 @@ export interface CoolhandCallData {
   response_headers: Record<string, any> | null;
   status_code: number | null;
   protocol: string;
+  /**
+   * `true` (sent as `raw_request.stream_incomplete`) when the response was abandoned before it ended
+   * (host cancel/abort/destroy, dropped connection) and `response_body` holds what was read so far.
+   * Omitted for a completed response. The backend nulls latency, and tokens unless the provider's final
+   * usage event is in the body, so never compute them client-side. Only a strict `true` counts.
+   */
+  stream_incomplete?: boolean;
 }
 
 export interface CoolhandStats {

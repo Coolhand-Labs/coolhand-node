@@ -64,12 +64,23 @@ function installExitHook(): void {
   });
 }
 
+export interface CaptureOutcome {
+  /** The (capped) body read so far; `null` when it was never read through the wrapper (clone() fallback). */
+  text: string | null;
+  /** True when the capture ended before the source body did: host cancel, source error/abort, idle or exit finalize. */
+  incomplete: boolean;
+}
+
 export interface CapturedResponse {
   /** What the host should receive in place of the original response. */
   response: Response;
-  /** Resolves with the (capped) body text once the host finishes or cancels the body. */
+  /** Resolves with the (capped) body text once the host finishes or cancels the body; rejects if the source errors. */
   captured: Promise<string>;
+  /** Valid once `captured` has settled; unlike `captured`, still carries the partial text after a source error. */
+  outcome(): CaptureOutcome;
 }
+
+const COMPLETE_OUTCOME: CaptureOutcome = { text: null, incomplete: false };
 
 /**
  * Captures a fetch Response body for logging without `response.clone()`.
@@ -88,6 +99,10 @@ export interface CapturedResponse {
  * has not asked for data for `idleTimeoutMs`, the capture is finalized with the partial body read
  * so far. The host's stream is untouched and keeps working; further reads just aren't captured.
  *
+ * `outcome().incomplete` is true unless the source body was read to its end: a host that cancels
+ * right after the provider's terminator (`data: [DONE]`) without pulling the final `done` is
+ * incomplete too. The size cap alone never makes a capture incomplete.
+ *
  * Falls back to the `clone()` path for anything that isn't a readable, unlocked stream (null
  * bodies, Response-like objects).
  */
@@ -99,10 +114,11 @@ export function teeResponseForCapture(
 ): CapturedResponse {
   const body = response.body;
   if (!body || typeof body.getReader !== 'function' || body.locked) {
-    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate) };
+    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), outcome: () => COMPLETE_OUTCOME };
   }
 
-  const buffer = new CappedBuffer(maxBytes, onTruncate);
+  // Dropped once the capture settles so a long-lived host body doesn't pin up to `maxBytes` of it.
+  let buffer: CappedBuffer | null = new CappedBuffer(maxBytes, onTruncate);
   const reader = body.getReader();
   let resolveCaptured: (text: string) => void = () => undefined;
   let rejectCaptured: (reason: unknown) => void = () => undefined;
@@ -111,6 +127,8 @@ export function teeResponseForCapture(
     rejectCaptured = reject;
   });
   let finished = false;
+  let sourceDone = false;
+  let outcome: CaptureOutcome = COMPLETE_OUTCOME;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   // Settles the capture exactly once, whichever of finish/fail/idle-timeout/beforeExit gets there first.
   const settle = (settleCapture: () => void) => {
@@ -118,9 +136,11 @@ export function teeResponseForCapture(
     finished = true;
     pendingFinalizers.delete(finish);
     clearTimeout(idleTimer);
+    outcome = { text: buffer?.concat().toString('utf-8') ?? '', incomplete: !sourceDone };
+    buffer = null;
     settleCapture();
   };
-  const finish = () => settle(() => resolveCaptured(buffer.concat().toString('utf-8')));
+  const finish = () => settle(() => resolveCaptured(outcome.text ?? ''));
   const fail = (err: unknown) => settle(() => rejectCaptured(err));
   // Armed while the host is not waiting on a read; a pull in flight means the host is active.
   const armIdleTimer = () => {
@@ -146,13 +166,12 @@ export function teeResponseForCapture(
             return;
           }
           if (done) {
+            sourceDone = true;
             controller.close();
             finish();
             return;
           }
-          if (!finished) {
-            buffer.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
-          }
+          buffer?.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
           controller.enqueue(value);
           armIdleTimer();
         } catch (err) {
@@ -190,14 +209,21 @@ export function teeResponseForCapture(
     clearTimeout(idleTimer);
     pendingFinalizers.delete(finish);
     reader.releaseLock();
-    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate) };
+    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), outcome: () => COMPLETE_OUTCOME };
   }
+
+  // A source that errors while no read is in flight (an AbortController abort between the host's
+  // reads) only rejects `closed`; without this the partial body waits for the idle timeout. Attached
+  // after the fallback return above, since releaseLock() on that path rejects `closed` too.
+  reader.closed.catch((err: unknown) => {
+    if (!hostCancelled) { fail(err); }
+  });
 
   // These are prototype getters populated by the runtime, not constructor inputs.
   for (const prop of ['url', 'redirected', 'type'] as const) {
     Reflect.defineProperty(wrapped, prop, { value: response[prop], enumerable: true });
   }
-  return { response: wrapped, captured };
+  return { response: wrapped, captured, outcome: () => outcome };
 }
 
 function readCappedBodyText(

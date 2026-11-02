@@ -1,6 +1,7 @@
 import type { CappedBuffer } from './capped-buffer.js';
 import { parseBody } from './parse-body.js';
 import { formatErrorMessage } from './format-error.js';
+import type { CapturedResponse } from './capped-fetch-body.js';
 
 type ParsedBody = Record<string, unknown> | string | null;
 
@@ -122,4 +123,34 @@ export function captureRequestBodyInBackground(
     }),
     markSubmitted: () => { submitted = true; },
   };
+}
+
+/**
+ * Writes a fetch capture into `record` — the shared piece of both fetch interceptors. A source
+ * error (dropped connection, abort) still logs the partial body read so far, and any capture that
+ * ended before the source body did sets `stream_incomplete`. Never rejects.
+ */
+export function recordCapturedResponse(
+  record: { id: number; response_body: unknown; stream_incomplete?: boolean },
+  capture: CapturedResponse,
+  sanitize: (body: ParsedBody) => ParsedBody,
+  log: (message: string) => void
+): Promise<void> {
+  const store = (text: string | null) => {
+    record.response_body = text === null
+      ? null
+      : parseAndSanitizeBody(
+        text,
+        sanitize,
+        (err) => log(`⚠️ Response body sanitize failed for call #${record.id}: ${formatErrorMessage(err)}`)
+      );
+  };
+  return capture.captured
+    .then(store, (err: unknown) => {
+      log(`⚠️ Response body capture failed for call #${record.id}: ${formatErrorMessage(err)}`);
+      store(capture.outcome().text);
+    })
+    .then(() => {
+      if (capture.outcome().incomplete) { record.stream_incomplete = true; }
+    });
 }

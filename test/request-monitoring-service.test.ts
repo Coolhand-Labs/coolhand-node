@@ -1201,6 +1201,176 @@ describe('RequestMonitoringService', () => {
     });
   });
 
+  describe('abandoned streamed responses (stream_incomplete)', () => {
+    const encoder = new TextEncoder();
+    const frames = ['data: {"delta":"a"}\n\n', 'data: {"delta":"b"}\n\n', 'data: [DONE]\n\n'];
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+      mockPatternMatchingService.matchesAPIPatternFromURL.mockReturnValue(mockMatchedPattern);
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    // One chunk per pull, like a provider's SSE frames; `endless` keeps the connection open after them.
+    function stubSse({ endless = false } = {}) {
+      let next = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (next < frames.length) { controller.enqueue(encoder.encode(frames[next++])); }
+          else if (!endless) { controller.close(); }
+          else { return new Promise<void>(() => undefined); }
+        }
+      }, { highWaterMark: 0 });
+      globalThis.fetch = jest.fn().mockResolvedValue(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+      service.setupMonitoring();
+    }
+
+    it('fetch: sends no marker for a stream read to its end', async () => {
+      stubSse();
+
+      await (await globalThis.fetch('https://api.test.com/v1/test')).text();
+      await settle();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(callData).not.toHaveProperty('stream_incomplete');
+      expect(callData.response_body).toBe(frames.join(''));
+    });
+
+    it('fetch: sends the partial body with stream_incomplete when the host breaks out mid-stream', async () => {
+      stubSse();
+
+      const response = await globalThis.fetch('https://api.test.com/v1/test');
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        expect(chunk.length).toBeGreaterThan(0);
+        break;
+      }
+      await settle();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(callData.stream_incomplete).toBe(true);
+      expect(callData.response_body).toBe(frames[0]);
+    });
+
+    it('fetch: flags a stream cancelled right after the [DONE] terminator and records it once', async () => {
+      stubSse();
+
+      const reader = ((await globalThis.fetch('https://api.test.com/v1/test')).body as ReadableStream<Uint8Array>).getReader();
+      await reader.read();
+      await reader.read();
+      await reader.read();
+      await reader.cancel();
+      await settle();
+      process.emit('beforeExit', 0);
+      await settle();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(callData.stream_incomplete).toBe(true);
+      expect(callData.response_body).toBe(frames.join(''));
+    });
+
+    it('fetch: keeps the partial body and flags it when an abort errors the stream', async () => {
+      let fail: ((err: Error) => void) | undefined;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          fail = (err) => controller.error(err);
+          controller.enqueue(encoder.encode(frames[0]));
+        }
+      });
+      globalThis.fetch = jest.fn().mockResolvedValue(new Response(stream, { status: 200 }));
+      service.setupMonitoring();
+
+      const reader = ((await globalThis.fetch('https://api.test.com/v1/test')).body as ReadableStream<Uint8Array>).getReader();
+      await reader.read();
+      fail?.(new DOMException('This operation was aborted', 'AbortError'));
+      await settle();
+
+      expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+      const [callData] = onRequestCompleteMock.mock.calls[0];
+      expect(callData.stream_incomplete).toBe(true);
+      expect(callData.response_body).toBe(frames[0]);
+    });
+
+    describe('http/https', () => {
+      let mockReq: any;
+      let res: Readable & Record<string, any>;
+      const pause = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+      beforeEach(() => {
+        mockReq = new EventEmitter();
+        mockReq.write = jest.fn().mockReturnValue(true);
+        mockReq.end = jest.fn();
+        res = new Readable({ read() { /* pushed by the test */ } }) as Readable & Record<string, any>;
+        res.statusCode = 200;
+        res.headers = { 'content-type': 'text/event-stream' };
+      });
+
+      function intercept(hostCallback: (res: any) => void) {
+        (service as any).interceptRequest(jest.fn().mockReturnValue(mockReq), { hostname: 'api.test.com', path: '/test' }, hostCallback, 'https', mockMatchedPattern);
+        mockReq.emit('response', res);
+      }
+
+      it('sends no marker for a response that ends normally', async () => {
+        intercept((r) => r.resume());
+        res.push(frames[0]); await pause();
+        res.push(frames[1]); await pause();
+        res.complete = true;
+        res.push(null);
+        await settle();
+
+        expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+        const [callData] = onRequestCompleteMock.mock.calls[0];
+        expect(callData).not.toHaveProperty('stream_incomplete');
+        expect(callData.response_body).toBe(frames[0] + frames[1]);
+      });
+
+      it('sends the partial body with stream_incomplete when the host destroys the response', async () => {
+        intercept((r) => { r.once('data', () => r.destroy()); });
+        res.push(frames[0]); await pause();
+        res.push(frames[1]);
+        await settle();
+
+        expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+        const [callData] = onRequestCompleteMock.mock.calls[0];
+        expect(callData.stream_incomplete).toBe(true);
+        expect(String(callData.response_body)).toMatch(/^data: \{"delta":"a"\}/);
+      });
+
+      it('flags a response destroyed after the [DONE] terminator while the connection was still open', async () => {
+        intercept((r) => { r.on('data', (chunk: Buffer) => { if (chunk.toString().includes('[DONE]')) { r.destroy(); } }); });
+        for (const frame of frames) { res.push(frame); await pause(); }
+        await settle();
+
+        expect(onRequestCompleteMock).toHaveBeenCalledTimes(1);
+        const [callData] = onRequestCompleteMock.mock.calls[0];
+        expect(callData.stream_incomplete).toBe(true);
+        expect(callData.response_body).toBe(frames.join(''));
+      });
+
+      it('recovers the decodable prefix of a truncated gzip stream', async () => {
+        const sse = Array.from({ length: 200 }, (_, i) => `data: {"i":${i},"t":"${(i * 7919).toString(36)}"}\n\n`).join('');
+        const gz = zlib.gzipSync(Buffer.from(sse), { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+        res.headers['content-encoding'] = 'gzip';
+        intercept((r) => r.resume());
+        res.push(gz.subarray(0, Math.floor(gz.length * 0.6))); await pause();
+        res.destroy();
+        await settle();
+
+        const [callData] = onRequestCompleteMock.mock.calls[0];
+        expect(callData.stream_incomplete).toBe(true);
+        expect(String(callData.response_body).length).toBeGreaterThan(100);
+        expect(sse.startsWith(String(callData.response_body))).toBe(true);
+      });
+    });
+  });
+
   describe('3-arg request(url, options, callback) form (regression for #160)', () => {
     it('preserves method/headers and invokes the real callback through the live patched https.request', async () => {
       const fakeReq: any = new EventEmitter();

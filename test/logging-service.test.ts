@@ -111,6 +111,30 @@ describe('LoggingService', () => {
       await expect(service.logRequestToAPI(callData, matchedPattern)).resolves.not.toThrow();
     });
 
+    it('sends raw_request.stream_incomplete: true as a strict boolean for an abandoned stream', async () => {
+      const fetchMock = createMockFetch({ id: 125 });
+      (global as any).fetch = fetchMock;
+      const service = new LoggingService({ apiKey: 'test-api-key', silent: true });
+
+      await service.logRequestToAPI(createMockCallData({ response_body: 'data: {"delta":"a"}\n\n', stream_incomplete: true }));
+
+      const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(sent.llm_request_log.raw_request.stream_incomplete).toBe(true);
+      expect(sent.llm_request_log.raw_request.response_body).toBe('data: {"delta":"a"}\n\n');
+      expect(sent.llm_request_log.raw_request).not.toHaveProperty('latency_ms');
+    });
+
+    it('omits stream_incomplete from the payload for a completed response', async () => {
+      const fetchMock = createMockFetch({ id: 126 });
+      (global as any).fetch = fetchMock;
+      const service = new LoggingService({ apiKey: 'test-api-key', silent: true });
+
+      await service.logRequestToAPI(createMockCallData());
+
+      const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(sent.llm_request_log.raw_request).not.toHaveProperty('stream_incomplete');
+    });
+
     it('should handle failed API response gracefully', async () => {
       (global as any).fetch = jest.fn().mockResolvedValue({
         ok: false,

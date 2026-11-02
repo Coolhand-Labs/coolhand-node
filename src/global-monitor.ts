@@ -25,7 +25,7 @@ import { extractRequestHostname } from './utils/extract-hostname.js';
 import { formatErrorMessage } from './utils/format-error.js';
 import { createRequireBase } from './utils/require-base.js';
 import { getState, _resetGlobalState as resetGlobalState } from './utils/global-state.js';
-import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from './utils/request-capture.js';
+import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody, recordCapturedResponse } from './utils/request-capture.js';
 import type { PassThrough } from 'stream';
 import { snapshotDeclared } from './utils/declared-context.js';
 
@@ -716,17 +716,19 @@ function interceptRequest(
 
     // Logs the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first. A response
     // that is aborted or destroyed never emits 'end', so without the other two triggers its dedup
-    // entry would leak and the call would never be logged.
+    // entry would leak and the call would never be logged. Only 'end' on a fully received response
+    // is a completed stream.
     let finalized = false;
-    const finalize = async (): Promise<void> => {
+    const finalize = async (ended: boolean): Promise<void> => {
       if (finalized) { return; }
       finalized = true;
+      if (!ended || res.complete === false) { callData.stream_incomplete = true; }
       requestBodyCapture.flush();
       try {
         try {
           const rawBuffer = responseBuffer.concat();
           const contentEncoding = res.headers?.['content-encoding'];
-          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log);
+          const responseBody = await decompressBuffer(rawBuffer, contentEncoding, log, callData.stream_incomplete === true);
           callData.response_body = parseAndSanitizeBody(
             responseBody,
             (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
@@ -752,9 +754,9 @@ function interceptRequest(
       }
     };
 
-    res.on('end', finalize);
-    res.on('aborted', finalize);
-    res.on('close', finalize);
+    res.on('end', () => finalize(true));
+    res.on('aborted', () => finalize(false));
+    res.on('close', () => finalize(false));
 
     return hostStream || res;
   }, () => {
@@ -886,21 +888,15 @@ async function interceptFetch(
     // Capture the body as the host reads it (bounded, and a host cancel cancels the download —
     // see teeResponseForCapture) and log in the background once the host is done, so a
     // slow/streaming body doesn't delay the caller's fetch().
-    const { response: hostResponse, captured } = teeResponseForCapture(response, MAX_DECOMPRESSED_BYTES, () => {
+    const capture = teeResponseForCapture(response, MAX_DECOMPRESSED_BYTES, () => {
       log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
     });
-    captured
-      .then((responseText) => {
-        callData.response_body = parseAndSanitizeBody(
-          responseText,
-          (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
-          (err) => log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
-        );
-      })
-      .catch((err) => {
-        log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
-        callData.response_body = null;
-      })
+    recordCapturedResponse(
+      callData,
+      capture,
+      (body) => getState().globalPatternService?.sanitizeBody(body) ?? null,
+      log
+    )
       // Log once the request body capture has settled too (bounded, so an endless body stream can't block logging).
       .then(() => requestBody.waitForCapture())
       .finally(() => {
@@ -913,7 +909,7 @@ async function interceptFetch(
       })
       .catch(logFailedRequestSubmission);
 
-    return hostResponse;
+    return capture.response;
   } catch (err) {
     log(`⚠️ Response capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
     unregisterActiveRequest(requestId, uniqueId);
