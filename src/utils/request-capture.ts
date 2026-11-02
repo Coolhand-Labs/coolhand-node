@@ -2,6 +2,7 @@ import type { CappedBuffer } from './capped-buffer.js';
 import { parseBody } from './parse-body.js';
 import { formatErrorMessage } from './format-error.js';
 import type { CapturedResponse } from './capped-fetch-body.js';
+import type { CoolhandCallData } from '../types.js';
 
 type ParsedBody = Record<string, unknown> | string | null;
 
@@ -131,7 +132,7 @@ export function captureRequestBodyInBackground(
  * ended before the source body did sets `stream_incomplete`. Never rejects.
  */
 export function recordCapturedResponse(
-  record: { id: number; response_body: unknown; stream_incomplete?: true },
+  record: Pick<CoolhandCallData, 'id' | 'response_body' | 'stream_incomplete'>,
   capture: CapturedResponse,
   sanitize: (body: ParsedBody) => ParsedBody,
   log: (message: string) => void

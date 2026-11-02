@@ -143,6 +143,9 @@ export function teeResponseForCapture(
     outcome = { text: buffer?.concat().toString('utf-8') ?? '', incomplete: !sourceDone };
     buffer = null;
     settleCapture();
+    // The host's stream closures outlive this settle; a retained resolver would pin `captured`, and its text.
+    resolveCaptured = () => undefined;
+    rejectCaptured = () => undefined;
   };
   const finish = () => settle(() => resolveCaptured(outcome.text ?? ''));
   const fail = (err: unknown) => settle(() => rejectCaptured(err));

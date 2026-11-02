@@ -517,7 +517,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     expect(capture.takeOutcome()).toEqual({ text: 'aaaaaaaaaabbbbb', incomplete: true });
   });
 
-  it('hands the text over once, then keeps no reference to it', async () => {
+  it('hands the text over once', async () => {
     const { stream } = sseSource(['data: 1\n\n'], { endless: true });
     const capture = teeResponseForCapture(new Response(stream), 1024, undefined, 60_000);
     await (capture.response.body as ReadableStream<Uint8Array>).getReader().read();
