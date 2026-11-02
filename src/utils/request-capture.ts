@@ -131,26 +131,29 @@ export function captureRequestBodyInBackground(
  * ended before the source body did sets `stream_incomplete`. Never rejects.
  */
 export function recordCapturedResponse(
-  record: { id: number; response_body: unknown; stream_incomplete?: boolean },
+  record: { id: number; response_body: unknown; stream_incomplete?: true },
   capture: CapturedResponse,
   sanitize: (body: ParsedBody) => ParsedBody,
   log: (message: string) => void
 ): Promise<void> {
-  const store = (text: string | null) => {
-    record.response_body = text === null
-      ? null
-      : parseAndSanitizeBody(
-        text,
-        sanitize,
-        (err) => log(`⚠️ Response body sanitize failed for call #${record.id}: ${formatErrorMessage(err)}`)
-      );
-  };
   return capture.captured
-    .then(store, (err: unknown) => {
-      log(`⚠️ Response body capture failed for call #${record.id}: ${formatErrorMessage(err)}`);
-      store(capture.outcome().text);
-    })
-    .then(() => {
-      if (capture.outcome().incomplete) { record.stream_incomplete = true; }
+    .then(
+      (text) => ({ text, failed: false }),
+      (err: unknown) => {
+        log(`⚠️ Response body capture failed for call #${record.id}: ${formatErrorMessage(err)}`);
+        return { text: null, failed: true };
+      }
+    )
+    .then(({ text, failed }) => {
+      const outcome = capture.takeOutcome();
+      const body = failed ? outcome.text : text;
+      record.response_body = body === null
+        ? null
+        : parseAndSanitizeBody(
+          body,
+          sanitize,
+          (err) => log(`⚠️ Response body sanitize failed for call #${record.id}: ${formatErrorMessage(err)}`)
+        );
+      if (outcome.incomplete) { record.stream_incomplete = true; }
     });
 }

@@ -30,7 +30,7 @@ export interface CoolhandCallData {
    * Omitted for a completed response. The backend nulls latency, and tokens unless the provider's final
    * usage event is in the body, so never compute them client-side. Only a strict `true` counts.
    */
-  stream_incomplete?: boolean;
+  stream_incomplete?: true;
 }
 
 export interface CoolhandStats {

@@ -716,13 +716,12 @@ function interceptRequest(
 
     // Logs the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first. A response
     // that is aborted or destroyed never emits 'end', so without the other two triggers its dedup
-    // entry would leak and the call would never be logged. Only 'end' on a fully received response
-    // is a completed stream.
+    // entry would leak and the call would never be logged. Only 'end' is a completed stream.
     let finalized = false;
     const finalize = async (ended: boolean): Promise<void> => {
       if (finalized) { return; }
       finalized = true;
-      if (!ended || res.complete === false) { callData.stream_incomplete = true; }
+      if (!ended) { callData.stream_incomplete = true; }
       requestBodyCapture.flush();
       try {
         try {

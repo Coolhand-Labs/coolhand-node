@@ -406,7 +406,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     await capture.response.text();
 
     expect(await capture.captured).toBe('data: {"a":1}\n\ndata: {"b":2}\n\ndata: [DONE]\n\n');
-    expect(capture.outcome().incomplete).toBe(false);
+    expect(capture.takeOutcome().incomplete).toBe(false);
   });
 
   it('is incomplete, with the partial body, when the host breaks out of a for-await mid-stream', async () => {
@@ -420,7 +420,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
 
     expect(await capture.captured).toBe('data: 1\n\n');
     expect(stats.cancelled).toBe(true);
-    expect(capture.outcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
   });
 
   it('is incomplete when the host stops at the terminator without pulling the final done', async () => {
@@ -432,7 +432,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     await reader.cancel();
 
     expect(await capture.captured).toBe('data: {"a":1}\n\ndata: [DONE]\n\n');
-    expect(capture.outcome().incomplete).toBe(true);
+    expect(capture.takeOutcome().incomplete).toBe(true);
   });
 
   it('rejects the capture on a source abort but keeps the partial body and flags it incomplete', async () => {
@@ -449,7 +449,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     await expect(capture.response.text()).rejects.toThrow('aborted');
     await expect(capture.captured).rejects.toThrow('aborted');
 
-    expect(capture.outcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
   });
 
   it('settles promptly when the source aborts between the host reads, without waiting for the idle timeout', async () => {
@@ -468,7 +468,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     controllerRef?.error(new Error('socket hang up'));
 
     await expect(capture.captured).rejects.toThrow('socket hang up');
-    expect(capture.outcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
   });
 
   it('flags an idle finalize incomplete, and keeps it incomplete when the host later finishes reading', async () => {
@@ -481,7 +481,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
 
     while (!(await reader.read()).done) { /* drain */ }
 
-    expect(capture.outcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
   });
 
   it('flags a beforeExit finalize incomplete', async () => {
@@ -491,7 +491,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     process.emit('beforeExit', 0);
 
     await capture.captured;
-    expect(capture.outcome().incomplete).toBe(true);
+    expect(capture.takeOutcome().incomplete).toBe(true);
   });
 
   it('does not treat hitting the size cap as incomplete when the body is read to its end', async () => {
@@ -503,7 +503,7 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
 
     expect(await capture.captured).toBe('aaaaaaaaaabbbbb');
     expect(onTruncate).toHaveBeenCalledTimes(1);
-    expect(capture.outcome().incomplete).toBe(false);
+    expect(capture.takeOutcome().incomplete).toBe(false);
   });
 
   it('flags a capped body incomplete when the host also abandons it', async () => {
@@ -514,7 +514,18 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
     await reader.read();
     await reader.cancel();
 
-    expect(capture.outcome()).toEqual({ text: 'aaaaaaaaaabbbbb', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: 'aaaaaaaaaabbbbb', incomplete: true });
+  });
+
+  it('hands the text over once, then keeps no reference to it', async () => {
+    const { stream } = sseSource(['data: 1\n\n'], { endless: true });
+    const capture = teeResponseForCapture(new Response(stream), 1024, undefined, 60_000);
+    await (capture.response.body as ReadableStream<Uint8Array>).getReader().read();
+    process.emit('beforeExit', 0);
+    await capture.captured;
+
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: null, incomplete: true });
   });
 
   it('reports a clone() fallback capture as complete with no partial text', async () => {
@@ -523,6 +534,6 @@ describe('teeResponseForCapture outcome (stream_incomplete)', () => {
 
     await capture.captured;
 
-    expect(capture.outcome()).toEqual({ text: null, incomplete: false });
+    expect(capture.takeOutcome()).toEqual({ text: null, incomplete: false });
   });
 });

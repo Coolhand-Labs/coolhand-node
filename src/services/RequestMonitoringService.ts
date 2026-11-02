@@ -461,12 +461,12 @@ export class RequestMonitoringService {
 
       // Completes the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first — an
       // aborted or destroyed response never emits 'end', so without the other two triggers it
-      // would never be logged. Only 'end' on a fully received response is a completed stream.
+      // would never be logged. Only 'end' is a completed stream.
       let finalized = false;
       const finalize = async (ended: boolean): Promise<void> => {
         if (finalized) { return; }
         finalized = true;
-        if (!ended || res.complete === false) { callData.stream_incomplete = true; }
+        if (!ended) { callData.stream_incomplete = true; }
         requestBodyCapture.flush();
         try {
           try {

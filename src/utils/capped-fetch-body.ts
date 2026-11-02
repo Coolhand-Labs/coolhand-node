@@ -76,8 +76,12 @@ export interface CapturedResponse {
   response: Response;
   /** Resolves with the (capped) body text once the host finishes or cancels the body; rejects if the source errors. */
   captured: Promise<string>;
-  /** Valid once `captured` has settled; unlike `captured`, still carries the partial text after a source error. */
-  outcome(): CaptureOutcome;
+  /**
+   * Call once, after `captured` has settled. Unlike `captured`, it carries the partial text after a source
+   * error. Hands the text over and drops the capture's own reference to it, so a host that keeps its body
+   * stream open after an early finalize doesn't pin up to the cap.
+   */
+  takeOutcome(): CaptureOutcome;
 }
 
 const COMPLETE_OUTCOME: CaptureOutcome = { text: null, incomplete: false };
@@ -99,7 +103,7 @@ const COMPLETE_OUTCOME: CaptureOutcome = { text: null, incomplete: false };
  * has not asked for data for `idleTimeoutMs`, the capture is finalized with the partial body read
  * so far. The host's stream is untouched and keeps working; further reads just aren't captured.
  *
- * `outcome().incomplete` is true unless the source body was read to its end: a host that cancels
+ * `takeOutcome().incomplete` is true unless the source body was read to its end: a host that cancels
  * right after the provider's terminator (`data: [DONE]`) without pulling the final `done` is
  * incomplete too. The size cap alone never makes a capture incomplete.
  *
@@ -114,7 +118,7 @@ export function teeResponseForCapture(
 ): CapturedResponse {
   const body = response.body;
   if (!body || typeof body.getReader !== 'function' || body.locked) {
-    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), outcome: () => COMPLETE_OUTCOME };
+    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), takeOutcome: () => COMPLETE_OUTCOME };
   }
 
   // Dropped once the capture settles so a long-lived host body doesn't pin up to `maxBytes` of it.
@@ -209,7 +213,7 @@ export function teeResponseForCapture(
     clearTimeout(idleTimer);
     pendingFinalizers.delete(finish);
     reader.releaseLock();
-    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), outcome: () => COMPLETE_OUTCOME };
+    return { response, captured: readCappedResponseText(response.clone(), maxBytes, onTruncate), takeOutcome: () => COMPLETE_OUTCOME };
   }
 
   // A source that errors while no read is in flight (an AbortController abort between the host's
@@ -223,7 +227,15 @@ export function teeResponseForCapture(
   for (const prop of ['url', 'redirected', 'type'] as const) {
     Reflect.defineProperty(wrapped, prop, { value: response[prop], enumerable: true });
   }
-  return { response: wrapped, captured, outcome: () => outcome };
+  return {
+    response: wrapped,
+    captured,
+    takeOutcome: () => {
+      const taken = outcome;
+      outcome = { text: null, incomplete: taken.incomplete };
+      return taken;
+    }
+  };
 }
 
 function readCappedBodyText(

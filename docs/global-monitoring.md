@@ -37,11 +37,11 @@ A streamed response your code stops reading before it ends (a `break` out of `fo
 | `http`/`https` | `res` emitted `aborted` or `close` without a completed `end`, e.g. after `res.destroy()`, `req.destroy()` or a dropped connection |
 
 - One record per call: the first outcome wins, so a late `close`, a second cancel or the idle timer cannot send a second record.
-- A `fetch` consumer that stops at `[DONE]` is incomplete even though the provider's last frame was seen: only reading the body to its end counts as complete. An `http`/`https` response is captured independently of your reads, so if the server has already ended the response by the time you stop reading, it is a complete record.
+- A `fetch` consumer that stops at `[DONE]` is incomplete even though the provider's last frame was seen: only reading the body to its end counts as complete. An `http`/`https` response is captured independently of your reads, so if the whole response had already been received by the time you stop reading, it is a complete record. If slow reads applied backpressure and part of the response was still unreceived when you stopped, that tail is missing and the record is marked incomplete.
 - The 50 MiB capture cap is independent of the marker: a body that was truncated by the cap but read to its end is not marked, and one that is both truncated and abandoned is. The `fetch` capture buffer is dropped as soon as the record is settled (the `http`/`https` one goes with the response), so an abandoned stream never pins more than the cap.
 - A gzip, deflate or Brotli body cut off mid-stream is decoded as far as the received bytes allow, so the partial `response_body` is readable text rather than compressed bytes.
 - Applies to any response body that is cut off, not only SSE. Calls made with `logRequest()` can set `stream_incomplete: true` themselves ([manual submission](./manual-submission.md)).
-- A fetch whose body is never read (a status-only `if (!res.ok)` check) is logged after the 30-second idle window with the body read so far, now also marked incomplete.
+- A fetch whose body is never read (a status-only `if (!res.ok)` check) is logged after the 30-second idle window with the body read so far and `stream_incomplete: true`.
 
 ### What Gets Monitored
 
