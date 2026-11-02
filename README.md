@@ -277,7 +277,8 @@ const content = await coolhand.getLogContent(logs[0].id);
 
 // Roll failed requests up by error pattern, then list the logs behind one
 const summary = await coolhand.failureSummary({ daysBack: 7 });
-const { logs: failed } = await coolhand.searchLogs({ errorContains: summary.error_breakdown[0]?.error_pattern });
+const top = summary.error_breakdown[0];
+const { logs: failed } = top ? await coolhand.searchLogs({ errorContains: top.error_pattern }) : { logs: [] };
 ```
 
 See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling

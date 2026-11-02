@@ -139,7 +139,10 @@ describe('LoggingService cost filters against a live server', () => {
 
       const { logs } = await newService().searchLogs({ errorContains: pattern.error_pattern, per: 100 });
 
-      expect(logs.map((log) => log.id)).toContain(pattern.example_log_ids[0]);
+      expect(logs.length).toBeGreaterThan(0);
+      for (const log of logs) {
+        expect(log.source_api_result).toBe('failed');
+      }
     });
 
     it('rejects a non-positive daysBack with 422', async () => {

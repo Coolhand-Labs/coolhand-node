@@ -236,7 +236,8 @@ for (const pattern of summary.error_breakdown) {
 }
 
 // The logs behind the most frequent pattern
-const { logs } = await coolhand.searchLogs({ errorContains: summary.error_breakdown[0]?.error_pattern });
+const top = summary.error_breakdown[0];
+const { logs } = top ? await coolhand.searchLogs({ errorContains: top.error_pattern }) : { logs: [] };
 ```
 
 Rolls this client's recent failed requests up by error pattern (error text and `source_api`) and
