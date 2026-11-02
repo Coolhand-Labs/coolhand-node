@@ -3,7 +3,7 @@
 `searchLogs()`, `getLogContent()` and `failureSummary()` read back logs previously submitted via `logRequest()` or
 automatic monitoring.
 
-**Auth:** both require your **private** API key, passed as `apiKey` in the `Coolhand`
+**Auth:** all three require your **private** API key, passed as `apiKey` in the `Coolhand`
 constructor. The public key used for `logRequest`/`createFeedback` will 401 on these endpoints —
 construct a separate `Coolhand` instance with the private key if your process also logs with the
 public key.
@@ -236,7 +236,7 @@ for (const pattern of summary.error_breakdown) {
 }
 
 // The logs behind the most frequent pattern
-const { logs } = await coolhand.searchLogs({ errorContains: summary.error_breakdown[0].error_pattern });
+const { logs } = await coolhand.searchLogs({ errorContains: summary.error_breakdown[0]?.error_pattern });
 ```
 
 Rolls this client's recent failed requests up by error pattern (error text and `source_api`) and

@@ -131,16 +131,15 @@ describe('LoggingService cost filters against a live server', () => {
     });
 
     it('lists the logs behind a pattern via searchLogs({ errorContains })', async () => {
-      const summary = await newService().failureSummary({ daysBack: 36500 });
-      if (summary.error_breakdown.length === 0) {
-        throw new Error('Live fixture broken: the test client has no failed logs.');
+      const { error_breakdown: breakdown } = await newService().failureSummary({ daysBack: 36500 });
+      const pattern = breakdown.find((candidate) => candidate.example_log_ids.length > 0);
+      if (!pattern) {
+        throw new Error('Live fixture broken: no failure pattern with an example log.');
       }
-      const pattern = summary.error_breakdown[0];
 
-      const { logs } = await newService().searchLogs({ errorContains: pattern.error_pattern, per: 5 });
+      const { logs } = await newService().searchLogs({ errorContains: pattern.error_pattern, per: 100 });
 
-      expect(logs.length).toBeGreaterThan(0);
-      expect(pattern.example_log_ids.length).toBeGreaterThan(0);
+      expect(logs.map((log) => log.id)).toContain(pattern.example_log_ids[0]);
     });
 
     it('rejects a non-positive daysBack with 422', async () => {
