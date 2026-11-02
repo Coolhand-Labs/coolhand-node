@@ -643,7 +643,7 @@ API key (the public key 401s) — same as the read methods below. See
 `listClientFiles`, `downloadClientFile` and `updateClientFileStatus` throw like the read methods,
 but need a client admin's **per-user** API key rather than the client-level private key.
 
-Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
+Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `failureSummary`, `searchTemplates`,
 `getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
