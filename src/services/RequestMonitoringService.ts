@@ -15,7 +15,7 @@ import { formatHostForUrl } from '../utils/url-host.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 import { extractRequestHostname } from '../utils/extract-hostname.js';
 import { formatErrorMessage } from '../utils/format-error.js';
-import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody } from '../utils/request-capture.js';
+import { captureRequestChunk, captureRequestBodyInBackground, parseAndSanitizeBody, recordCapturedResponse } from '../utils/request-capture.js';
 import { getState } from '../utils/global-state.js';
 import { createRequireBase } from '../utils/require-base.js';
 import { snapshotDeclared } from '../utils/declared-context.js';
@@ -461,17 +461,18 @@ export class RequestMonitoringService {
 
       // Completes the call exactly once, whichever of 'end' / 'aborted' / 'close' arrives first — an
       // aborted or destroyed response never emits 'end', so without the other two triggers it
-      // would never be logged.
+      // would never be logged. Only 'end' is a completed stream.
       let finalized = false;
-      const finalize = async (): Promise<void> => {
+      const finalize = async (ended: boolean): Promise<void> => {
         if (finalized) { return; }
         finalized = true;
+        if (!ended) { callData.stream_incomplete = true; }
         requestBodyCapture.flush();
         try {
           try {
             const rawBuffer = responseBuffer.concat();
             const contentEncoding = res.headers?.['content-encoding'];
-            const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this));
+            const responseBody = await decompressBuffer(rawBuffer, contentEncoding, this.log.bind(this), !ended);
             callData.response_body = parseAndSanitizeBody(
               responseBody,
               (body) => this.patternMatchingService.sanitizeBody(body),
@@ -491,9 +492,9 @@ export class RequestMonitoringService {
         }
       };
 
-      res.on('end', finalize);
-      res.on('aborted', finalize);
-      res.on('close', finalize);
+      res.on('end', () => finalize(true));
+      res.on('aborted', () => finalize(false));
+      res.on('close', () => finalize(false));
 
       // hostStream is duck-typed to match http.IncomingMessage at runtime (see createResponseTee).
       return (hostStream as unknown as IncomingMessage) || res;
@@ -616,21 +617,15 @@ export class RequestMonitoringService {
       // Capture the body as the host reads it (bounded, and a host cancel cancels the download —
       // see teeResponseForCapture) and log in the background once the host is done, so a
       // slow/streaming body doesn't delay the caller's fetch().
-      const { response: hostResponse, captured } = teeResponseForCapture(response, MAX_DECOMPRESSED_BYTES, () => {
+      const capture = teeResponseForCapture(response, MAX_DECOMPRESSED_BYTES, () => {
         this.log(`⚠️ Response body for call #${callData.id} exceeded ${MAX_DECOMPRESSED_BYTES} bytes; truncating capture`);
       });
-      captured
-        .then((responseText) => {
-          callData.response_body = parseAndSanitizeBody(
-            responseText,
-            (body) => this.patternMatchingService.sanitizeBody(body),
-            (err) => this.log(`⚠️ Response body sanitize failed for call #${callData.id}: ${formatErrorMessage(err)}`)
-          );
-        })
-        .catch((err) => {
-          this.log(`⚠️ Response body capture failed for call #${callData.id}:`, (err as Error)?.message);
-          callData.response_body = null;
-        })
+      recordCapturedResponse(
+        callData,
+        capture,
+        (body) => this.patternMatchingService.sanitizeBody(body),
+        this.log.bind(this)
+      )
         // Complete once the request body capture has settled too (bounded, so an endless body stream can't block it).
         .then(() => requestBody.waitForCapture())
         .finally(() => {
@@ -641,7 +636,7 @@ export class RequestMonitoringService {
           this.log(`⚠️ Could not complete call #${callData.id}: ${formatErrorMessage(err)}`);
         });
 
-      return hostResponse;
+      return capture.response;
     } catch (err) {
       this.log(`⚠️ Response capture failed for call #${callData.id}: ${formatErrorMessage(err)}`);
     }

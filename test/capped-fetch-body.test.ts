@@ -378,3 +378,162 @@ describe('teeResponseForCapture beforeExit finalization', () => {
     await expect(captured).resolves.toBe('');
   });
 });
+
+describe('teeResponseForCapture outcome (stream_incomplete)', () => {
+  const enc = new TextEncoder();
+  // Pull-driven SSE-style source: one chunk per pull, then either close or (if `endless`) idle forever.
+  const sseSource = (chunks: string[], { endless = false } = {}) => {
+    const stats = { cancelled: false };
+    let i = 0;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (i < chunks.length) { controller.enqueue(enc.encode(chunks[i++])); }
+          else if (!endless) { controller.close(); }
+          else { return new Promise<void>(() => undefined); }
+        },
+        cancel() { stats.cancelled = true; }
+      },
+      { highWaterMark: 0 }
+    );
+    return { stream, stats };
+  };
+
+  it('is complete when the host reads the body to its end', async () => {
+    const { stream } = sseSource(['data: {"a":1}\n\n', 'data: {"b":2}\n\n', 'data: [DONE]\n\n']);
+    const capture = teeResponseForCapture(new Response(stream));
+
+    await capture.response.text();
+
+    expect(await capture.captured).toBe('data: {"a":1}\n\ndata: {"b":2}\n\ndata: [DONE]\n\n');
+    expect(capture.takeOutcome().incomplete).toBe(false);
+  });
+
+  it('is incomplete, with the partial body, when the host breaks out of a for-await mid-stream', async () => {
+    const { stream, stats } = sseSource(['data: 1\n\n', 'data: 2\n\n', 'data: 3\n\n']);
+    const capture = teeResponseForCapture(new Response(stream));
+
+    for await (const chunk of capture.response.body as unknown as AsyncIterable<Uint8Array>) {
+      expect(chunk.length).toBeGreaterThan(0);
+      break;
+    }
+
+    expect(await capture.captured).toBe('data: 1\n\n');
+    expect(stats.cancelled).toBe(true);
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+  });
+
+  it('is incomplete when the host stops at the terminator without pulling the final done', async () => {
+    const { stream } = sseSource(['data: {"a":1}\n\n', 'data: [DONE]\n\n']);
+    const capture = teeResponseForCapture(new Response(stream));
+    const reader = (capture.response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+    await reader.read();
+    await reader.cancel();
+
+    expect(await capture.captured).toBe('data: {"a":1}\n\ndata: [DONE]\n\n');
+    expect(capture.takeOutcome().incomplete).toBe(true);
+  });
+
+  it('rejects the capture on a source abort but keeps the partial body and flags it incomplete', async () => {
+    let i = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (i++ === 0) { controller.enqueue(enc.encode('data: 1\n\n')); }
+        else { controller.error(new DOMException('This operation was aborted', 'AbortError')); }
+      }
+    }, { highWaterMark: 0 });
+    const capture = teeResponseForCapture(new Response(stream));
+    capture.captured.catch(() => undefined);
+
+    await expect(capture.response.text()).rejects.toThrow('aborted');
+    await expect(capture.captured).rejects.toThrow('aborted');
+
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+  });
+
+  it('settles promptly when the source aborts between the host reads, without waiting for the idle timeout', async () => {
+    let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controllerRef = controller;
+        controller.enqueue(enc.encode('data: 1\n\n'));
+      }
+    });
+    const capture = teeResponseForCapture(new Response(stream));
+    capture.captured.catch(() => undefined);
+    const reader = (capture.response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+
+    controllerRef?.error(new Error('socket hang up'));
+
+    await expect(capture.captured).rejects.toThrow('socket hang up');
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+  });
+
+  it('flags an idle finalize incomplete, and keeps it incomplete when the host later finishes reading', async () => {
+    const { stream } = sseSource(['data: 1\n\n', 'data: 2\n\n']);
+    const capture = teeResponseForCapture(new Response(stream), undefined, undefined, 10);
+    const reader = (capture.response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+    await tick(50);
+    expect(await capture.captured).toBe('data: 1\n\n');
+
+    while (!(await reader.read()).done) { /* drain */ }
+
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+  });
+
+  it('flags a beforeExit finalize incomplete', async () => {
+    const { stream } = sseSource(['data: 1\n\n'], { endless: true });
+    const capture = teeResponseForCapture(new Response(stream), 1024, undefined, 60_000);
+
+    process.emit('beforeExit', 0);
+
+    await capture.captured;
+    expect(capture.takeOutcome().incomplete).toBe(true);
+  });
+
+  it('does not treat hitting the size cap as incomplete when the body is read to its end', async () => {
+    const onTruncate = jest.fn();
+    const { stream } = sseSource(['aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc']);
+    const capture = teeResponseForCapture(new Response(stream), 15, onTruncate);
+
+    await capture.response.text();
+
+    expect(await capture.captured).toBe('aaaaaaaaaabbbbb');
+    expect(onTruncate).toHaveBeenCalledTimes(1);
+    expect(capture.takeOutcome().incomplete).toBe(false);
+  });
+
+  it('flags a capped body incomplete when the host also abandons it', async () => {
+    const { stream } = sseSource(['aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc']);
+    const capture = teeResponseForCapture(new Response(stream), 15);
+    const reader = (capture.response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+    await reader.read();
+    await reader.cancel();
+
+    expect(capture.takeOutcome()).toEqual({ text: 'aaaaaaaaaabbbbb', incomplete: true });
+  });
+
+  it('hands the text over once', async () => {
+    const { stream } = sseSource(['data: 1\n\n'], { endless: true });
+    const capture = teeResponseForCapture(new Response(stream), 1024, undefined, 60_000);
+    await (capture.response.body as ReadableStream<Uint8Array>).getReader().read();
+    process.emit('beforeExit', 0);
+    await capture.captured;
+
+    expect(capture.takeOutcome()).toEqual({ text: 'data: 1\n\n', incomplete: true });
+    expect(capture.takeOutcome()).toEqual({ text: null, incomplete: true });
+  });
+
+  it('reports a clone() fallback capture as complete with no partial text', async () => {
+    const fake = { status: 200, body: null, clone: () => ({ body: null, text: () => Promise.resolve('cloned') }) } as unknown as Response;
+    const capture = teeResponseForCapture(fake);
+
+    await capture.captured;
+
+    expect(capture.takeOutcome()).toEqual({ text: null, incomplete: false });
+  });
+});

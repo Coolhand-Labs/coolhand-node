@@ -1335,6 +1335,155 @@ describe('Global Monitor', () => {
       });
     });
 
+    describe('abandoned streamed responses (stream_incomplete)', () => {
+      const url = 'https://api.openai.com/v1/chat/completions';
+      const encoder = new TextEncoder();
+      const loggedCalls = () => (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls.map(([callData]) => callData);
+
+      // One chunk per pull, like a provider's SSE frames. `endless` keeps the connection open after them.
+      function sseResponse(frames: string[], { endless = false } = {}) {
+        const stats = { cancelled: false };
+        let next = 0;
+        let fail: ((err: Error) => void) | undefined;
+        const stream = new ReadableStream<Uint8Array>(
+          {
+            start(controller) { fail = (err) => controller.error(err); },
+            pull(controller) {
+              if (next < frames.length) { controller.enqueue(encoder.encode(frames[next++])); }
+              else if (!endless) { controller.close(); }
+              else { return new Promise<void>(() => undefined); }
+            },
+            cancel() { stats.cancelled = true; }
+          },
+          { highWaterMark: 0 }
+        );
+        underlyingFetchMock.mockResolvedValueOnce(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+        return { stats, abort: (err: Error) => fail?.(err) };
+      }
+
+      const frames = ['data: {"delta":"a"}\n\n', 'data: {"delta":"b"}\n\n', 'data: [DONE]\n\n'];
+
+      it('sends no marker for a stream the host read to its end', async () => {
+        sseResponse(frames);
+
+        await (await globalThis.fetch(url)).text();
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0]).not.toHaveProperty('stream_incomplete');
+        expect(loggedCalls()[0].response_body).toBe(frames.join(''));
+      });
+
+      it('sends the partial body with stream_incomplete when the host breaks out of a for-await mid-stream', async () => {
+        const { stats } = sseResponse(frames);
+
+        const response = await globalThis.fetch(url);
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          expect(chunk.length).toBeGreaterThan(0);
+          break;
+        }
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(stats.cancelled).toBe(true);
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe(frames[0]);
+      });
+
+      it('flags a stream the host stops reading at the [DONE] terminator without exhausting the iterator', async () => {
+        sseResponse(frames);
+
+        const response = await globalThis.fetch(url);
+        const decoder = new TextDecoder();
+        let seen = '';
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          seen += decoder.decode(chunk);
+          if (seen.includes('data: [DONE]')) { break; }
+        }
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe(frames.join(''));
+      });
+
+      it('sends the partial body with stream_incomplete when the host cancels the reader', async () => {
+        sseResponse(frames, { endless: true });
+
+        const reader = ((await globalThis.fetch(url)).body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        await reader.read();
+        await reader.cancel();
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe(frames[0] + frames[1]);
+      });
+
+      it('keeps the partial body (not null) and flags it when an abort errors the stream mid-read', async () => {
+        const { abort } = sseResponse(frames.slice(0, 1), { endless: true });
+
+        const response = await globalThis.fetch(url);
+        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        const pending = reader.read().catch((err: Error) => err);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        abort(new DOMException('This operation was aborted', 'AbortError'));
+        expect(await pending).toMatchObject({ name: 'AbortError' });
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe(frames[0]);
+      });
+
+      it('logs promptly when an abort lands between the host reads', async () => {
+        const { abort } = sseResponse(frames.slice(0, 1), { endless: true });
+
+        const response = await globalThis.fetch(url);
+        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        abort(new DOMException('This operation was aborted', 'AbortError'));
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock, 2000);
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe(frames[0]);
+      });
+
+      it('sends exactly one record when later finalizers fire after the host cancelled', async () => {
+        sseResponse(frames, { endless: true });
+
+        const reader = ((await globalThis.fetch(url)).body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        await reader.cancel();
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        process.emit('beforeExit', 0);
+        await flush();
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+      });
+
+      it('does not flag a stream that was only truncated by the size cap but read to its end', async () => {
+        const chunkSize = 1024 * 1024;
+        const chunkCount = Math.ceil(MAX_DECOMPRESSED_BYTES / chunkSize) + 2;
+        let sent = 0;
+        underlyingFetchMock.mockResolvedValueOnce(new Response(new ReadableStream({
+          pull(controller) {
+            if (sent++ < chunkCount) { controller.enqueue(new Uint8Array(chunkSize).fill(97)); }
+            else { controller.close(); }
+          }
+        }), { status: 200 }));
+
+        await (await globalThis.fetch(url)).arrayBuffer();
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+
+        expect(loggedCalls()[0]).not.toHaveProperty('stream_incomplete');
+      }, 20000);
+    });
+
     it('fires originalFetch before awaiting a slow Request body', async () => {
       const events: string[] = [];
 
@@ -1565,6 +1714,119 @@ describe('Global Monitor', () => {
       expect(mockLoggingService.logRequestToAPI).toHaveBeenCalledTimes(1);
       const state = (globalThis as any).__coolhand_node_v1__;
       expect(state.globalActiveRequests.has('HTTPS-GET:https://api.openai.com/v1/x')).toBe(false);
+    });
+
+    describe('abandoned http/https responses (stream_incomplete)', () => {
+      const { Readable } = require('stream');
+      const loggedCalls = () => (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls.map(([callData]) => callData);
+
+      // A chunked response: `script` pushes frames on later ticks, like a provider's SSE stream.
+      function stubResponse(script: (res: any) => Promise<void>) {
+        const fakeReq: any = new (require('events').EventEmitter)();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+        underlyingHttpsRequestMock.mockImplementationOnce(() => {
+          const fakeRes: any = new Readable({ read() { /* pushed by the script */ } });
+          fakeRes.statusCode = 200;
+          fakeRes.headers = { 'content-type': 'text/event-stream' };
+          queueMicrotask(() => {
+            fakeReq.emit('response', fakeRes);
+            script(fakeRes).catch(() => undefined);
+          });
+          return fakeReq;
+        });
+        mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce(mockPattern as any);
+        return fakeReq;
+      }
+      const tickPause = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+      it('sends no marker when the response ends normally', async () => {
+        stubResponse(async (res) => {
+          res.push('data: 1\n\n'); await tickPause();
+          res.push('data: 2\n\n'); await tickPause();
+          res.complete = true;
+          res.push(null);
+        });
+
+        require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, (res: any) => res.resume());
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0]).not.toHaveProperty('stream_incomplete');
+        expect(loggedCalls()[0].response_body).toBe('data: 1\n\ndata: 2\n\n');
+      });
+
+      it('sends the partial body with stream_incomplete when the host destroys the response mid-stream', async () => {
+        stubResponse(async (res) => {
+          res.push('data: 1\n\n'); await tickPause();
+          res.push('data: 2\n\n');
+        });
+
+        require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, (res: any) => {
+          res.once('data', () => res.destroy());
+        });
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(String(loggedCalls()[0].response_body)).toMatch(/^data: 1\n\n/);
+      });
+
+      it('flags a response the host abandons right after the [DONE] terminator while the server holds the connection open', async () => {
+        stubResponse(async (res) => {
+          res.push('data: {"x":1}\n\n'); await tickPause();
+          res.push('data: [DONE]\n\n');
+        });
+
+        require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, (res: any) => {
+          let seen = '';
+          res.on('data', (chunk: Buffer) => {
+            seen += chunk.toString();
+            if (seen.includes('[DONE]')) { res.destroy(); }
+          });
+        });
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe('data: {"x":1}\n\ndata: [DONE]\n\n');
+      });
+
+      it('sends exactly one flagged record when the connection drops (aborted then close)', async () => {
+        stubResponse(async (res) => {
+          res.push('data: 1\n\n'); await tickPause();
+          res.emit('aborted');
+          res.destroy();
+        });
+
+        require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, (res: any) => res.resume());
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        await tickPause();
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0].stream_incomplete).toBe(true);
+        expect(loggedCalls()[0].response_body).toBe('data: 1\n\n');
+      });
+
+      it('sends no marker for a response whose "end" arrives before the trailing "close"', async () => {
+        stubResponse(async (res) => {
+          res.push('data: 1\n\n');
+          res.complete = true;
+          res.push(null);
+        });
+
+        require('https').request('https://api.openai.com/v1/x', { method: 'GET' }, (res: any) => res.resume());
+        await waitForMockCall(mockLoggingService.logRequestToAPI as jest.Mock);
+        await tickPause();
+        await flush();
+
+        expect(loggedCalls()).toHaveLength(1);
+        expect(loggedCalls()[0]).not.toHaveProperty('stream_incomplete');
+      });
     });
 
     it('rethrows a request error only when the host has no error listener', () => {

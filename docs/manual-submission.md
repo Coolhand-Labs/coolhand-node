@@ -38,6 +38,7 @@ console.log(result?.id); // Coolhand log ID assigned by the API
 | `response_headers` | `object \| null` | Response headers |
 | `status_code` | `number` | HTTP status code |
 | `protocol` | `string` | Protocol identifier (e.g. `claudecode`) |
+| `stream_incomplete?` | `true` | Set only when a streamed response was cut off and `response_body` holds what was received. Omit it otherwise (a strict `true` is the only value the backend acts on). See [Abandoned streams](./global-monitoring.md#abandoned-streams-stream_incomplete) |
 
 **`options.collector?: string`** — overrides the default SDK collector string (e.g. `'coolhand-cli/claude-code'`). When omitted, the SDK derives the collector from the package name and version.
 

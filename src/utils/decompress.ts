@@ -39,11 +39,14 @@ function resolveDecompressed(result: Buffer, resolve: (value: string) => void, o
  * Falls back to the raw UTF-8 string when zlib is unavailable (Edge runtime).
  *
  * @param onWarn  Optional callback for decompression failure warnings.
+ * @param partial  The buffer is a prefix of the body (an abandoned stream): decode as much as the
+ *   bytes allow instead of failing on the missing end and logging the compressed bytes as text.
  */
 export async function decompressBuffer(
   buffer: Buffer,
   encoding: string | undefined,
-  onWarn?: (msg: string) => void
+  onWarn?: (msg: string) => void,
+  partial = false
 ): Promise<string> {
   if (!encoding) { return buffer.toString('utf-8'); }
 
@@ -51,10 +54,18 @@ export async function decompressBuffer(
   if (!zlib) { return buffer.toString('utf-8'); }
 
   const enc = encoding.trim().toLowerCase();
+  const zlibOptions = {
+    maxOutputLength: MAX_DECOMPRESSED_BYTES,
+    ...(partial && { finishFlush: zlib.constants.Z_SYNC_FLUSH })
+  };
+  const brotliOptions = {
+    maxOutputLength: MAX_DECOMPRESSED_BYTES,
+    ...(partial && { finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH })
+  };
 
   if (enc === 'gzip' || enc === 'x-gzip') {
     return new Promise((resolve) => {
-      zlib.gunzip(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES }, (err, result) => {
+      zlib.gunzip(buffer, zlibOptions, (err, result) => {
         if (err) {
           onWarn?.(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
           resolve(buffer.toString('utf-8'));
@@ -70,12 +81,12 @@ export async function decompressBuffer(
     // as some servers (older IIS, some load balancers) send raw deflate despite
     // the content-encoding header implying the zlib wrapper.
     return new Promise((resolve) => {
-      zlib.inflate(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES }, (err, result) => {
+      zlib.inflate(buffer, zlibOptions, (err, result) => {
         if (!err) {
             resolveDecompressed(result, resolve, onWarn);
             return;
           }
-        zlib.inflateRaw(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES }, (rawErr, rawResult) => {
+        zlib.inflateRaw(buffer, zlibOptions, (rawErr, rawResult) => {
           if (rawErr) {
             onWarn?.(`⚠️ Decompression failed for encoding 'deflate': ${rawErr.message}`);
             resolve(buffer.toString('utf-8'));
@@ -89,7 +100,7 @@ export async function decompressBuffer(
 
   if (enc === 'br') {
     return new Promise((resolve) => {
-      zlib.brotliDecompress(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES }, (err, result) => {
+      zlib.brotliDecompress(buffer, brotliOptions, (err, result) => {
         if (err) {
           onWarn?.(`⚠️ Decompression failed for encoding '${enc}': ${err.message}`);
           resolve(buffer.toString('utf-8'));
