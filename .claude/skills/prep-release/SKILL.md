@@ -74,7 +74,14 @@ Process the user's chosen PRs one at a time, not as a batch:
    conflicts, skip it, note it in the running list as "skipped — needs
    rebase," and continue with the rest. Don't resolve conflicts on someone
    else's branch unilaterally.
-2. `gh pr merge <n> --squash --delete-branch` for each surviving PR.
+2. `gh pr merge <n> --squash --delete-branch --admin` for each surviving PR,
+   but only when `mergeable` is `MERGEABLE` (no conflicts) and every check in
+   `gh pr checks <n>` has passed. `mergeStateStatus` is typically `BLOCKED`
+   here only because of the required-review rule, which is what `--admin`
+   overrides. `--admin` never overrides a conflict or a red/pending check: if
+   `mergeable` is `CONFLICTING` or any check failed or is still running, skip
+   the PR instead. `mergeable` can read `UNKNOWN` for a few seconds right after
+   an earlier merge; re-read it until it settles before deciding.
 3. Immediately after *every* merge — including the last one in the
    batch, not just as prep for evaluating a next PR — sync local `main`.
    First check `git status --porcelain` — if it's not empty, stop and
