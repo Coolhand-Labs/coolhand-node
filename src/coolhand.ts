@@ -1,9 +1,10 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, ListStepTemplatesParams, ListStepTemplatesResponse, GetStepTemplateOptions, StepTemplate, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
 import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
+import { StepTemplateService } from './services/StepTemplateService.js';
 import { WorkloadService } from './services/WorkloadService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
@@ -19,6 +20,7 @@ export class Coolhand {
   private loggingService: LoggingService;
   private feedbackService: FeedbackService;
   private templateService: TemplateService;
+  private stepTemplateService: StepTemplateService;
   private workloadService: WorkloadService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
@@ -63,6 +65,7 @@ export class Coolhand {
     this.loggingService = new LoggingService(serviceConfig);
     this.feedbackService = new FeedbackService(serviceConfig);
     this.templateService = new TemplateService(serviceConfig);
+    this.stepTemplateService = new StepTemplateService(serviceConfig);
     this.workloadService = new WorkloadService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
@@ -256,7 +259,8 @@ export class Coolhand {
    * @param logId The log's hashid.
    * @param opts `section`/`maxChars` for large logs, or `searchQuery` for snippet search
    *   (mutually exclusive with `section`/`maxChars` — enforced by the overloads below), plus
-   *   `includeThinking`.
+   *   `includeThinking` and `includeTurnMetrics` (adds `turn_metrics`, the per-turn breakdown of a
+   *   captured agent session; `null` for any other log).
    * @throws Error if `logId` is blank/whitespace-only or a bare dot-segment (`.`/`..`), or if
    *   `searchQuery` is blank/whitespace-only. Error on network failure or a non-JSON body. A
    *   non-2xx response throws an error whose `status` property holds the HTTP status code (e.g.
@@ -325,6 +329,34 @@ export class Coolhand {
    */
   public async getTemplate(id: string, opts?: GetTemplateOptions): Promise<LlmRequestTemplateDetail> {
     return this.templateService.getTemplate(id, opts);
+  }
+
+  /**
+   * List step templates — the skills and other recurring steps Coolhand detects in captured agent
+   * sessions — optionally filtered by `search` and `stepType`, with a `metrics` object per row via
+   * `includeMetrics` (which caps `per` at 25 server-side). Requires the **private** API key, same
+   * as {@link searchTemplates}.
+   *
+   * @returns `{ stepTemplates, pagination }` — newest first. `pagination` always comes from the
+   *   endpoint's response headers. See `StepTemplateService#listStepTemplates`/`docs/step-templates.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code — `422` for an unknown `stepType`, `504` on a
+   *   statement timeout (retryable).
+   */
+  public async listStepTemplates(params?: ListStepTemplatesParams): Promise<ListStepTemplatesResponse> {
+    return this.stepTemplateService.listStepTemplates(params);
+  }
+
+  /**
+   * Get one step template by its integer `id` (from {@link listStepTemplates}). Includes `metrics`
+   * by default; `includeMetrics: false` skips them. Requires the **private** API key.
+   *
+   * @throws Error if `id` is not a positive integer. Error on network failure or a non-JSON body. A
+   *   non-2xx response throws an error whose `status` property holds the HTTP status code (`404`
+   *   for an unknown id, a draft or failed step template, or one belonging to another client).
+   */
+  public async getStepTemplate(id: number, opts?: GetStepTemplateOptions): Promise<StepTemplate> {
+    return this.stepTemplateService.getStepTemplate(id, opts);
   }
 
   /**

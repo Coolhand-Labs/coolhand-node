@@ -326,6 +326,56 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('listStepTemplates / getStepTemplate', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates listStepTemplates to StepTemplateService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return {
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify([])),
+          headers: new Headers({ 'X-Total-Count': '0', 'X-Total-Pages': '0', 'X-Page': '1', 'X-Per-Page': '25' })
+        };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.listStepTemplates({ stepType: 'prompt_step' });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/step_templates');
+      expect(url.searchParams.get('step_type')).toBe('prompt_step');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result.stepTemplates).toEqual([]);
+      expect(result.pagination.total_count).toBe(0);
+    });
+
+    it('delegates getStepTemplate to StepTemplateService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ id: 14 })), headers: new Headers() };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.getStepTemplate(14, { includeMetrics: false });
+
+      expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/step_templates/14?include_metrics=false');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ id: 14 });
+    });
+  });
+
   describe('searchWorkloads', () => {
     const savedFetch = (global as any).fetch;
 
