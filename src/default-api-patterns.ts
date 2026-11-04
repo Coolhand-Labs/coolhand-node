@@ -272,7 +272,9 @@ export const DEFAULT_API_PATTERNS: readonly CoolhandAPIPattern[] = [
     "domains": [
       "bedrock-runtime.*.amazonaws.com",
       "bedrock-runtime-fips.*.amazonaws.com",
-      "bedrock-runtime.*.amazonaws.com.cn"
+      "bedrock-runtime.*.amazonaws.com.cn",
+      "bedrock-runtime.*.api.aws",
+      "bedrock-runtime-fips.*.api.aws"
     ],
     "paths": [
       "/model/",
