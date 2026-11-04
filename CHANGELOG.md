@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.18.0] - 2026-11-04
 
 ### ✨ New Features
 - **`listStepTemplates` and `getStepTemplate` read step templates (skills and other recurring steps detected in captured agent sessions).** `listStepTemplates({ search, stepType, includeMetrics, page, per })` returns `{ stepTemplates, pagination }` with pagination read from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages` headers; `getStepTemplate(id, { includeMetrics })` returns one template, with metrics on by default. Both need a private API key and throw `HttpError` (with `.status`) on a non-2xx response. `includeMetrics` on the list is opt-in because the server caps `per` at 25 when it is set. `id` is the integer id, validated client-side. Needs a backend carrying Coolhand-Labs/coolhand#2053. See `docs/step-templates.md`. ([#307](https://github.com/Coolhand-Labs/coolhand-node/issues/307), [#308](https://github.com/Coolhand-Labs/coolhand-node/pull/308))
