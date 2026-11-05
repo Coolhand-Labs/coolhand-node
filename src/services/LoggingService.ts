@@ -3,6 +3,8 @@ import {
   CoolhandLogPayload,
   CoolhandLogResponse,
   CoolhandMatchedPattern,
+  FailureSummaryParams,
+  FailureSummaryResponse,
   GetLogContentOptions,
   GetLogContentSliceOptions,
   GetLogContentSearchOptions,
@@ -153,6 +155,7 @@ export class LoggingService extends BaseService {
       workload_id: params.workloadId,
       system_prompt_contains: params.systemPromptContains,
       user_prompt_contains: params.userPromptContains,
+      error_contains: params.errorContains,
       model: params.model,
       source_api: params.sourceApi,
       source_api_result: params.sourceApiResult,
@@ -172,6 +175,25 @@ export class LoggingService extends BaseService {
     });
     const { body, headers } = await this.getJsonWithHeaders<LlmRequestLogSummary[]>(url.toString(), 'Log');
     return { logs: body, pagination: this.paginationFromHeaders(headers, body, params) };
+  }
+
+  /**
+   * Roll this client's recent failed requests up by error pattern and by template, each pattern
+   * sorted into whose problem it is (`category`). Pass a pattern's `error_pattern` as
+   * {@link searchLogs}' `errorContains` to list its logs. Requires the client's **private** API
+   * key, same as {@link searchLogs}.
+   *
+   * @returns The summary object — not paginated. `error_breakdown` is capped at the 50 most
+   *   frequent patterns; the totals count every pattern.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code — `401` without a private key, `422` for a
+   *   non-positive `daysBack`, `504` when the summary took too long (retry with a smaller
+   *   `daysBack`).
+   */
+  public async failureSummary(params: FailureSummaryParams = {}): Promise<FailureSummaryResponse> {
+    const url = new URL(`${this.apiEndpoint}/failure_summary`);
+    this.setQueryParams(url, { days_back: params.daysBack });
+    return this.getJson<FailureSummaryResponse>(url.toString(), 'Log');
   }
 
   private logRequestInfo(callData: CoolhandCallData, matchedPattern?: CoolhandMatchedPattern): void {

@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, ListStepTemplatesParams, ListStepTemplatesResponse, GetStepTemplateOptions, StepTemplate, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, FailureSummaryParams, FailureSummaryResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, ListStepTemplatesParams, ListStepTemplatesResponse, GetStepTemplateOptions, StepTemplate, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -286,6 +286,22 @@ export class Coolhand {
    */
   public async searchLogs(params?: SearchLogsParams): Promise<SearchLogsResponse> {
     return this.loggingService.searchLogs(params);
+  }
+
+  /**
+   * Summarize this client's recent failed requests by error pattern and by template, with each
+   * pattern's `category` saying whose problem it is. Pass a pattern's `error_pattern` as
+   * {@link searchLogs}' `errorContains` to list its logs.
+   *
+   * Requires the **private** API key, same as {@link searchLogs}.
+   *
+   * @returns The summary object (not paginated). See `docs/log-search.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error
+   *   whose `status` property holds the HTTP status code — `422` for a non-positive `daysBack`,
+   *   `504` when the summary took too long (retry with a smaller `daysBack`).
+   */
+  public async failureSummary(params?: FailureSummaryParams): Promise<FailureSummaryResponse> {
+    return this.loggingService.failureSummary(params);
   }
 
   /**

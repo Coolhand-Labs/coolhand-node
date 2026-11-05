@@ -738,6 +738,7 @@ describe('LoggingService', () => {
         workloadId: 'workload-hash',
         systemPromptContains: 'assistant',
         userPromptContains: 'help',
+        errorContains: 'rate limit',
         model: 'gpt-4',
         sourceApi: 'openai',
         sourceApiResult: 'success',
@@ -756,6 +757,7 @@ describe('LoggingService', () => {
       expect(url.searchParams.get('workload_id')).toBe('workload-hash');
       expect(url.searchParams.get('system_prompt_contains')).toBe('assistant');
       expect(url.searchParams.get('user_prompt_contains')).toBe('help');
+      expect(url.searchParams.get('error_contains')).toBe('rate limit');
       expect(url.searchParams.get('model')).toBe('gpt-4');
       expect(url.searchParams.get('source_api')).toBe('openai');
       expect(url.searchParams.get('source_api_result')).toBe('success');
@@ -1105,6 +1107,97 @@ describe('LoggingService', () => {
 
       const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
       await expect(service.searchLogs()).rejects.toThrow('Log response was not valid JSON');
+    });
+  });
+
+  describe('failureSummary', () => {
+    const summary = {
+      client_id: 'client-hash',
+      client_name: 'Acme',
+      days_analyzed: 7,
+      total_failed_count: 3,
+      provider_outage_excluded_count: 0,
+      error_breakdown: [
+        {
+          error_pattern: 'Rate limit exceeded',
+          source_api: 'openai',
+          count: 3,
+          first_seen_at: '2026-10-01T00:00:00Z',
+          last_seen_at: '2026-10-02T00:00:00Z',
+          category: 'rate_limit',
+          example_error_details: 'Rate limit exceeded for gpt-4',
+          example_log_ids: ['abc123'],
+          example_log_urls: ['/c/1/llm_request_logs/abc123']
+        }
+      ],
+      by_template: [],
+      actionable_summary: { client_fixable_count: 3, server_side_count: 0 }
+    };
+
+    it('GETs the failure_summary route with days_back and the private key, returning the body as-is', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify(summary)), headers: new Headers() };
+      });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      const result = await service.failureSummary({ daysBack: 30 });
+
+      const url = new URL(capturedUrl!);
+      expect(url.origin + url.pathname).toBe('https://coolhandlabs.com/api/v2/llm_request_logs/failure_summary');
+      expect(url.searchParams.get('days_back')).toBe('30');
+      expect(capturedOptions.method).toBe('GET');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual(summary);
+    });
+
+    it('omits days_back when not given, leaving the server default', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify(summary)), headers: new Headers() };
+      });
+
+      await new LoggingService({ apiKey: 'private-key-123', silent: true }).failureSummary();
+
+      expect(new URL(capturedUrl!).search).toBe('');
+    });
+
+    it('sends days_back when it is 0 so the server can reject it', async () => {
+      let capturedUrl: string | undefined;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify(summary)), headers: new Headers() };
+      });
+
+      await new LoggingService({ apiKey: 'private-key-123', silent: true }).failureSummary({ daysBack: 0 });
+
+      expect(new URL(capturedUrl!).searchParams.get('days_back')).toBe('0');
+    });
+
+    it.each([
+      [401, 'API key is required'],
+      [422, 'must be a positive integer'],
+      [504, 'took too long']
+    ])('throws an HttpError carrying status %i', async (status, message) => {
+      (global as any).fetch = mockGetFetch({ error: message }, { ok: false, status });
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.failureSummary()).rejects.toMatchObject({
+        status,
+        message: expect.stringContaining(`Log request failed (${status})`)
+      });
+      await expect(service.failureSummary()).rejects.toBeInstanceOf(HttpError);
+    });
+
+    it('throws when the body is not valid JSON', async () => {
+      (global as any).fetch = mockGetFetch('<html>not json</html>');
+
+      const service = new LoggingService({ apiKey: 'private-key-123', silent: true });
+      await expect(service.failureSummary()).rejects.toThrow('Log response was not valid JSON');
     });
   });
 });

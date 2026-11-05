@@ -265,7 +265,7 @@ and error handling.
 
 ## Reading Logs
 
-`searchLogs` and `getLogContent` read back logs that have already been submitted. Like
+`searchLogs`, `getLogContent` and `failureSummary` read back logs that have already been submitted. Like
 `searchFeedback`/`getFeedback`, these require your **private** API key (the public key 401s):
 
 ```typescript
@@ -274,6 +274,11 @@ const coolhand = new Coolhand({ apiKey: 'your-private-api-key' });
 const { logs } = await coolhand.searchLogs({ model: 'gpt-4', sourceApiResult: 'failed', daysBack: 7 });
 
 const content = await coolhand.getLogContent(logs[0].id);
+
+// Roll failed requests up by error pattern, then list the logs behind one
+const summary = await coolhand.failureSummary({ daysBack: 7 });
+const top = summary.error_breakdown[0];
+const { logs: failed } = top ? await coolhand.searchLogs({ errorContains: top.error_pattern }) : { logs: [] };
 ```
 
 See [docs/log-search.md](./docs/log-search.md) for the full filter reference, large-log handling
@@ -639,7 +644,7 @@ API key (the public key 401s) — same as the read methods below. See
 `listClientFiles`, `downloadClientFile` and `updateClientFileStatus` throw like the read methods,
 but need a client admin's **per-user** API key rather than the client-level private key.
 
-Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `searchTemplates`,
+Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `failureSummary`, `searchTemplates`,
 `getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),

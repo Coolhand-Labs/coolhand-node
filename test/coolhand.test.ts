@@ -209,6 +209,7 @@ describe('Coolhand Node Monitor', () => {
 
       expect(typeof monitor.getLogContent).toBe('function');
       expect(typeof monitor.searchLogs).toBe('function');
+      expect(typeof monitor.failureSummary).toBe('function');
     });
   });
 
@@ -236,6 +237,25 @@ describe('Coolhand Node Monitor', () => {
       expect(url.searchParams.get('section')).toBe('end');
       expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
       expect(result).toEqual({ id: 'abc123' });
+    });
+
+    it('delegates failureSummary to LoggingService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify({ total_failed_count: 0 })), headers: new Headers() };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.failureSummary({ daysBack: 14 });
+
+      const url = new URL(capturedUrl!);
+      expect(url.pathname).toBe('/api/v2/llm_request_logs/failure_summary');
+      expect(url.searchParams.get('days_back')).toBe('14');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual({ total_failed_count: 0 });
     });
 
     it('delegates searchLogs to LoggingService with the configured private key', async () => {
