@@ -51,13 +51,32 @@ regardless of what an individual PR's diff already contains.
      — weight those higher regardless of size; failing CI checks or a
      non-clean `mergeable` state also push risk up; an isolated additive
      feature or docs-only change is lower risk.
-3. Present one table: PR number, title, quality, risk, CI status,
-   mergeable state, and a one-line recommendation (include / exclude /
-   needs work before it can be considered). Call out anything that looks
+3. **Classify each PR's author** and record it in a running contributor
+   list that Phase 3 and Phase 5 reuse:
+   - **bot**: `author.is_bot` (Dependabot and the like). Never thanked.
+   - **team**: `gh api repos/{owner}/{repo}/pulls/<n> --jq .author_association`
+     is `MEMBER`, `OWNER` or `COLLABORATOR`.
+   - **outside contributor**: anyone else. Also flag the PR as coming from a
+     fork (`isCrossRepository`) when it does.
+   - **first-time contributor** (a subset of outside): the login has no
+     commit on `main` at or before the last tag —
+     `gh api "repos/{owner}/{repo}/commits?author=<login>&until=<last-tag-date>"`
+     returns `[]` and `gh pr list --state merged --author <login>` is empty.
+     Decide this now, before Phase 2 merges anything: once their PR is
+     merged they stop looking new. Record the GitHub `login` (for the
+     `@mention`) and the PR number(s).
+4. Present one table: PR number, title, **author** (login plus `team`, `bot`,
+   `outside contributor` or `first-time contributor`), quality, risk, CI
+   status, mergeable state, and a one-line recommendation (include / exclude /
+   needs work before it can be considered). Below the table, list every
+   outside and first-time contributor by `@login` with the PR they sent, so
+   the user sees them without scanning. An outside PR has no CI run until a
+   maintainer approves its workflows — say so instead of rating CI as
+   passing. Call out anything that looks
    unfinished — draft, a WIP-sounding title, failing checks, an empty or
    placeholder description, visible `TODO`/`FIXME` in the diff — as
    "exclude, not ready" rather than rating it neutrally.
-4. Stop here and ask the user which PRs to include in this release — do
+5. Stop here and ask the user which PRs to include in this release — do
    not merge, write changelog entries, or touch `package.json`'s version
    until the user answers. (The red-team in Phase 3 has its own planned
    stop for findings that are a behavior/architecture decision rather than
@@ -183,7 +202,8 @@ reports both.
      releases) — `💥 Breaking Changes`, `✨ New Features`, `🐛 Bug Fixes`,
      `⚠️ Upgrade Notes`, `⚠️ Deprecation Warning`, `🔒 Security`,
      `📖 Documentation`, `🧹 Internal`/`🔧 Internal`, `🔧 Build & CI` all
-     appear. Plain-English migration notes for anything behavior-affecting.
+     appear, plus `🙏 Thanks` (below) when there is someone to credit.
+     Plain-English migration notes for anything behavior-affecting.
      Attribute each entry
      to its PR number where one exists: check Phase 2's merge list first,
      then fall back to the squash-merge commit message (`git log --grep`,
@@ -195,6 +215,23 @@ reports both.
      duplicate alongside — the one authoritative entry you write here for
      that change, so a change never ends up with two entries describing
      it.
+   - **Credit outside contributors.** For every change from an outside
+     contributor (the Phase 1 list; for changes not merged in this run, look
+     the author up from the PR, `gh pr view <n> --json author`, and classify
+     as in Phase 1 step 3), put `thanks @login` after the PR link in that
+     entry's parenthetical, e.g. `([#300](...issues/300), [#301](...pull/301),
+     thanks @login)`. Then end the version's section with a `### 🙏 Thanks`
+     heading (last, after the `Internal` / `Build & CI` section) that names
+     each outside contributor and what they sent. For a first-time
+     contributor, add a shout-out saying it is their first contribution to
+     this package and welcoming them, e.g. "Welcome and thank you to
+     @login, whose first contribution to coolhand-node, #301, makes
+     `new Coolhand()` patch `http`/`https` under native ESM." Contributors
+     who have landed before get the thanks without the first-time line. Skip
+     bots and team members, and omit the section when there is nothing to put
+     in it. The GitHub release notes are re-written from this section by
+     `/finish-release`, which carries the `thanks @login` entries and the
+     `### Thanks` section across.
    - `README.md` / `docs/*.md` — any new config option, public method, or
      behavior change needs the relevant section updated. Sweep every file
      under `docs/`, not just the ones obviously related to this release's
@@ -432,6 +469,9 @@ commit is self-consistent), and run `npm install --package-lock-only` so
    flow).
 2. Report one consolidated summary covering the whole run:
    - Phase 1's PR table and which PRs the user chose.
+   - Outside and first-time contributors in this release, by `@login` and
+     PR, and where their credit landed in `CHANGELOG.md` (the `thanks
+     @login` entry and the `### 🙏 Thanks` section).
    - Phase 2's outcome: which PRs merged, which were skipped for new
      conflicts (and need a rebase before the next release).
    - The release-prep PR link, the version bump and why.

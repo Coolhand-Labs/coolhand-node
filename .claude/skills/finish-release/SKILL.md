@@ -97,7 +97,8 @@ proceeds on its own; a full run takes about 16 minutes.
    emoji dropped and a few names changed: `✨ New Features` becomes
    `What's New`, and `🧹 Internal` plus `🔧 Build & CI` fold into
    `Maintenance`. Other names (`Upgrade Notes`, `Security`, `Bug Fixes`,
-   `Documentation`, `Breaking Changes`) are kept. There is no Known Follow-ups
+   `Documentation`, `Breaking Changes`) are kept, and so is `Thanks` (from
+   `🙏 Thanks`), which comes last. There is no Known Follow-ups
    or Resources section. Include only sections with content, in changelog order.
 2. Start from the `## [X.Y.Z]` CHANGELOG section at the tag, and read the PRs
    since the previous tag (`git log v<previous>..vX.Y.Z --oneline`) for
@@ -108,9 +109,22 @@ proceeds on its own; a full run takes about 16 minutes.
    `docs/declared-workloads.md`) exists at the tag, and that anything marked as
    fixed or closed really is. Don't describe a behavior you haven't read in the
    code or the PR. A release note that misstates scope is worse than a short one.
-4. Write the notes to `/tmp/release-notes-vX.Y.Z.md`, outside the repo
+4. **Check contributor credit too.** For every `#N` PR in the section,
+   `gh pr view N --json author`; for each author that is neither a bot nor a
+   team member (`gh api repos/{owner}/{repo}/pulls/N --jq .author_association`
+   is not `MEMBER`, `OWNER` or `COLLABORATOR`), the entry must carry `thanks
+   @login` and the section must end with a `### Thanks` naming them. If that
+   author had no commit on `main` before this release (`gh api
+   "repos/{owner}/{repo}/commits?author=<login>&until=<previous-tag-date>"`
+   is `[]`), the thanks must also say it is their first contribution. Check
+   it in the `CHANGELOG.md` section at the tag and carry it into the notes
+   (the re-heading above must not drop it). If it is missing from the
+   changelog, stop and tell the user before publishing, since the release
+   notes are what the contributor sees; don't edit the tagged changelog
+   silently.
+5. Write the notes to `/tmp/release-notes-vX.Y.Z.md`, outside the repo
    (`.context/` is not gitignored here).
-5. `gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file
+6. `gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file
    /tmp/release-notes-vX.Y.Z.md --latest`. Not a draft and not a prerelease,
    same as the previous release. Confirm with
    `gh release view vX.Y.Z --json name,tagName,isDraft,url`.
@@ -121,6 +135,8 @@ State, in the final message:
 - The merged PR number and its merge commit (or that the user had already
   merged it), and the tag on that commit.
 - The release URL.
+- Outside and first-time contributors credited in the release notes, by
+  `@login` and PR (or that there were none).
 - The Publish workflow run (`gh run list --workflow publish.yml --limit 1`):
   it waits 15 minutes in `npm-publish`, then publishes. Never publish by
   another route. If asked whether it's live, check `gh run view <id>` and
