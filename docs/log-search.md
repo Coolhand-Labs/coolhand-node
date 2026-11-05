@@ -1,9 +1,9 @@
 # Reading Logs (Search + Get Content)
 
-`searchLogs()` and `getLogContent()` read back logs previously submitted via `logRequest()` or
+`searchLogs()`, `getLogContent()` and `failureSummary()` read back logs previously submitted via `logRequest()` or
 automatic monitoring.
 
-**Auth:** both require your **private** API key, passed as `apiKey` in the `Coolhand`
+**Auth:** all three require your **private** API key, passed as `apiKey` in the `Coolhand`
 constructor. The public key used for `logRequest`/`createFeedback` will 401 on these endpoints —
 construct a separate `Coolhand` instance with the private key if your process also logs with the
 public key.
@@ -62,6 +62,7 @@ the endpoint's own Ransack-backed search, not in place of it; `sort` below reach
 | `workloadId` | `string` | Filter by workload hashid (matches all templates in that workload) |
 | `systemPromptContains` | `string` | Case-insensitive substring match against the system prompt |
 | `userPromptContains` | `string` | Case-insensitive substring match against the user prompt |
+| `errorContains` | `string` | Case-insensitive substring match against the failed request's error text. Pass a `failureSummary()` `error_pattern` here to list the logs behind that pattern |
 | `model` | `string` | Filter by model name (e.g. `"gpt-4o"`, `"claude-3-5-sonnet"`) |
 | `sourceApi` | `string` | Filter by source API (e.g. `"openai"`, `"anthropic"`, `"vertex"`) |
 | `sourceApiResult` | `string` | Filter by result status: `success`, `failed`, `operational`, `unsupported_api`, or `ingest_error`. Applied as a plain equality filter — a log with a `null` result (also generally "successful") won't match `sourceApiResult: 'success'`. Not related to `unmatchedOnly`, which filters on template assignment, not result status |
@@ -225,12 +226,70 @@ When `searchQuery` was passed, `matches`/`search_query` replace the content fiel
 }
 ```
 
+## `failureSummary(params)`
+
+```typescript
+const summary = await coolhand.failureSummary({ daysBack: 30 });
+
+for (const pattern of summary.error_breakdown) {
+  console.log(pattern.category, pattern.count, pattern.error_pattern);
+}
+
+// The logs behind the most frequent pattern
+const top = summary.error_breakdown[0];
+const { logs } = top ? await coolhand.searchLogs({ errorContains: top.error_pattern }) : { logs: [] };
+```
+
+Rolls this client's recent failed requests up by error pattern (error text and `source_api`) and
+by template, and sorts each pattern into whose problem it is. Requires your **private** API key.
+Failures inside a confirmed provider outage are left out and counted in
+`provider_outage_excluded_count`. Only directly-collected logs whose content has not been removed
+by retention are counted.
+
+| Field | Type | Description |
+|---|---|---|
+| `daysBack` | `number` | Lookback in days. Server default 7, max 36500. Zero or negative: `422` |
+
+`Promise<FailureSummaryResponse>` — a single object, not paginated:
+
+```typescript
+{
+  client_id: 'abc123',
+  client_name: 'Acme',
+  days_analyzed: 7,
+  total_failed_count: 12,
+  provider_outage_excluded_count: 0,
+  error_breakdown: [          // the 50 most frequent patterns
+    {
+      error_pattern: 'Rate limit exceeded',
+      source_api: 'openai',   // or null
+      count: 9,
+      first_seen_at: '2026-10-01T00:00:00Z',
+      last_seen_at: '2026-10-02T00:00:00Z',
+      category: 'rate_limit', // client_error | rate_limit | server_error | provider_error | relayed_upstream
+      example_error_details: '...',
+      example_log_ids: ['abc123'],   // up to 3
+      example_log_urls: ['/c/.../llm_request_logs/abc123']
+    }
+  ],
+  by_template: [
+    { template_id: null, template_name: 'Unmatched', failed_count: 3, error_patterns: [], example_log_ids: [], example_log_urls: [] }
+  ],
+  actionable_summary: { client_fixable_count: 9, server_side_count: 3 }
+}
+```
+
+The totals and `actionable_summary` count every pattern, not just the 50 in `error_breakdown`. Each
+`by_template[].error_patterns` item is typed as an open object; the API definition does not fix its
+keys, and today it is `{ category, count, error, source_api }`. A `504` means the summary took too
+long: retry with a smaller `daysBack`.
+
 ## Errors
 
-Both methods throw an `HttpError` (exported from `coolhand-node`) on a non-2xx response, with the
+All three methods throw an `HttpError` (exported from `coolhand-node`) on a non-2xx response, with the
 HTTP status attached to the `status` property, so callers can branch on it (e.g. 401 →
-re-authenticate, 404 → unknown ID) without parsing the message string. `searchLogs`/`getLogContent`
-also 422 on invalid input: an unknown `templateId`/`workloadId`, a non-positive `daysBack`/
+re-authenticate, 404 → unknown ID) without parsing the message string. `searchLogs`/`getLogContent`/
+`failureSummary` also 422 on invalid input: an unknown `templateId`/`workloadId`, a non-positive `daysBack`/
 `maxChars`, or an invalid `section`.
 
 ```typescript

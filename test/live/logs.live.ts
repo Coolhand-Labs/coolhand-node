@@ -94,6 +94,71 @@ describe('LoggingService cost filters against a live server', () => {
     });
   });
 
+  describe('failureSummary', () => {
+    it('returns the full summary shape with a non-empty error_breakdown', async () => {
+      const summary = await newService().failureSummary({ daysBack: 36500 });
+
+      expect(typeof summary.client_id).toBe('string');
+      expect(typeof summary.client_name).toBe('string');
+      for (const field of ['days_analyzed', 'total_failed_count', 'provider_outage_excluded_count'] as const) {
+        expect(Number.isInteger(summary[field])).toBe(true);
+      }
+      expect(summary.days_analyzed).toBe(36500);
+      expect(Number.isInteger(summary.actionable_summary.client_fixable_count)).toBe(true);
+      expect(Number.isInteger(summary.actionable_summary.server_side_count)).toBe(true);
+      expect(Array.isArray(summary.by_template)).toBe(true);
+      expect(summary.error_breakdown.length).toBeGreaterThan(0);
+      expect(summary.error_breakdown.length).toBeLessThanOrEqual(50);
+
+      const categories = ['client_error', 'rate_limit', 'server_error', 'provider_error', 'relayed_upstream'];
+      for (const pattern of summary.error_breakdown) {
+        expect(typeof pattern.error_pattern).toBe('string');
+        expect(pattern.source_api === null || typeof pattern.source_api === 'string').toBe(true);
+        expect(Number.isInteger(pattern.count)).toBe(true);
+        expect(typeof pattern.first_seen_at).toBe('string');
+        expect(typeof pattern.last_seen_at).toBe('string');
+        expect(categories).toContain(pattern.category);
+        expect(typeof pattern.example_error_details).toBe('string');
+        expect(pattern.example_log_ids.length).toBeLessThanOrEqual(3);
+        expect(Array.isArray(pattern.example_log_urls)).toBe(true);
+      }
+      for (const template of summary.by_template) {
+        expect(template.template_id === null || typeof template.template_id === 'string').toBe(true);
+        expect(typeof template.template_name).toBe('string');
+        expect(Number.isInteger(template.failed_count)).toBe(true);
+        expect(Array.isArray(template.error_patterns)).toBe(true);
+      }
+    });
+
+    it('lists the logs behind a pattern via searchLogs({ errorContains })', async () => {
+      const { error_breakdown: breakdown } = await newService().failureSummary({ daysBack: 36500 });
+      const pattern = breakdown.find((candidate) => candidate.example_log_ids.length > 0);
+      if (!pattern) {
+        throw new Error('Live fixture broken: no failure pattern with an example log.');
+      }
+
+      const { logs } = await newService().searchLogs({ errorContains: pattern.error_pattern, per: 100 });
+
+      expect(logs.length).toBeGreaterThan(0);
+      for (const log of logs) {
+        expect(log.source_api_result).toBe('failed');
+      }
+    });
+
+    it('rejects a non-positive daysBack with 422', async () => {
+      await expect(newService().failureSummary({ daysBack: 0 })).rejects.toMatchObject({
+        name: 'HttpError',
+        status: 422
+      });
+    });
+
+    it('rejects an invalid API key with 401', async () => {
+      await expect(newService('ch_priv_definitely_not_a_real_key').failureSummary()).rejects.toMatchObject({
+        status: 401
+      });
+    });
+  });
+
   describe('getLogContent', () => {
     it('returns cost and cost_breakdown for a priced log', async () => {
       const { logs } = await newService().searchLogs({ order: 'cost_desc', per: 1 });
