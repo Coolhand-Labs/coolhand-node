@@ -2,8 +2,8 @@
 
 ## Live smoke tests
 
-`openai-example.js`, `anthropic-example.js`, `basic.js` and
-`feedback-example.js` are small, runnable scripts that exercise Coolhand
+`openai-example.js`, `anthropic-example.js`, `basic.js`,
+`feedback-example.js` and `abandoned-stream.js` are small, runnable scripts that exercise Coolhand
 against real provider/Coolhand API calls — no mocking. Each configures
 `Coolhand` (or the individual services it's built from) with `silent:
 false`, so a successful run prints a `🎉 LOGGING ... API Call #...` line
@@ -42,10 +42,19 @@ interceptor code.
   that exact log — proving delivery for *both* the log-upload and the
   feedback-creation paths, not just that `createFeedback()` didn't throw
   against a fabricated ID.
+- `abandoned-stream.js` — three real streaming Anthropic calls: a `fetch`
+  stream cancelled once content arrives, an `https` response destroyed once
+  content arrives, and a `fetch` stream read to the end as a control. A
+  `fetch` spy installed beneath Coolhand captures the log payloads Coolhand
+  actually uploads, and the script asserts the abandoned ones carry
+  `raw_request.stream_incomplete: true` and a partial body, the control omits
+  the field and holds the whole stream, and every upload got a 2xx from
+  Coolhand's API. Each check prints a `✅ <case>: status ...` line; any
+  mismatch is a `❌` line and a non-zero exit.
 
 ### Prerequisites
 
-Build the package first (`npm run build`) — all four scripts import from
+Build the package first (`npm run build`) — all of these scripts import from
 `../dist/index.js`. Then set `COOLHAND_API_KEY` plus the API key(s) for
 whichever script(s) you want to run:
 
@@ -55,6 +64,7 @@ whichever script(s) you want to run:
 | `anthropic-example.js` | `COOLHAND_API_KEY`, `ANTHROPIC_API_KEY` |
 | `basic.js` | `COOLHAND_API_KEY`, `OPENAI_API_KEY` |
 | `feedback-example.js` | `COOLHAND_API_KEY`, `ANTHROPIC_API_KEY` |
+| `abandoned-stream.js` | `COOLHAND_API_KEY`, `ANTHROPIC_API_KEY` |
 
 A script whose `COOLHAND_API_KEY` or provider key isn't set exits `0` with
 a message saying it skipped — that's expected in an environment that
@@ -68,9 +78,10 @@ node examples/openai-example.js
 node examples/anthropic-example.js
 node examples/basic.js
 node examples/feedback-example.js
+node examples/abandoned-stream.js
 ```
 
-Or run all four in parallel and get a pass/skip/fail line per script:
+Or run them all in parallel and get a pass/skip/fail line per script:
 
 ```bash
 npm run test:live-examples

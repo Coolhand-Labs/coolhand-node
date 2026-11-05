@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-11-04
+
+### ✨ New Features
+- **`listStepTemplates` and `getStepTemplate` read step templates (skills and other recurring steps detected in captured agent sessions).** `listStepTemplates({ search, stepType, includeMetrics, page, per })` returns `{ stepTemplates, pagination }` with pagination read from the `X-Page`/`X-Per-Page`/`X-Total-Count`/`X-Total-Pages` headers; `getStepTemplate(id, { includeMetrics })` returns one template, with metrics on by default. Both need a private API key and throw `HttpError` (with `.status`) on a non-2xx response. `includeMetrics` on the list is opt-in because the server caps `per` at 25 when it is set. `id` is the integer id, validated client-side. Needs a backend carrying Coolhand-Labs/coolhand#2053. See `docs/step-templates.md`. ([#307](https://github.com/Coolhand-Labs/coolhand-node/issues/307), [#308](https://github.com/Coolhand-Labs/coolhand-node/pull/308))
+- **`getLogContent(id, { includeTurnMetrics })` returns a per-turn breakdown for captured sessions** as `turn_metrics` (`null` for non-session logs, omitted unless requested). ([#307](https://github.com/Coolhand-Labs/coolhand-node/issues/307), [#308](https://github.com/Coolhand-Labs/coolhand-node/pull/308))
+- **`failureSummary({ daysBack })` shows why your requests fail, and `searchLogs({ errorContains })` lists the logs behind each error pattern.** `failureSummary` returns the failure categories, error patterns and per-template breakdown; it needs a private API key and throws `HttpError` (with `.status`) on a non-2xx response. `daysBack` is sent only when given and is not validated client-side, so the server's 422 reaches you. `errorContains` is a case-insensitive substring match on the failed request's error text; pass a summary's `error_pattern` to drill down. Server side is already live (Coolhand-Labs/coolhand#2030). See `docs/log-search.md`. ([#309](https://github.com/Coolhand-Labs/coolhand-node/issues/309), [#310](https://github.com/Coolhand-Labs/coolhand-node/pull/310))
+- **Abandoned streamed responses are now sent with `raw_request.stream_incomplete: true`.** When your code cancels, breaks out of, aborts or destroys a streamed response (or an SDK stops at `data: [DONE]` without draining it), or the connection drops, the partial body is logged and flagged, so the backend no longer computes latency, tokens or cost from a body that stopped mid-stream. Completed responses omit the field, and a call is still logged exactly once. Applies to `fetch` and `http`/`https`; `logRequest()` callers can set it themselves. Needs a backend carrying Coolhand-Labs/coolhand#2073. See "Abandoned streams" in `docs/global-monitoring.md`. ([#306](https://github.com/Coolhand-Labs/coolhand-node/issues/306), [#311](https://github.com/Coolhand-Labs/coolhand-node/pull/311))
+
+### ⚠️ Upgrade Notes
+- **A `fetch` stream that errors (an `AbortController` abort, a connection reset) now logs the body read so far** with `stream_incomplete: true`. It used to log `response_body: null`. Abandoned gzip/deflate/Brotli `http`/`https` bodies are likewise decoded as far as the received bytes allow instead of being logged as compressed bytes read as UTF-8. ([#306](https://github.com/Coolhand-Labs/coolhand-node/issues/306), [#311](https://github.com/Coolhand-Labs/coolhand-node/pull/311))
+
+### 🐛 Bug Fixes
+- **Amazon Bedrock calls over the dual-stack hosts are now captured.** `bedrock-runtime.<region>.api.aws` and `bedrock-runtime-fips.<region>.api.aws` were not matched, so apps on IPv6-only or dual-stack networks had their Bedrock calls silently missed. Matching Python's host list, now `amazonaws.com`, `amazonaws.com.cn`, `api.aws` and the `-fips` variants. ([#304](https://github.com/Coolhand-Labs/coolhand-node/pull/304))
+
+### 🧹 Internal
+- **`StepTemplateService` and `recordCapturedResponse`** (`src/utils/request-capture.ts`, shared by both fetch interceptors) are new. `teeResponseForCapture` reports `takeOutcome()`, and a `reader.closed` handler settles the capture as soon as an abort lands between reads instead of waiting for the 30 s idle timer. ([#308](https://github.com/Coolhand-Labs/coolhand-node/pull/308), [#311](https://github.com/Coolhand-Labs/coolhand-node/pull/311))
+- **Jest setup restores the pristine `http`/`https`/`fetch` after each test file.** A file that constructed `Coolhand` left the patched core modules behind, which made `test/stream-incomplete.test.ts` fail on Node 18/20 with a cold Jest cache. ([#311](https://github.com/Coolhand-Labs/coolhand-node/pull/311))
+
+### 🔧 Build & CI
+- **New live smoke test `examples/abandoned-stream.js`, run by `npm run test:live-examples`.** It makes real streaming Anthropic calls over `fetch` and `https`, abandons two of them, and checks the payload Coolhand receives: `stream_incomplete: true` with a partial body for the abandoned calls, no field for a completed one, and a 2xx for every upload.
+- **Example app dependency bumps:** `fastify` 5.12.6 and `zod` 4.6.6 in `examples/fastify-openai-unbundled`. ([#303](https://github.com/Coolhand-Labs/coolhand-node/pull/303), [#312](https://github.com/Coolhand-Labs/coolhand-node/pull/312))
+
 ## [0.17.1] - 2026-10-23
 
 ### 🐛 Bug Fixes

@@ -53,9 +53,11 @@ proceeds on its own; a full run takes about 16 minutes.
      `package.json`, so a missed `sync-version` or lockfile bump would
      otherwise publish silently.
    - `CHANGELOG.md` on the PR head has a `## [X.Y.Z] - YYYY-MM-DD` heading.
-   - The PR is open, not a draft, `mergeStateStatus` is `CLEAN`, and
-     `gh pr checks <n>` shows every check passed (none pending or failing).
-     `main` has no branch protection, so this is the only gate.
+   - The PR is open, not a draft, `mergeable` is `MERGEABLE` (no conflicts),
+     and `gh pr checks <n>` shows every check passed (none pending or
+     failing). `mergeStateStatus` may be `BLOCKED` by the required-review
+     rule; that is what Phase 2's `--admin` covers. Anything else non-clean
+     (`DIRTY`, `BEHIND` with conflicts, failing checks) is a stop.
    - The tag does not exist locally (`git tag -l vX.Y.Z`) or on the remote
      (`git ls-remote --tags origin 'vX.Y.Z*'`), and `gh release view vX.Y.Z`
      fails.
@@ -68,8 +70,11 @@ proceeds on its own; a full run takes about 16 minutes.
    (#<n>)" --body-file /tmp/release-pr-body-vX.Y.Z.md`. The squash title has no
    `chore:` prefix (the PR's own title does); `--subject` is used verbatim, so
    keep the `(#<n>)` suffix. The default squash body would be the
-   commit list, hence the explicit PR body. Add no AI attribution. Never use
-   `--admin` or bypass checks; if the merge is refused, stop and report.
+   commit list, hence the explicit PR body. Add no AI attribution. Add
+   `--admin` (the Phase 1 gate already established `mergeable` is
+   `MERGEABLE` and every check passed, so this only overrides the
+   required-review block). Never use it to get past a conflict or a failing
+   or pending check; if the merge is still refused, stop and report.
 3. `git fetch origin main --tags`. Get the merge commit with `gh pr view <n>
    --json mergeCommit --jq .mergeCommit.oid` and confirm it is on
    `origin/main`. Re-read `package.json`, `src/version.ts`, `package-lock.json`
