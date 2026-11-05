@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Jest setup restores the pristine `http`/`https`/`fetch` after each test file.** A file that constructed `Coolhand` left the patched core modules behind, which made `test/stream-incomplete.test.ts` fail on Node 18/20 with a cold Jest cache. ([#311](https://github.com/Coolhand-Labs/coolhand-node/pull/311))
 
 ### 🔧 Build & CI
+- **New live smoke test `examples/abandoned-stream.js`, run by `npm run test:live-examples`.** It makes real streaming Anthropic calls over `fetch` and `https`, abandons two of them, and checks the payload Coolhand receives: `stream_incomplete: true` with a partial body for the abandoned calls, no field for a completed one, and a 2xx for every upload.
 - **Example app dependency bumps:** `fastify` 5.12.6 and `zod` 4.6.6 in `examples/fastify-openai-unbundled`. ([#303](https://github.com/Coolhand-Labs/coolhand-node/pull/303), [#312](https://github.com/Coolhand-Labs/coolhand-node/pull/312))
 
 ## [0.17.1] - 2026-10-23

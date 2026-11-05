@@ -17,7 +17,7 @@ if [ ! -f dist/index.js ]; then
   exit 2
 fi
 
-scripts=(openai-example anthropic-example basic feedback-example)
+scripts=(openai-example anthropic-example basic feedback-example abandoned-stream)
 logs=$(mktemp -d)
 
 for s in "${scripts[@]}"; do
