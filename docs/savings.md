@@ -74,7 +74,7 @@ as a ratio over the same period. Join the two on `id` to build a per-workload RO
 
 ```typescript
 // Archived workloads can still carry realized savings, so include them or their rows go unmatched.
-const [{ workloads, pagination }, savings] = await Promise.all([
+const [{ workloads }, savings] = await Promise.all([
   coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30, includeArchived: true, per: 100 }),
   coolhand.getRealizedSavings()
 ]);
