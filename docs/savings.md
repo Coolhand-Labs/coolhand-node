@@ -73,9 +73,9 @@ are. A workload's `savings` can therefore exceed its windowed `metrics.total_cos
 as a ratio over the same period. Join the two on `id` to build a per-workload ROI view:
 
 ```typescript
-// Archived workloads can still carry realized savings, so include them or their rows go unmatched.
+// Archived and system workloads can still carry realized savings, so include them or their rows go unmatched.
 const [{ workloads }, savings] = await Promise.all([
-  coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30, includeArchived: true, per: 100 }),
+  coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30, includeArchived: true, includeSystem: true, per: 100 }),
   coolhand.getRealizedSavings()
 ]);
 
@@ -90,5 +90,5 @@ const roi = workloads.map((workload) => ({
 ```
 
 This reads one page of up to 100 workloads; `searchWorkloads` is paged (`page`, `per`), so repeat the
-call while `pagination.has_next_page` is true for a client with more. This is how the `get_client_roi_summary` MCP tool composes the two
-endpoints.
+call while `pagination.has_next_page` is true for a client with more. The `get_client_roi_summary` MCP
+tool performs the same join over the two endpoints.
