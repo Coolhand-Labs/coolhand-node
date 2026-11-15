@@ -1,4 +1,4 @@
-import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, FailureSummaryParams, FailureSummaryResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, ListStepTemplatesParams, ListStepTemplatesResponse, GetStepTemplateOptions, StepTemplate, SearchWorkloadsParams, SearchWorkloadsResponse, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
+import { CoolhandOptions, CoolhandCallData, CoolhandLogResponse, CoolhandStats, LLMRequestLogFeedback, LLMRequestLogFeedbackResponse, CoolhandMatchedPattern, SearchFeedbackParams, SearchFeedbackResponse, LLMRequestLogFeedbackDetail, GetLogContentOptions, GetLogContentSliceOptions, GetLogContentSearchOptions, LlmRequestLogContent, LlmRequestLogContentFull, LlmRequestLogContentSearchResult, SearchLogsParams, SearchLogsResponse, FailureSummaryParams, FailureSummaryResponse, SearchTemplatesParams, SearchTemplatesResponse, GetTemplateOptions, LlmRequestTemplateDetail, ListStepTemplatesParams, ListStepTemplatesResponse, GetStepTemplateOptions, StepTemplate, SearchWorkloadsParams, SearchWorkloadsResponse, RealizedSavings, CoolhandClientFilePayload, CoolhandClientFileResponse, ClientFileStatus, DownloadedClientFile, ListClientFilesParams, ListClientFilesResponse, SearchReferencedFilesParams, SearchReferencedFilesResponse, ListReferencedFileSessionsParams, ListReferencedFileSessionsResponse, LinkFeedbackOptions, OptimizationFeedbackLink, BulkLinkFeedbackResult, UpsertWorkloadParams, UpsertWorkloadResponse, UpsertTemplateParams, UpsertTemplateResponse, SearchHelpArticlesParams, SearchHelpArticlesResponse, HelpArticle, HelpCategory } from './types.js';
 import { PatternMatchingService } from './services/PatternMatchingService.js';
 import { RequestMonitoringService } from './services/RequestMonitoringService.js';
 import { LoggingService } from './services/LoggingService.js';
@@ -6,6 +6,7 @@ import { FeedbackService } from './services/FeedbackService.js';
 import { TemplateService } from './services/TemplateService.js';
 import { StepTemplateService } from './services/StepTemplateService.js';
 import { WorkloadService } from './services/WorkloadService.js';
+import { SavingsService } from './services/SavingsService.js';
 import { ClientFileService } from './services/ClientFileService.js';
 import { OptimizationFeedbackLinkService } from './services/OptimizationFeedbackLinkService.js';
 import { LlmReferenceService } from './services/LlmReferenceService.js';
@@ -22,6 +23,7 @@ export class Coolhand {
   private templateService: TemplateService;
   private stepTemplateService: StepTemplateService;
   private workloadService: WorkloadService;
+  private savingsService: SavingsService;
   private clientFileService: ClientFileService;
   private llmReferenceService: LlmReferenceService;
   private helpCenterDocsService: HelpCenterDocsService;
@@ -67,6 +69,7 @@ export class Coolhand {
     this.templateService = new TemplateService(serviceConfig);
     this.stepTemplateService = new StepTemplateService(serviceConfig);
     this.workloadService = new WorkloadService(serviceConfig);
+    this.savingsService = new SavingsService(serviceConfig);
     this.clientFileService = new ClientFileService(serviceConfig);
     this.llmReferenceService = new LlmReferenceService(serviceConfig);
     this.helpCenterDocsService = new HelpCenterDocsService(serviceConfig);
@@ -392,6 +395,27 @@ export class Coolhand {
    */
   public async searchWorkloads(params?: SearchWorkloadsParams): Promise<SearchWorkloadsResponse> {
     return this.workloadService.searchWorkloads(params);
+  }
+
+  /**
+   * Get the savings this client has realized by switching templates or models: what the requests
+   * served by the current templates cost, versus what the same requests would have cost on the
+   * deprecated versions they replaced (deprecations in the last three months). It is the figure the
+   * dashboard shows. Takes no parameters: the client is derived from the **private** API key.
+   *
+   * `workloads[].id` is the workload hashid, so rows join to {@link searchWorkloads} on `id`. The
+   * savings are NOT windowed by `daysBack`, unlike a workload's `metrics`, so a workload's `savings`
+   * can exceed its windowed cost.
+   *
+   * @returns `{ total, cost_at_previous_versions, percent, workloads }`; zeros and an empty
+   *   `workloads` for a client with nothing to compare. See `SavingsService#getRealizedSavings`/
+   *   `docs/savings.md`.
+   * @throws Error on network failure or a non-JSON body. A non-2xx response throws an error whose
+   *   `status` property holds the HTTP status code: `401` for a missing/invalid/public key, and
+   *   `503` when the comparison could not be computed — retryable, and not the same as zero savings.
+   */
+  public async getRealizedSavings(): Promise<RealizedSavings> {
+    return this.savingsService.getRealizedSavings();
   }
 
   /**

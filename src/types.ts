@@ -813,6 +813,36 @@ export interface SearchWorkloadsResponse {
   pagination: Pagination;
 }
 
+// One row of `RealizedSavings.workloads`, as rendered by GET /api/v2/savings. All five keys are
+// always present.
+export interface WorkloadSavings {
+  /** The workload hashid — the same `id` as `WorkloadSummary.id`, so rows join on it. */
+  id: string;
+  name: string;
+  /** USD saved on this workload, rounded to 4 decimals. */
+  savings: number;
+  /** USD the same requests would have cost on the deprecated versions they replaced. */
+  cost_at_previous_versions: number;
+  /** Requests served by the workload's current templates that the comparison covers. */
+  active_requests: number;
+}
+
+// The realized-savings figure for the authenticating client, from GET /api/v2/savings. The
+// comparison window is fixed server-side (deprecations in the last three months) and is not
+// tied to any request window, so there is deliberately no `daysBack` and no `clientId`. Money
+// values are USD floats rounded to 4 decimals, never strings.
+export interface RealizedSavings {
+  /** USD saved by switching templates or models. */
+  total: number;
+  /** The baseline `total` is measured against. */
+  cost_at_previous_versions: number;
+  /** `total` as a share of `cost_at_previous_versions`, one decimal; `0` when the baseline is 0. */
+  percent: number;
+  /** Per-workload breakdown; only workloads with a template deprecated in the last three months
+   *  appear. Empty for a client with nothing to compare, which is real zero savings. */
+  workloads: WorkloadSavings[];
+}
+
 // Filters for searchReferencedFiles, applied by GET /api/v2/llm_references. Only these three
 // Ransack predicates are exposed — `id` was deliberately excluded from the model's
 // ransackable_attributes (the aggregated response has no `id` field at all), and any other

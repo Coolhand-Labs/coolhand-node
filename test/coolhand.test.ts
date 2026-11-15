@@ -430,6 +430,32 @@ describe('Coolhand Node Monitor', () => {
     });
   });
 
+  describe('getRealizedSavings', () => {
+    const savedFetch = (global as any).fetch;
+
+    afterEach(() => {
+      (global as any).fetch = savedFetch;
+    });
+
+    it('delegates to SavingsService with the configured private key', async () => {
+      let capturedUrl: string | undefined;
+      let capturedOptions: any;
+      const body = { total: 1.5, cost_at_previous_versions: 3, percent: 50, workloads: [] };
+      (global as any).fetch = jest.fn().mockImplementation(async (url: string, options: any) => {
+        capturedUrl = url;
+        capturedOptions = options;
+        return { ok: true, status: 200, text: jest.fn().mockResolvedValue(JSON.stringify(body)), headers: new Headers() };
+      });
+
+      const monitor = new Coolhand({ apiKey: 'private-key-123', silent: true });
+      const result = await monitor.getRealizedSavings();
+
+      expect(capturedUrl).toBe('https://coolhandlabs.com/api/v2/savings');
+      expect(capturedOptions.headers['X-API-Key']).toBe('private-key-123');
+      expect(result).toEqual(body);
+    });
+  });
+
   describe('LlmReferenceService integration', () => {
     it('should expose searchReferencedFiles and listReferencedFileSessions functions', () => {
       const monitor = new Coolhand({ apiKey: 'test-key', silent: true });
