@@ -64,7 +64,7 @@ Throws an `HttpError` (exported from `coolhand-node`) on a non-2xx response, wit
 | `503` | The comparison could not be computed right now. Retryable |
 
 **A `503` is not zero savings.** Do not map it to zeros; show it as an error and retry. Network
-failures and non-JSON bodies throw a plain `Error` without a `status`.
+failures and non-JSON or non-object bodies throw a plain `Error` without a `status`.
 
 ## Combining it with workload metrics
 
@@ -73,8 +73,9 @@ are. A workload's `savings` can therefore exceed its windowed `metrics.total_cos
 as a ratio over the same period. Join the two on `id` to build a per-workload ROI view:
 
 ```typescript
-const [{ workloads }, savings] = await Promise.all([
-  coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30, per: 100 }),
+// Archived workloads can still carry realized savings, so include them or their rows go unmatched.
+const [{ workloads, pagination }, savings] = await Promise.all([
+  coolhand.searchWorkloads({ includeMetrics: true, daysBack: 30, includeArchived: true, per: 100 }),
   coolhand.getRealizedSavings()
 ]);
 
@@ -88,6 +89,6 @@ const roi = workloads.map((workload) => ({
 }));
 ```
 
-`searchWorkloads` is paged (`page`, `per`, max 100), so follow `pagination.has_next_page` for a client
-with more workloads than one page. This is how the `get_client_roi_summary` MCP tool composes the two
+This reads one page of up to 100 workloads; `searchWorkloads` is paged (`page`, `per`), so repeat the
+call while `pagination.has_next_page` is true for a client with more. This is how the `get_client_roi_summary` MCP tool composes the two
 endpoints.

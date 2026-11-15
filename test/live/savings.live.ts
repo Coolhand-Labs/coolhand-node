@@ -46,14 +46,15 @@ describe('SavingsService against a live server', () => {
 
     it('keys workload rows on the same hashid as searchWorkloads, so they join', async () => {
       const { workloads: rows } = await newService().getRealizedSavings();
-      const { workloads } = await new WorkloadService({
+      const { workloads, pagination } = await new WorkloadService({
         apiKey: LIVE_API_KEY,
         silent: true,
         baseUrl: LIVE_BASE_URL
       }).searchWorkloads({ includeMetrics: true, daysBack: 28, includeArchived: true, includeSystem: true, per: 100 });
 
+      // One page is enough only while the client has at most 100 workloads (the demo one has 4).
+      expect(pagination.has_next_page).toBe(false);
       const ids = new Set(workloads.map((workload) => workload.id));
-      expect(rows.length).toBeGreaterThan(0);
       for (const row of rows) {
         expect(ids.has(row.id)).toBe(true);
       }
