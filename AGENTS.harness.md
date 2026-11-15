@@ -2,14 +2,14 @@
 
 You are the **node agent**, working in the `coolhand-node` repo. You wrap one server
 endpoint in TypeScript, prove it against the live local server, open a PR — and then you
-fan the work out to python, ruby and the CLI.
+fan the work out to python, ruby, java, csharp and the CLI.
 
 This file is self-contained. You do not share a context window with the agent that
 launched you.
 
 **You are the reference implementation.** `coolhand-node/AGENTS.md` says it directly:
 node is the reference for the Coolhand SDK family, and structural changes here get a
-matching issue opened on the sibling packages. That is why python and ruby hang off you
+matching issue opened on the sibling packages. That is why python, ruby, java and csharp hang off you
 rather than off the server — they copy what you prove, and you are the one who tells
 them what to build.
 
@@ -26,7 +26,7 @@ node <workspaceRoot>/coolhand/harness/harness.mjs context --run <RUN_DIR>
 | `baseUrl` | the live local server, already booted for you |
 | `branch` | the shared branch name — but see section 2, your issue number wins |
 | `specPath` | `coolhand/swagger/v2/coolhand_api.yaml` = **the API definition** |
-| `clients` | which wrappers get built — tells you whether to launch python and ruby |
+| `clients` | which wrappers get built — tells you whether to launch python, ruby, java and csharp |
 | `cliEnabled` | if true, you launch the CLI agent too |
 | `reviewLoop` | if true, run section 5 |
 | `dryRun` | if true, everything local happens and nothing reaches GitHub — no push, no PR, **no issues for your children**. See `RESIST_RULES.md` → Dry runs |
@@ -134,7 +134,7 @@ using your current `HEAD` (after any fix commits above):
 `node <workspaceRoot>/coolhand/harness/harness.mjs loop-review --run <RUN_DIR> --repo node --sha <HEAD sha> --by node --result clean|capped`.
 
 **You will run this same review two more times, later, for repos that are not your own —
-see section 8d.** python, ruby and the CLI cannot run their own copy of this section; that
+see section 8d.** python, ruby, java, csharp and the CLI cannot run their own copy of this section; that
 is not a per-run surprise, it is what R8's table says about depth 3. Plan your attention
 accordingly once you reach section 8.
 
@@ -160,10 +160,10 @@ place of an issue url.
 ## 8. Fan the work out — issue first, then launch
 
 **Only after your own PR is open.** You built it, so you know what the wrapper actually
-takes to write — that knowledge is what the other three need, and you cannot write it
+takes to write — that knowledge is what every other client needs, and you cannot write it
 down before you have it.
 
-Your children are **python**, **ruby** (each if listed in `clients`) and **cli**
+Your children are **python**, **ruby**, **java**, **csharp** (each if listed in `clients`) and **cli**
 (if `cliEnabled`).
 
 ### 8a. Open one issue per child
@@ -182,7 +182,7 @@ Each issue body must be buildable **without you**, and must include:
 - the endpoint, its path(s), parameters and response shape
 - **a link to your merged-or-open node PR as the reference implementation** — this is the
   single most useful thing you can give them, and the reason you go first
-- the method name you chose, so the four SDKs stay recognisably siblings
+- the method name you chose, so the SDKs stay recognisably siblings
 - how you named things in your language, and where their language should differ instead of
   copying you (naming conventions are not portable; behaviour is)
 - auth: which key, and what a caller without one gets back
@@ -199,7 +199,7 @@ node <workspaceRoot>/coolhand/harness/harness.mjs issue --run <RUN_DIR> --repo <
 
 ### 8b. Then launch them
 
-python and ruby run **in parallel**. Give each exactly this:
+The SDK children (python, ruby, java, csharp) run **in parallel**. Give each exactly this:
 
 ```
 You are the <child> agent for the API client harness.
@@ -232,8 +232,8 @@ definition, you do not answer it — you pass it up to server**, then relay the 
 down. You own the wrapper pattern; the server owns the definition.
 
 **Poll every live child's channel on a short cycle, not one long wait on one channel.**
-python, ruby and the CLI can be working (or blocked) at the same time, and a single
-900-second `wait` on one of them leaves the other two invisible to you for that whole
+python, ruby, java, csharp and the CLI can be working (or blocked) at the same time, and a single
+900-second `wait` on one of them leaves the others invisible to you for that whole
 window. Round-robin instead:
 
 ```
@@ -253,10 +253,10 @@ Do not stop until every child has finished or escalated to a human.
 
 ### 8d. Serve review for your children — they can never do this themselves (R8)
 
-**python, ruby and the CLI have no Agent/Task tool.** They are three levels deep in this
+**python, ruby, java, csharp and the CLI have no Agent/Task tool.** They are three levels deep in this
 tree, and the platform does not let an agent that deep spawn a further subagent. This is
 not something any of them can fix by trying again, and it is not a surprise you should be
-finding out for the first time when one of them escalates — expect it from all three, every
+finding out for the first time when one of them escalates — expect it from every one of them, every
 run.
 
 When a child sends an R8 escalation saying it is ready for review (it will name its repo
