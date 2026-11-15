@@ -7,6 +7,7 @@ export { TemplateService, type TemplateServiceConfig } from './TemplateService.j
 export { StepTemplateService, type StepTemplateServiceConfig } from './StepTemplateService.js';
 export { OptimizationFeedbackLinkService, type OptimizationFeedbackLinkServiceConfig } from './OptimizationFeedbackLinkService.js';
 export { WorkloadService, type WorkloadServiceConfig } from './WorkloadService.js';
+export { SavingsService, type SavingsServiceConfig } from './SavingsService.js';
 export { LlmReferenceService, type LlmReferenceServiceConfig } from './LlmReferenceService.js';
 export { McpService, type McpServiceConfig } from './McpService.js';
 export { ClientFileService, type ClientFileServiceConfig } from './ClientFileService.js';
