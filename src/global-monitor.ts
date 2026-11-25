@@ -17,7 +17,7 @@ import { teeResponseForCapture } from './utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from './utils/normalize-request-args.js';
 import { patchResponseEmit } from './utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded as isSelfOrExcludedShared } from './utils/self-endpoint.js';
-import { formatHostForUrl } from './utils/url-host.js';
+import { buildRequestURL } from './utils/build-url.js';
 import { DEFAULT_EXCLUDE_API_PATTERNS } from './default-exclude-api-patterns.js';
 import { warnOnGlobLikePatterns } from './utils/exclude-patterns.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from './utils/fetch-request-helpers.js';
@@ -918,22 +918,10 @@ async function interceptFetch(
 }
 
 function buildURL(options: CoolhandRequestOptions | string | URL | any, protocol: string): string {
-  if (typeof options === 'string') {
-    return options;
-  }
+  // `url` is honored here (not in the shared helper) to preserve this interceptor's existing behavior.
+  if (typeof options === 'object' && !(options instanceof URL) && options.url && !options.href) { return options.url; }
 
-  if (options instanceof URL) {
-    return options.toString();
-  }
-
-  if (options.href) { return options.href; }
-  if (options.url) { return options.url; }
-
-  const hostname = formatHostForUrl(options.hostname || options.host || 'unknown');
-  const path = options.path || '/';
-  const port = options.port ? `:${options.port}` : '';
-
-  return `${protocol}://${hostname}${port}${path}`;
+  return buildRequestURL(options, protocol);
 }
 
 function sanitizeForLog(url: string): string {
