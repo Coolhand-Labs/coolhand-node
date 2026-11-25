@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-11-25
+
+### ✨ New Features
+- **`getRealizedSavings()` reads what switching templates or models has saved you.** It returns `{ total, cost_at_previous_versions, percent, workloads }`: what the requests served by the current templates cost, versus what the same requests would have cost on the deprecated versions they replaced (the figure the dashboard shows), in total and per workload. It takes no parameters (the client comes from your API key), needs a private API key, and throws `HttpError` (with `.status`) on a non-2xx response. A `503` means the comparison could not be computed right now; it is retryable and is never mapped to zero savings. The savings window is fixed server-side, so it is not windowed by `daysBack` like a workload's `metrics`; join the two on workload `id`. See `docs/savings.md`. ([#317](https://github.com/Coolhand-Labs/coolhand-node/issues/317), [#318](https://github.com/Coolhand-Labs/coolhand-node/pull/318))
+
+### 🐛 Bug Fixes
+- **Intercepted `http`/`https` requests with a slash-less `path` now rebuild a well-formed URL.** Node tolerates `path: 'v1/messages'`, but the interceptors ran the host and path together (`https://host.example.comv1/messages`), so the logged URL was wrong. A leading `/` is now added when missing (`?a=1` becomes `/?a=1`, a missing path becomes `/`); paths that already start with `/`, including `//`, are unchanged. Both interceptors share one `buildRequestURL` helper, and a non-string `path` is coerced rather than throwing into the host app's request. ([#319](https://github.com/Coolhand-Labs/coolhand-node/issues/319), [#320](https://github.com/Coolhand-Labs/coolhand-node/pull/320))
+
+### 🧹 Internal
+- `AGENTS.harness.md` now fans work out to coolhand-java and coolhand-csharp as well as python, ruby and the CLI. ([#315](https://github.com/Coolhand-Labs/coolhand-node/issues/315), [#316](https://github.com/Coolhand-Labs/coolhand-node/pull/316))
+- The `/prep-release` and `/finish-release` skills now credit outside and first-time contributors in the changelog and release notes. ([#313](https://github.com/Coolhand-Labs/coolhand-node/pull/313))
+
 ## [0.18.0] - 2026-11-04
 
 ### ✨ New Features
