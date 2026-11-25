@@ -340,6 +340,19 @@ const { logs } = await coolhand.searchLogs({
 See [docs/workload-search.md](./docs/workload-search.md) for the workload reference and
 [docs/template-search.md](./docs/template-search.md#metrics) for the `metrics` fields and window rules.
 
+## Reading Realized Savings
+
+`getRealizedSavings` returns what switching templates or models has saved you, in total and per
+workload (the dashboard's figure). It needs your **private** API key and takes no parameters:
+
+```typescript
+const { total, percent, workloads } = await coolhand.getRealizedSavings();
+```
+
+The comparison window is fixed server-side and is not windowed by `daysBack`, unlike workload
+`metrics`; join the two on workload `id`. A `503` means it could not be computed, not zero savings.
+See [docs/savings.md](./docs/savings.md).
+
 ## Reading the Help Center
 
 `HelpCenterDocsService` reads the Coolhand help center (the same pages as coolhandlabs.com/help and
@@ -645,11 +658,11 @@ API key (the public key 401s) — same as the read methods below. See
 but need a client admin's **per-user** API key rather than the client-level private key.
 
 Read methods (`searchFeedback`, `getFeedback`, `searchLogs`, `getLogContent`, `failureSummary`, `searchTemplates`,
-`getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
+`getTemplate`, `listStepTemplates`, `getStepTemplate`, `searchWorkloads`, `getRealizedSavings`, `searchReferencedFiles`, `listReferencedFileSessions`, `searchHelpArticles`, `getHelpArticle`, `listHelpCategories`) throw instead, since callers
 need to react to the result — a non-2xx response throws an `HttpError` with the status code
 attached; see [docs/feedback-search.md](./docs/feedback-search.md),
 [docs/log-search.md](./docs/log-search.md), [docs/template-search.md](./docs/template-search.md), [docs/step-templates.md](./docs/step-templates.md),
-[docs/workload-search.md](./docs/workload-search.md), [docs/llm-reference-search.md](./docs/llm-reference-search.md) and [docs/help-center.md](./docs/help-center.md) for details.
+[docs/workload-search.md](./docs/workload-search.md), [docs/savings.md](./docs/savings.md), [docs/llm-reference-search.md](./docs/llm-reference-search.md) and [docs/help-center.md](./docs/help-center.md) for details.
 `upsertWorkload` and `upsertTemplate` also throw (invalid keys, or an `HttpError` such as `422` for a
 taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 
@@ -670,6 +683,7 @@ taken name); see [docs/declared-workloads.md](./docs/declared-workloads.md).
 - **[Reading Feedback (Search + Get)](./docs/feedback-search.md)** - Search and fetch previously submitted feedback records using the private API key.
 - **[Reading Logs (Search + Get Content)](./docs/log-search.md)** - Search logged requests and fetch full input/output content using the private API key.
 - **[Reading Workloads (Search)](./docs/workload-search.md)** - List workloads with cost and performance metrics using the private API key.
+- **[Reading Realized Savings](./docs/savings.md)** - Get what switching templates or models has saved you, in total and per workload, using the private API key.
 - **[Reading Templates (Search + Get)](./docs/template-search.md)** - Search LLM request templates and fetch a single one, prompt patterns included, using the private API key.
 - **[Reading Step Templates (List + Get)](./docs/step-templates.md)** - List the skills and recurring steps detected in captured agent sessions, with run and efficiency metrics, using the private API key.
 - **[Reading Referenced Files (Search + Sessions)](./docs/llm-reference-search.md)** - Search files your logged requests reference, and drill down to the individual sessions for one file, using the private API key.
