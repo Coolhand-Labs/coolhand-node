@@ -11,7 +11,7 @@ import { teeResponseForCapture } from '../utils/capped-fetch-body.js';
 import { normalizeRequestArgs } from '../utils/normalize-request-args.js';
 import { patchResponseEmit } from '../utils/response-interceptor.js';
 import { computeSelfEndpoint, isSelfOrExcluded, SelfEndpoint } from '../utils/self-endpoint.js';
-import { formatHostForUrl } from '../utils/url-host.js';
+import { buildRequestURL } from '../utils/build-url.js';
 import { getFetchURL, getFetchMethod, getFetchHeaders, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 import { extractRequestHostname } from '../utils/extract-hostname.js';
 import { formatErrorMessage } from '../utils/format-error.js';
@@ -664,21 +664,7 @@ export class RequestMonitoringService {
   }
 
   private buildURL(options: CoolhandRequestOptions | string | URL, protocol: string): string {
-    if (typeof options === 'string') {
-      return options;
-    }
-
-    if (options instanceof URL) {
-      return options.toString();
-    }
-
-    if (options.href) {return options.href;}
-
-    const hostname = formatHostForUrl(options.hostname || options.host || 'unknown');
-    const path = options.path || '/';
-    const port = options.port ? `:${options.port}` : '';
-
-    return `${protocol}://${hostname}${port}${path}`;
+    return buildRequestURL(options, protocol);
   }
 
   private debugRequest(type: string, options: CoolhandRequestOptions | string | URL | any): void {

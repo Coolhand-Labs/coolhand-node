@@ -1497,6 +1497,16 @@ describe('RequestMonitoringService', () => {
       const url = (service as any).buildURL(options, 'https');
       expect(url).toBe('https://unknown/');
     });
+
+    it.each([
+      ['slash-less path (issue #319)', { hostname: 'bedrock-runtime.us-east-1.amazonaws.com', path: 'v1/messages' }, 'https://bedrock-runtime.us-east-1.amazonaws.com/v1/messages'],
+      ['leading-slash path stays unchanged', { hostname: 'api.test.com', path: '/v1/messages' }, 'https://api.test.com/v1/messages'],
+      ['query-only path', { hostname: 'api.test.com', path: '?a=1' }, 'https://api.test.com/?a=1'],
+      ['no path', { hostname: 'api.test.com' }, 'https://api.test.com/'],
+      ['port with slash-less path', { hostname: 'api.test.com', port: 8443, path: 'v1/messages' }, 'https://api.test.com:8443/v1/messages']
+    ])('should normalize the path: %s', (_name, options, expected) => {
+      expect((service as any).buildURL(options, 'https')).toBe(expected);
+    });
   });
 
   describe('Debug and Logging', () => {

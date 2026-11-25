@@ -340,6 +340,44 @@ describe('Global Monitor', () => {
       expect(callData.url).toBe(cleanUrl);
     });
 
+    it.each([
+      ['slash-less path (issue #319)', { hostname: 'bedrock-runtime.us-east-1.amazonaws.com', path: 'v1/messages' }, 'https://bedrock-runtime.us-east-1.amazonaws.com/v1/messages'],
+      ['leading-slash path stays unchanged', { hostname: 'api.test.com', path: '/v1/messages' }, 'https://api.test.com/v1/messages'],
+      ['query-only path', { hostname: 'api.test.com', path: '?a=1' }, 'https://api.test.com/?a=1'],
+      ['no path', { hostname: 'api.test.com' }, 'https://api.test.com/'],
+      ['port with slash-less path', { hostname: 'api.test.com', port: 8443, path: 'v1/messages' }, 'https://api.test.com:8443/v1/messages']
+    ])('builds a well-formed URL from https.request options: %s', async (_name, options, expectedUrl) => {
+      const { EventEmitter } = require('events');
+
+      underlyingHttpsRequestMock.mockImplementationOnce(() => {
+        const fakeReq: any = new EventEmitter();
+        fakeReq.write = jest.fn();
+        fakeReq.end = jest.fn();
+        const fakeRes: any = new EventEmitter();
+        fakeRes.statusCode = 200;
+        fakeRes.headers = { 'content-type': 'application/json' };
+        queueMicrotask(() => {
+          fakeReq.emit('response', fakeRes);
+          fakeRes.emit('end');
+        });
+        return fakeReq;
+      });
+
+      mockPatternMatchingService.matchesAPIPatternSync.mockReturnValueOnce({
+        pattern: { name: 'Test', domains: [options.hostname] },
+        matchType: 'domain',
+        matchValue: options.hostname
+      } as any);
+
+      await globalMonitor.initializeGlobalMonitoring({ apiKey: 'test-key', silent: true });
+
+      require('https').request(options, jest.fn());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const [callData] = (mockLoggingService.logRequestToAPI as jest.Mock).mock.calls[0];
+      expect(callData.url).toBe(expectedUrl);
+    });
+
     it('does not starve a host callback that attaches its data listener asynchronously (regression for #115)', async () => {
       // Regression test for #115: a real Readable (not EventEmitter) is required here because
       // only a real stream reproduces Node's flowing-mode race — an EventEmitter never "drops"
